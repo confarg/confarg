@@ -177,6 +177,11 @@ A segment is a key or an index, or a pending list op: an expression inside an it
 The walk takes it as any dict key, so a node anchor reads through it (`${.host}` beside `url` reads `host` in the same item), and `_spell_path`, the one spelling of a position in a message, writes it as a file does (`servers.__append__.0.url`).
 It is never a list index, and a path spells it as a constant subscript, which no source expression can write.
 
+A dict key is a segment as the data holds it, so a segment is typed `Hashable`, in `_Path` as in the default layer's `DataPath` (REF-122).
+A YAML `!!int 0:` or a caller's `{0: …}` puts the integer in a position, a caller's dict a date or a tuple, and the walk reaches each as itself.
+Typed as text, a segment had the type checker vouch for what the code never guaranteed, and a cast hid each place a key was used as text: only text spells a list index (`_list_index`), which the type now makes every caller ask.
+A segment an expression spells (`_attribute_chain`) is text or an op, which a position's type holds.
+
 The dotted form survives only in messages, `Field 'a.b' not found`, which a person reads and nothing parses back.
 Precedents keep paths structured for the same reason: jq's `path()`, `getpath` and `setpath` work on arrays of keys (`["a.b"]`), and JSON Pointer (RFC 6901) escapes its separator inside a segment rather than let a key hold it.
 

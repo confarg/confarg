@@ -21,6 +21,7 @@ import re
 import sys
 import tokenize
 import unicodedata
+from collections.abc import Hashable
 from functools import lru_cache
 from graphlib import CycleError, TopologicalSorter
 from itertools import accumulate
@@ -40,12 +41,14 @@ from confarg.exceptions import (
     UnsafeExpressionError,
 )
 
-#: A position in the data, one segment per key or list index. Segments are never joined
-#: into a dotted string, which a key holding a dot (``example.com``) would make ambiguous.
-_Path = tuple[str | ListOp, ...]
+#: A position in the data, one segment per key or list index: a dict key as the data holds it
+#: (YAML's ``{0: x}`` the integer, a caller's dict any key), a list element by its position as
+#: text, a pending op by its marker. Segments are never joined into a dotted string, which a key
+#: holding a dot (``example.com``) would make ambiguous.
+_Path = tuple[Hashable, ...]
 
 
-def _spell_path(path: Sequence[str | ListOp]) -> str:
+def _spell_path(path: Sequence[Hashable]) -> str:
     """Return *path* as a message names it: its segments joined by dots, a pending list op by its file spelling."""
     return ".".join(map(str, path))
 
@@ -532,7 +535,7 @@ def _refuse_normalized_names(body: str) -> None:
 
 #: How an expression reads a value: given the data, the position it is read at (one segment
 #: per key or list position, as the data names it) and the value held there, what it reads.
-type Reader = Callable[[MergeDict, Sequence[str | ListOp], Any], Any]
+type Reader = Callable[[MergeDict, Sequence[Hashable], Any], Any]
 
 #: How a resolved expression is written: given what it evaluated to, what the data holds and
 #: an interpolation stringifies.
@@ -658,7 +661,7 @@ def _copy_written_paths(data: MergeDict, paths: Iterable[_Path]) -> None:
             node = node[key]
 
 
-def _pending_prefixes(data: MergeDict, path: Sequence[str | ListOp], *, crossed: bool = False) -> list[_Path]:
+def _pending_prefixes(data: MergeDict, path: Sequence[Hashable], *, crossed: bool = False) -> list[_Path]:
     """Return the prefixes of *path* at which *data* holds a node of pending list ops, outermost first.
 
     The walk follows the data as it stands, a list element by its position, and stops where
@@ -769,7 +772,7 @@ def _dependency_graph(data: MergeDict, expr_fields: dict[_Path, str]) -> dict[_P
     return deps
 
 
-def _scan_path(data: MergeDict, parts: Sequence[str | ListOp]) -> _Path:
+def _scan_path(data: MergeDict, parts: Sequence[Hashable]) -> _Path:
     """Return the path *parts* reads in *data*, named as :func:`_scan_expressions` names it.
 
     Each segment is taken by :func:`_step`, the walk evaluation reads the value with, so the
@@ -777,7 +780,7 @@ def _scan_path(data: MergeDict, parts: Sequence[str | ListOp]) -> _Path:
     From the first segment *data* does not answer on — a missing key, or one inside an
     expression's value, unknown until it resolves — the path is kept as written.
     """
-    named: list[str | ListOp] = []
+    named: list[Hashable] = []
     current: Any = data
     for depth, part in enumerate(parts):
         try:
@@ -1131,7 +1134,7 @@ def _eval_name(node: ast.Name, namespace: _Namespace) -> Any:
     return _read_value(namespace, [node.id])
 
 
-def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
+def _read_value(namespace: _Namespace, parts: Sequence[Hashable]) -> Any:
     """Return what an expression reads at the config path *parts*: the value there, as the namespace reads it.
 
     Every expression the read reaches has resolved, since the dependency graph orders it
@@ -1146,7 +1149,7 @@ def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     return namespace.read(namespace, _scan_path(namespace, parts), value)
 
 
-def _read_through(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
+def _read_through(namespace: _Namespace, parts: Sequence[Hashable]) -> Any:
     """Return the value at *parts*, refusing one that a pending list op holds or that holds one.
 
     A node of ops no type applied before resolution has no list to read: the op dict is never
@@ -1249,7 +1252,7 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: _Namespace) ->
         raise _path_miss(node, parts, cast("MissingReferenceError", missing)) from None
 
 
-def _container_miss(data: MergeDict, parts: Sequence[str | ListOp]) -> int | None:
+def _container_miss(data: MergeDict, parts: Sequence[Hashable]) -> int | None:
     """Return the depth at which the walk down *parts* stops in a dict or a list, ``None`` where it stops elsewhere.
 
     No subscript of a dict or a list answers a key the walk missed (:func:`_step`). A walk
@@ -1266,7 +1269,7 @@ def _container_miss(data: MergeDict, parts: Sequence[str | ListOp]) -> int | Non
 
 
 def _path_miss(
-    node: ast.Attribute | ast.Subscript, parts: Sequence[str | ListOp], missing: MissingReferenceError
+    node: ast.Attribute | ast.Subscript, parts: Sequence[Hashable], missing: MissingReferenceError
 ) -> MissingReferenceError:
     """Return the miss of the path *parts* that *node* spells: *missing*, or how to call the method a dot names."""
     if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:
@@ -1437,7 +1440,7 @@ def _resolve_single(expr_str: str, namespace: _Namespace, node_path: _Path = ())
         raise UnsafeExpressionError.refused(expr_str, str(exc)) from None
 
 
-def _get_nested(data: MergeDict, parts: Sequence[str | ListOp]) -> Any:
+def _get_nested(data: MergeDict, parts: Sequence[Hashable]) -> Any:
     """Retrieve the value at the path *parts* from a nested dict/list, one segment per key or index.
 
     Segments are taken as given, never re-split, so a key holding a dot (``['example.com']``)
@@ -1449,7 +1452,7 @@ def _get_nested(data: MergeDict, parts: Sequence[str | ListOp]) -> Any:
     return current
 
 
-def _list_index(segment: str | ListOp) -> int | None:
+def _list_index(segment: Hashable) -> int | None:
     """Return the list index *segment* spells, or ``None`` when it spells none.
 
     Only the spelling ``str()`` gives an integer is an index — ``0``, ``1``, ``-1`` — so a
@@ -1472,9 +1475,7 @@ def _list_index(segment: str | ListOp) -> int | None:
     return index if str(index) == segment else None
 
 
-def _step(
-    node: Any, part: str | ListOp, path: Sequence[str | ListOp], *, spelled: bool = False
-) -> tuple[str | ListOp, Any]:
+def _step(node: Any, part: Hashable, path: Sequence[Hashable], *, spelled: bool = False) -> tuple[Hashable, Any]:
     """Take the segment *part* of *path* down from *node*: return how the scan names it, and what it reaches.
 
     The one walk over the data: evaluation reads a value with it (:func:`_get_nested`) and
@@ -1504,7 +1505,7 @@ def _step(
                 raise MissingReferenceError.ambiguous_key(_spell_path(path), cast("str", part), other)
             return part, node[part]
         if index is not None and index in node:
-            return cast("str", index), node[index]  # a key no string spells, named as the scan names it
+            return index, node[index]  # a key no string spells, named as the scan names it
         raise MissingReferenceError.field_not_found(_spell_path(path))
     if isinstance(node, list | tuple):
         idx = _list_index(part)
@@ -1713,7 +1714,7 @@ def _spells_as_name(segment: str) -> bool:
     )
 
 
-def _segment_link(base: ast.expr, segment: str | ListOp) -> ast.Attribute | ast.Subscript:
+def _segment_link(base: ast.expr, segment: Hashable) -> ast.Attribute | ast.Subscript:
     """Read *segment* off *base*: a dot when it spells as a name, else a constant subscript.
 
     A segment that spells a list index (``0``, ``-1``: :func:`_list_index`) is subscripted
@@ -1728,7 +1729,7 @@ def _segment_link(base: ast.expr, segment: str | ListOp) -> ast.Attribute | ast.
     return ast.Subscript(value=base, slice=key, ctx=ast.Load())
 
 
-def _path_to_ast(parts: Sequence[str | ListOp]) -> ast.expr:
+def _path_to_ast(parts: Sequence[Hashable]) -> ast.expr:
     """Build the tree that reads the path *parts*, and that unparses to source reading it too.
 
     The one spelling of a path as an expression: a segment is a dot or a constant

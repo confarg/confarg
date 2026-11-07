@@ -18,7 +18,7 @@ from confarg import _defaults
 from confarg.exceptions import ConfargError, InvalidConfigFileError, TypeCoercionError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Hashable, Iterable, Sequence
 
 
 class ListOp(enum.Enum):
@@ -414,7 +414,7 @@ class MergeAt:
         """
         return _key_spelling(key)
 
-    def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the typed reading's signature
+    def child(self, key: Hashable, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the typed reading's signature
         """Return where the merge stands at *key* of the node *below* and *over* merge at."""
         return self
 
