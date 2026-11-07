@@ -28,7 +28,7 @@ from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Container, Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
 from confarg._depth import Copies, positions_below
 from confarg._merge import ListOp, MergeDict, _holds_list_ops
@@ -531,9 +531,8 @@ def _refuse_normalized_names(body: str) -> None:
 
 
 #: How an expression reads a value: given the data, the position it is read at (one segment
-#: per key or list position, as the data names it), the value held there and the positions
-#: whose expression has yet to resolve, what it reads.
-type Reader = Callable[[MergeDict, Sequence[str | ListOp], Any, Container[_Path]], Any]
+#: per key or list position, as the data names it) and the value held there, what it reads.
+type Reader = Callable[[MergeDict, Sequence[str | ListOp], Any], Any]
 
 #: How a resolved expression is written: given what it evaluated to, what the data holds and
 #: an interpolation stringifies.
@@ -564,8 +563,6 @@ class _Namespace(dict[Any, Any]):
         self.spent = 0
         #: The copy budget of the configuration being resolved, which every read charges (:func:`_read_through`).
         self.copies = Copies() if copies is None else copies
-        #: The positions whose expression has yet to resolve, which a read can meet (:func:`_read_value`).
-        self.pending: set[_Path] = set()
 
 
 def resolve_expressions(
@@ -580,8 +577,7 @@ def resolve_expressions(
 
     Args:
         data: The merged configuration dict.
-        read: What an expression reads of the value at a position, told which positions are
-            still pending; the value itself when omitted.
+        read: What an expression reads of the value at a position; the value itself when omitted.
         write: What a resolved expression leaves in the data, and an interpolation stringifies;
             the value itself when omitted.
         settle: What a node holding a pending list op becomes once the last expression below
@@ -609,7 +605,6 @@ def resolve_expressions(
         return data
 
     data = _Namespace(data, read, write, copies)
-    data.pending.update(expr_fields)
     _copy_written_paths(data, expr_fields)
 
     # 2. Extract references and build dependency graph
@@ -635,7 +630,6 @@ def resolve_expressions(
         raw_str = expr_fields[path]
         result = _resolve_single(raw_str, data, path)
         _set_nested_by_path(data, path, result)
-        data.pending.discard(path)
         if settle is not None:
             _settle_pending(data, path, unresolved, settle)
 
@@ -677,11 +671,9 @@ def _pending_prefixes(data: MergeDict, path: Sequence[str | ListOp], *, crossed:
     for depth, part in enumerate(path):
         if _holds_list_ops(node) and not (crossed and isinstance(part, ListOp)):
             found.append(tuple(path[:depth]))
-        if isinstance(node, dict) and part in node:
-            node = node[part]
-        elif isinstance(node, list) and (index := _list_index(part)) is not None and 0 <= index < len(node):
-            node = node[index]
-        else:
+        try:
+            _, node = _step(node, part, path)
+        except MissingReferenceError:
             return found
     if _holds_list_ops(node):
         found.append(tuple(path))
@@ -789,7 +781,7 @@ def _scan_path(data: MergeDict, parts: Sequence[str | ListOp]) -> _Path:
     current: Any = data
     for depth, part in enumerate(parts):
         try:
-            segment, current = _step(current, part, parts)
+            segment, current = _step(current, part, parts, spelled=True)
         except MissingReferenceError:
             return (*named, *parts[depth:])
         named.append(segment)
@@ -1103,8 +1095,8 @@ def _eval_key(arg: ast.expr, namespace: _Namespace) -> Any:
     The value at the path is never read, only the container holding it. An anchor stand-in
     left in the tree names the configuration root, which has no key, and a pending list op
     or an item one holds has none until construction applies the op; both are refused. A
-    dict key no string spells (YAML's ``{0: x}``) answers to the integer subscript, as a
-    path read falls back on it (:func:`_eval_path_or`), and is returned as the data holds it.
+    dict key no string spells (YAML's ``{0: x}``) is reached by its digits, as a read reaches
+    it (:func:`_step`), and is returned as the integer it equals.
 
     Raises:
         MissingReferenceError: If the path reaches nothing.
@@ -1117,7 +1109,7 @@ def _eval_key(arg: ast.expr, namespace: _Namespace) -> Any:
         if _anchor_dot_count(arg.id) is not None:
             msg = "the configuration root has no key"
             raise ValueError(msg)
-        return _step(namespace, arg.id, [arg.id])[0]
+        return _step(namespace, arg.id, [arg.id], spelled=True)[0]
     node = cast("ast.Attribute | ast.Subscript", arg)
     parts = cast("list[str | ListOp]", _attribute_chain(node, namespace))
     if any(isinstance(part, ListOp) for part in parts[-2:]):
@@ -1125,12 +1117,8 @@ def _eval_key(arg: ast.expr, namespace: _Namespace) -> Any:
         raise ValueError(msg)
     container: Any = namespace
     for part in parts[:-1]:
-        _, container = _step(container, part, parts)  # the whole path, so a miss names it as a read does
-    if isinstance(container, dict) and parts[-1] not in container and isinstance(node, ast.Subscript):
-        raw = _evaluate_ast(node.slice, namespace)
-        if raw in container:
-            return raw
-    segment, _ = _step(container, parts[-1], parts)
+        _, container = _step(container, part, parts, spelled=True)  # the whole path, so a miss names it as a read does
+    segment, _ = _step(container, parts[-1], parts, spelled=True)
     if isinstance(container, list | tuple):
         return int(cast("str", segment))  # a position, which _step names as a string
     return segment
@@ -1146,9 +1134,8 @@ def _eval_name(node: ast.Name, namespace: _Namespace) -> Any:
 def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     """Return what an expression reads at the config path *parts*: the value there, as the namespace reads it.
 
-    The reader is told which positions are still pending: a read the dependency graph did not
-    order, as a subscript indexing its base, can hold an expression yet to resolve, the reading
-    one included, which no text tells apart from the literal an escape resolves to.
+    Every expression the read reaches has resolved, since the dependency graph orders it
+    first, so the reader never meets one: text spelling ``${...}`` is a literal.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
@@ -1156,7 +1143,7 @@ def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     value = _read_through(namespace, parts)
     if namespace.read is None:
         return value
-    return namespace.read(namespace, _scan_path(namespace, parts), value, namespace.pending)
+    return namespace.read(namespace, _scan_path(namespace, parts), value)
 
 
 def _read_through(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
@@ -1181,7 +1168,7 @@ def _read_through(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     for depth, part in enumerate(parts):
         if not isinstance(part, ListOp) and _holds_list_ops(current):
             raise MissingReferenceError.pending_list_ops(_spell_path(parts[:depth]))
-        _, current = _step(current, part, parts)
+        _, current = _step(current, part, parts, spelled=True)
     copied = positions_below(current)
     try:
         namespace.copies.charge(copied, f"read {_spell_path(parts)!r}")
@@ -1221,16 +1208,17 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: _Namespace) ->
     The path comes first, so ``svc['web'].host`` reads what ``svc.web.host`` reads, and a
     computed key spells its path once evaluated, so ``svc[k]`` reads what ``svc['web']``
     reads when ``k`` is ``'web'``. What no path answers is Python's own subscript: an index
-    into a string (``name[0]``), a key that is no string (``m[0]`` on ``{0: ...}``), a key
-    that spells no segment (``m[flag]``). A dot is that subscript with its name as the key,
-    so ``svc[k].host`` reads what ``svc[k]['host']`` reads; it is never ``getattr``, so no
-    attribute of a value — a bound method above all — is reachable. When the subscript fails
-    too, the path's own miss is reported rather than a ``KeyError``, with how to call a
-    string method a dot named, spelled as written (:func:`_unparse`): ``.n.upper`` is
-    hinted at as ``.n.upper(...)``, never as the absolute path its anchor resolved to. With
-    no path to report, a miss names the key or the index it looked for, which
-    :func:`_eval_expr` quotes the expression as written around; any other failure
-    (``'int' object is not subscriptable``) keeps Python's own message.
+    into a string (``name[0]``) or a value read as an object, a key that spells no segment
+    (``m[flag]``). A dot is that subscript with its name as the key, so ``svc[k].host``
+    reads what ``svc[k]['host']`` reads; it is never ``getattr``, so no attribute of a
+    value — a bound method above all — is reachable. A path that misses in a dict or a list
+    indexes nothing, so the base is never read whole. Its miss is reported, named at the
+    segment that missed, rather than a ``KeyError``, as is the path's when the subscript
+    fails too, with how to call a string method a dot named, spelled as written
+    (:func:`_unparse`): ``.n.upper`` is hinted at as ``.n.upper(...)``, never as the
+    absolute path its anchor resolved to. With no path to report, a miss names the key or the
+    index it looked for, which :func:`_eval_expr` quotes the expression as written around;
+    any other failure (``'int' object is not subscriptable``) keeps Python's own message.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
@@ -1243,19 +1231,47 @@ def _eval_path_or(node: ast.Attribute | ast.Subscript, namespace: _Namespace) ->
             return _read_value(namespace, parts)
         except MissingReferenceError as exc:
             missing = exc
+        depth = _container_miss(namespace, parts)
+        if depth is not None:
+            if depth < len(parts) - 1:
+                # The base's own path misses on the same segment, and names that miss as its own.
+                _evaluate_ast(node.value, namespace)
+            raise _path_miss(node, parts, missing) from None
     base = _evaluate_ast(node.value, namespace)
     key = node.attr if isinstance(node, ast.Attribute) else namespace.write(_evaluate_ast(node.slice, namespace))
     try:
         return base[key]
     except (AttributeError, LookupError, TypeError) as exc:
-        if missing is None:
+        if parts is None:
             if isinstance(exc, LookupError):
                 raise _ValueMissError(exc, key) from None
             raise
-        if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:
-            path = _spell_path(cast("list[str | ListOp]", parts))
-            raise MissingReferenceError.uncalled(path, "method", node.attr, _unparse(node)) from None
-        raise missing from None
+        raise _path_miss(node, parts, cast("MissingReferenceError", missing)) from None
+
+
+def _container_miss(data: MergeDict, parts: Sequence[str | ListOp]) -> int | None:
+    """Return the depth at which the walk down *parts* stops in a dict or a list, ``None`` where it stops elsewhere.
+
+    No subscript of a dict or a list answers a key the walk missed (:func:`_step`). A walk
+    that does not stop missed on what it reached, a node of pending list ops or one holding
+    some, which is a dict too: the last segment.
+    """
+    current: Any = data
+    for depth, part in enumerate(parts):
+        try:
+            _, current = _step(current, part, parts, spelled=True)
+        except MissingReferenceError:
+            return depth if isinstance(current, dict | list | tuple) else None
+    return len(parts) - 1
+
+
+def _path_miss(
+    node: ast.Attribute | ast.Subscript, parts: Sequence[str | ListOp], missing: MissingReferenceError
+) -> MissingReferenceError:
+    """Return the miss of the path *parts* that *node* spells: *missing*, or how to call the method a dot names."""
+    if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:
+        return MissingReferenceError.uncalled(_spell_path(parts), "method", node.attr, _unparse(node))
+    return missing
 
 
 def _eval_binop(node: ast.BinOp, namespace: _Namespace) -> Any:
@@ -1439,14 +1455,16 @@ def _list_index(segment: str | ListOp) -> int | None:
     Only the spelling ``str()`` gives an integer is an index — ``0``, ``1``, ``-1`` — so a
     string subscript ``['1']`` reads what the integer subscript ``[1]`` does, and nothing
     else :func:`int` happens to parse does: ``+1``, `` 1``, ``1_0``, ``01``, ``-0`` or a
-    non-ASCII digit spell no index. The one answer for the walk (:func:`_step`) and for the
-    spelling of a path (:func:`_segment_link`), which writes an index as the integer.
+    non-ASCII digit spell no index. Only text spells one: a pending list op names no element,
+    and a dict key the data holds as no text (``0``, a date) is named as itself. The one answer
+    for the walk (:func:`_step`) and for the spelling of a path (:func:`_segment_link`), which
+    writes an index as the integer.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
     """
-    if isinstance(segment, ListOp):
-        return None  # a pending list op names no element
+    if not isinstance(segment, str):
+        return None
     try:
         index = int(segment)
     except ValueError:
@@ -1454,22 +1472,40 @@ def _list_index(segment: str | ListOp) -> int | None:
     return index if str(index) == segment else None
 
 
-def _step(node: Any, part: str | ListOp, path: Sequence[str | ListOp]) -> tuple[str | ListOp, Any]:
+def _step(
+    node: Any, part: str | ListOp, path: Sequence[str | ListOp], *, spelled: bool = False
+) -> tuple[str | ListOp, Any]:
     """Take the segment *part* of *path* down from *node*: return how the scan names it, and what it reaches.
 
     The one walk over the data: evaluation reads a value with it (:func:`_get_nested`) and
     the dependency graph names a reference with it (:func:`_scan_path`), so a reference can
     never depend on one node and read another. A dict key names itself; a list index is
     named by its position, as :func:`_collect_expressions` names an element, so ``-1`` of a
-    two-item list is ``1``; only a segment :func:`_list_index` reads is one.
+    two-item list is ``1``; only a segment :func:`_list_index` reads is one. A segment it
+    reads reaches a dict key equal to that integer, too, where no key is the text itself:
+    ``[0]`` and ``['0']`` reach YAML's ``{0: x}``, named by the integer as the scan names it.
+
+    With *spelled*, *part* is a segment an expression spells rather than a position the scan
+    names, and a dict holding both the text and a key equal to its integer is refused: the
+    spelling could name either entry. A position names its key exactly, so it never is.
 
     Raises:
-        MissingReferenceError: If *part* reaches nothing from *node*; the message names *path*.
+        MissingReferenceError: If *part* reaches nothing from *node*, or, *spelled*, two
+            entries; the message names *path*.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#spelling-a-path
     """
     if isinstance(node, dict):
-        if part not in node:
-            raise MissingReferenceError.field_not_found(_spell_path(path))
-        return part, node[part]
+        index = _list_index(part)
+        if part in node:
+            if spelled and index is not None and index in node:
+                other = next(key for key in node if key == index and not isinstance(key, str))
+                raise MissingReferenceError.ambiguous_key(_spell_path(path), cast("str", part), other)
+            return part, node[part]
+        if index is not None and index in node:
+            return cast("str", index), node[index]  # a key no string spells, named as the scan names it
+        raise MissingReferenceError.field_not_found(_spell_path(path))
     if isinstance(node, list | tuple):
         idx = _list_index(part)
         if idx is None:

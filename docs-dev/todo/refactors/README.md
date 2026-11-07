@@ -26,7 +26,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-98 — `_typed_read._read` and `_serialize.written_form` are one walk spelled twice](REF-98-typed_read-read-and-written-form-are-one-walk.md) | trivial |  | S | low | none |
 | [REF-101 — `_coerce_type_ref` repeats the class-tag import step for step](REF-101-coerce-type-ref-repeats-the-class-tag-import.md) | trivial |  | S | low | none |
 | [REF-102 — `make_parser` tells a merge option from a parser keyword by its own test](REF-102-make-parser-tells-a-merge-option-by-its-own-test.md) | trivial |  | S | low | none |
-| [REF-103 — `_pending_prefixes` walks the data by its own steps rather than `_step`](REF-103-pending-prefixes-walks-the-data-without-step.md) | trivial |  | S | medium | none |
 | [REF-104 — The locals layer reading combines a list item and its patch shallowly](REF-104-the-locals-layer-reading-combines-an-item-and-its-patch-shallowly.md) | trivial |  | S | medium | none |
 | [REF-109 — A message names the root position by hand eleven times](REF-109-a-message-names-the-root-position-by-hand.md) | trivial |  | S | low | none |
 | [REF-113 — A format's `holds` predicate restates its native types](REF-113-a-formats-holds-predicate-restates-its-native-types.md) | trivial |  | S | low | none |
@@ -36,6 +35,7 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-117 — Two depth bounds share a name, and two rules elide a long path](REF-117-two-depth-bounds-share-a-name-and-two-rules-elide-a-path.md) | trivial |  | S | low | none |
 | [REF-119 — Two timing-bound tests fail under a loaded machine](REF-119-two-timing-bound-tests-fail-under-a-loaded-machine.md) | trivial |  | S | low | none |
 | [REF-120 — The append mount naming no field is refused in two spellings](REF-120-the-append-mount-naming-no-field-is-refused-in-two-spellings.md) | trivial |  | S | low | none |
+| [REF-122 — A position holds dict keys its alias types as text](REF-122-a-position-holds-dict-keys-its-alias-types-as-text.md) | trivial |  | S | low | none |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | trivial |  | M | high | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | trivial |  | M | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | trivial |  | M | medium | none |

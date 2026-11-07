@@ -85,6 +85,12 @@ The scan names a list element by its position (`xs.1`), while a reference spells
 `_scan_path` walks the reference down the data with `_step`, the same step `_get_nested` reads a value with, so the graph depends on exactly the node evaluation will reach: `xs[-1]` of a two-item list is `xs.1`.
 The data's shape is fixed by then, because resolution only ever replaces a string leaf.
 The walk stops where the data stops answering — a missing key, or the inside of an expression not yet resolved — and keeps the rest as written, which the "above it" rule covers: `${xs[-1]}` with `xs: ${ys}` depends on `xs`, whose length is not known yet.
+An integer key is named the same way: `${m[0]}` on a YAML `{0: x}` reaches the key by its digits and is `("m", 0)`, the scan's own name for it ([values and references](values-and-references.md#spelling-a-path)).
+
+**No read reaches what the graph did not order.**
+Evaluation reads only along the path the graph named, or indexes a value the walk stopped at that is no dict or list, a string or an object, which holds no expression of its own and is ordered itself when it is one.
+A miss inside a dict or a list indexes nothing, so no base is read whole with expressions in it that the reference never waited for (BUG-311).
+Until then a reference to an integer key reached it only through the subscript fallback, which read the base whole: `${a[0].p}` read a sibling `p: ${x}` as the text `'${x}'` when it sorted first, and `1` when it did not.
 
 **A reference to an ancestor from inside it is a cycle.**
 `svc.a: ${svc}` reads `svc`, which holds `svc.a` itself, so `svc.a` depends on itself and `CircularReferenceError` names it.

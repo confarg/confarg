@@ -103,7 +103,7 @@ Validation sees syntax, not data; the receiver may be a path, a subscript or a c
 
 ## A dot reads a key, never an attribute
 
-`.x` is the constant subscript `['x']`, on a path and off one: when no config path answers `a.b`, evaluation indexes the evaluated `a` by the key `"b"`, exactly as it would for `a['b']`.
+`.x` is the constant subscript `['x']`, on a path and off one: when no config path answers `a.b` and `a` is no dict or list, evaluation indexes the evaluated `a` by the key `"b"`, exactly as it would for `a['b']`.
 `_expressions._eval_path_or` is the one evaluator of both nodes, so a dot and a subscript cannot disagree on what they reach:
 
 | Expression | Value |
@@ -152,7 +152,7 @@ A dot run is resolved by `_AnchorResolver` before evaluation, as for any referen
 At a file's top level, `key(.)` names the key the file is mounted under: that is the name of the mount point, not a value outside the file.
 
 Two positions have no key, and are refused at evaluation with an `ExpressionEvalError`: the configuration root (`${key(::)}`, or a dot run that climbs to it), and an item a pending list op holds (`xs.__append__.0`), whose index is only known once the op applies: `build()` applies most before resolution, so only an op no type settles as a list, or one carried over an expression, still holds its items there ([values and references](values-and-references.md#a-pending-list-op-is-read-as-its-list)).
-An integer key (a tagged YAML one, or a caller's) answers to the integer subscript, as a read falls back on it ([values and references](values-and-references.md#spelling-a-path)).
+An integer key (a tagged YAML one, or a caller's) is reached by its digits, as a read reaches it, and is returned as the integer: `${key(m[0])}` is `0` ([values and references](values-and-references.md#spelling-a-path)).
 
 `key` is a function only as a callee ([above](#a-function-is-named-only-by-a-call)): `${key}` reads a key named `key`.
 
