@@ -10,6 +10,7 @@ import dataclasses
 import enum
 import inspect
 import threading
+from collections.abc import Callable  # noqa: TC003  # a dataclass annotation confarg resolves at runtime
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -407,6 +408,167 @@ class TestAnExpressionReadsATypedLeaf:
     def test_a_value_the_type_refuses_reads_as_written(self) -> None:
         """No coercion error at resolution: the text is left for construction to refuse."""
         assert confarg.resolve(_Typed, {"colour": "purple", "out": "${colour}"})["out"] == "purple"
+
+
+@dataclasses.dataclass
+class _Spot:
+    """A registered leaf, built from one value or, under a class key, from its fields."""
+
+    x: int = 0
+
+
+@dataclasses.dataclass
+class _SubSpot(_Spot):
+    """An unregistered subclass of a registered leaf, so a struct."""
+
+    y: int = 0
+
+
+@dataclasses.dataclass
+class _SpotBase:
+    """A struct a registered leaf subclasses."""
+
+    x: int = 0
+
+
+@dataclasses.dataclass
+class _LeafSpot(_SpotBase):
+    """A registered leaf subclassing a struct."""
+
+
+@dataclasses.dataclass
+class _Dial:
+    """A registered leaf whose instances are callable."""
+
+    x: int = 0
+
+    def __call__(self) -> int:
+        return self.x
+
+
+@dataclasses.dataclass
+class _Positive:
+    """A registered leaf whose constructor refuses a negative x with its own exception."""
+
+    x: int = 0
+
+    def __post_init__(self) -> None:
+        if self.x < 0:
+            msg = "x must be >= 0"
+            raise ValueError(msg)
+
+
+@dataclasses.dataclass
+class _Elsewhere:
+    """A struct beside a registered leaf in a union."""
+
+    n: int = 0
+
+
+_SPOT_CALLS: list[int] = []
+
+
+def _spot_x() -> int:
+    """Return the x of a spot, counting each call."""
+    _SPOT_CALLS.append(1)
+    return 3
+
+
+@dataclasses.dataclass
+class _Tagged:
+    """Every position a class key builds a registered leaf at, and the fields an expression writes it to."""
+
+    origin: _Spot | None = None
+    plain: _Spot = dataclasses.field(default_factory=_Spot)
+    either: _Spot | _Elsewhere | None = None
+    spots: list[_Spot] = dataclasses.field(default_factory=list)
+    base: _SpotBase | None = None
+    anything: Any = None
+    dial: Callable[[], int] | None = None
+    positive: _Positive | None = None
+    out: Any = None
+    label: str = ""
+    same: bool = False
+
+
+def _tag(cls: type, **fields: Any) -> dict[str, Any]:
+    """Return the dict whose class key names *cls*, built from *fields*."""
+    return {"class": f"{cls.__module__}.{cls.__qualname__}", **fields}
+
+
+class TestAnExpressionReadsATaggedLeaf:
+    """A registered leaf written as a dict whose class key names it reads as the object it builds (BUG-283)."""
+
+    @pytest.fixture(autouse=True)
+    def _register(self, leaf_registry: None) -> None:
+        confarg.register_leaf_type(_Spot, lambda v: _Spot(int(v)), serialize=lambda s: str(s.x))
+        confarg.register_leaf_type(_LeafSpot, lambda v: _LeafSpot(int(v)), serialize=lambda s: str(s.x))
+        confarg.register_leaf_type(_Dial, lambda v: _Dial(int(v)), serialize=lambda d: str(d.x))
+        confarg.register_leaf_type(_Positive, lambda v: _Positive(int(v)), serialize=lambda p: str(p.x))
+
+    @pytest.mark.parametrize(
+        ("raw", "reference"),
+        [
+            ({"origin": _tag(_Spot, x=3)}, "origin"),
+            ({"plain": _tag(_Spot, x=3)}, "plain"),
+            ({"either": _tag(_Spot, x=3)}, "either"),
+            ({"spots": [_tag(_Spot, x=3), "4"]}, "spots[0]"),
+            ({"base": _tag(_LeafSpot, x=3)}, "base"),
+            ({"anything": _tag(_LeafSpot, x=3)}, "anything"),
+        ],
+        ids=["optional", "leaf", "union", "list-item", "struct-base", "any"],
+    )
+    def test_an_interpolation_writes_the_dump_form_of_the_leaf_the_tag_builds(
+        self, raw: dict[str, Any], reference: str
+    ) -> None:
+        """Wherever the class key names a registered leaf, the reference reads what construction builds there."""
+        assert confarg.build(_Tagged, {**raw, "label": f"at ${{{reference}}}"}).label == "at 3"
+
+    def test_a_tagged_leaf_compares_with_the_same_leaf_spelled_by_its_value(self) -> None:
+        """``${origin == plain}`` is the built ``origin == plain``, one spelled by its fields, one by its value."""
+        assert confarg.build(_Tagged, {"origin": _tag(_Spot, x=3), "plain": "3", "same": "${origin == plain}"}).same
+
+    def test_a_whole_value_reference_leaves_the_dump_form(self) -> None:
+        """A pure reference leaves what the leaf dumps as, which an ``Any`` holds as text."""
+        raw = {"origin": _tag(_Spot, x=3), "plain": "${origin}", "out": "${origin}", "spots": ["${origin}"]}
+        assert confarg.resolve(_Tagged, raw) == {**raw, "plain": "3", "out": "3", "spots": ["3"]}
+        built = confarg.build(_Tagged, raw)
+        assert (built.plain, built.out, built.spots) == (_Spot(3), "3", [_Spot(3)])
+
+    def test_a_field_below_the_tag_reads_as_the_member(self) -> None:
+        """``${origin.x}`` reads the field the tagged dict holds, which is the built ``origin.x``."""
+        assert confarg.build(_Tagged, {"origin": _tag(_Spot, x=3), "same": "${origin.x == 3}"}).same
+
+    def test_an_unregistered_subclass_reads_as_its_dict(self) -> None:
+        """A class key naming a subclass no registration reads builds a struct, which reads as its dict."""
+        sub = _tag(_SubSpot, x=3, y=4)
+        built = confarg.build(_Tagged, {"origin": sub, "plain": "${origin}", "label": "at ${origin}"})
+        assert built.plain == _SubSpot(3, 4)
+        assert built.label == f"at {sub}"
+
+    def test_a_value_the_tag_refuses_reads_as_written(self) -> None:
+        """No coercion error at resolution: the dict is left for construction to refuse."""
+        refused = _tag(_Spot, x="zz")
+        assert confarg.resolve(_Tagged, {"origin": refused, "out": "${origin}"})["out"] == refused
+
+    def test_a_value_the_constructor_refuses_reads_as_written(self) -> None:
+        """The constructor's own exception is construction's to raise, not the reading's."""
+        refused = _tag(_Positive, x=-1)
+        assert confarg.resolve(_Tagged, {"positive": refused, "out": "${positive}"})["out"] == refused
+        with pytest.raises(ValueError, match="x must be >= 0"):
+            confarg.build(_Tagged, {"positive": refused})
+
+    def test_a_tagged_leaf_holding_a_call_reads_as_written(self) -> None:
+        """The reading runs no ``call:``: an expression cannot read a call's result before construction."""
+        _SPOT_CALLS.clear()
+        held = _tag(_Spot, x={"call": f"{__name__}._spot_x"})
+        built = confarg.build(_Tagged, {"origin": held, "label": "at ${origin}"})
+        assert (built.origin, built.label, len(_SPOT_CALLS)) == (_Spot(3), f"at {held}", 1)
+
+    def test_a_callable_position_reads_the_leaf_it_builds(self) -> None:
+        """A class key at a Callable builds the registered leaf it names, which the reference reads."""
+        built = confarg.build(_Tagged, {"dial": _tag(_Dial, x=3), "label": "at ${dial}"})
+        assert (built.dial, built.label) == (_Dial(3), "at 3")
 
 
 @dataclasses.dataclass

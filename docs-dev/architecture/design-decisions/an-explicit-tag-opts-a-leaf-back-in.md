@@ -22,6 +22,8 @@ The adapters' registration now mirrors the walk, argv-scanned, and their CLI cha
 Argv-scanned rather than static, unlike the whole-value flag, is the maintainer's call: a registered leaf's ordinary spelling is its scalar, and one `--help` line per `__init__` parameter would advertise the escape hatch at the expense of the syntax actually used — the same ground a typed call's opener is registered on.
 A flag naming no tag and no parameter stays unregistered, so the framework's rejection stands in for vanilla's `no_such_field`.
 
+An expression reads the tagged spelling as the leaf it builds, as it reads the scalar one ([a tagged leaf reads as the leaf it builds](../expressions/values-and-references.md#a-tagged-leaf-reads-as-the-leaf-it-builds)); until BUG-283 it walked the dict as a struct's fields, so the hatch interpolated as its dict's text.
+
 An untagged dict stays an error, and the message says how to ask for fields.
 The rejected alternative — let *any* dict rebuild a registered leaf from its fields, exactly as before registration — keeps more old configurations working, but it leaves registration meaning nothing for dict-shaped data and re-opens the introspection accident [a registered leaf is never a struct variant](registered-leaf-is-never-a-struct-variant.md#a-registered-leaf-is-never-a-struct-variant) closes: the maintainer's call is that the tag is the opt-in, and nothing else is.
 
