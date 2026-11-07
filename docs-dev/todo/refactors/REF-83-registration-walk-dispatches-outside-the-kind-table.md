@@ -19,3 +19,6 @@ That is harmless only while the predicates stay disjoint, which is exactly what 
 The gap has already bitten once: registration unwrapped `Final` at its own site, `_type_kind` did not, and a `Final[Struct]` field registered sub-flags that the walk then refused (fixed by making `_resolve_type` unwrap `Final`).
 Fix direction: `match _type_kind(core)` in `_specs_for_field`, with `TAGGABLE_LEAF` registering as a leaf, as it does today.
 Then correct the note, which counts four walks.
+
+The union branch grew a fourth question with BUG-250: beside the concrete, sequence and leaf triage it asks `_holds_a_callable` to list a Callable variant's openers (`_opener_specs`).
+A `match _type_kind(...)` dispatch should keep that one question rather than another branch of its own.
