@@ -355,6 +355,24 @@ class _Typed:
     same: bool = False
     real: float = 0.0
     real_or_text: float | str = ""
+    literal: Path = Path("${HOME}")
+
+
+@dataclasses.dataclass(frozen=True)
+class _Rank:
+    """A registered leaf whose coercion looks its text up, failing with a ``KeyError`` on any other."""
+
+    rank: int
+
+
+_RANKS = {"low": _Rank(1)}
+
+
+@dataclasses.dataclass
+class _Ranked:
+    """Registered leaves under keys a path cannot spell, so an expression reads them by indexing their dict."""
+
+    ranks: dict[int | str, _Rank] = dataclasses.field(default_factory=dict)
 
 
 class TestAnExpressionReadsATypedLeaf:
@@ -408,6 +426,32 @@ class TestAnExpressionReadsATypedLeaf:
     def test_a_value_the_type_refuses_reads_as_written(self) -> None:
         """No coercion error at resolution: the text is left for construction to refuse."""
         assert confarg.resolve(_Typed, {"colour": "purple", "out": "${colour}"})["out"] == "purple"
+
+    @pytest.mark.parametrize(
+        "raw",
+        [{"opt": "$${HOME}"}, {"opt": "${'$'}{HOME}"}, {"either": "$${HOME}"}],
+        ids=["escape", "an-expression-result", "union"],
+    )
+    def test_a_literal_expression_reads_as_the_object(self, raw: dict[str, Any]) -> None:
+        """Text spelling ``${...}`` that is no pending expression reads as the object construction builds (BUG-310).
+
+        The escape resolves to the literal ``${HOME}``, which builds ``Path('${HOME}')``, the
+        object the default ``literal`` holds; an expression that computes the same text, and a
+        union's leaf, read the same way.
+        """
+        key = next(iter(raw))
+        built = confarg.build(_Typed, {**raw, "out": f"${{{key} / 'y'}}", "same": f"${{{key} == literal}}"})
+        assert (built.out, built.same) == ("${HOME}/y", True)
+
+    def test_a_pending_expression_reads_as_written(self, leaf_registry: None) -> None:
+        """A read that indexes its base holds the reading expression itself, which no coercion meets (BUG-310).
+
+        ``ranks.0`` spells no key of the data, so ``${ranks[0]}`` indexes ``ranks`` read whole,
+        ``alias`` included while it resolves: its text reaches no coercion, which would fail on it.
+        """
+        confarg.register_leaf_type(_Rank, lambda v: _RANKS[v], serialize=lambda _: "low")
+        built = confarg.build(_Ranked, {"ranks": {0: "low", "alias": "${ranks[0]}"}})
+        assert built.ranks == {0: _Rank(1), "alias": _Rank(1)}
 
 
 @dataclasses.dataclass
@@ -465,6 +509,19 @@ class _Elsewhere:
     n: int = 0
 
 
+_NOTES_BUILT: list[str] = []
+
+
+@dataclasses.dataclass
+class _Note:
+    """A registered leaf built from its text, recording each text it is built from."""
+
+    text: str = ""
+
+    def __post_init__(self) -> None:
+        _NOTES_BUILT.append(self.text)
+
+
 _SPOT_CALLS: list[int] = []
 
 
@@ -486,6 +543,8 @@ class _Tagged:
     anything: Any = None
     dial: Callable[[], int] | None = None
     positive: _Positive | None = None
+    note: _Note | None = None
+    notes: dict[int | str, _Note] = dataclasses.field(default_factory=dict)
     out: Any = None
     label: str = ""
     same: bool = False
@@ -505,6 +564,7 @@ class TestAnExpressionReadsATaggedLeaf:
         confarg.register_leaf_type(_LeafSpot, lambda v: _LeafSpot(int(v)), serialize=lambda s: str(s.x))
         confarg.register_leaf_type(_Dial, lambda v: _Dial(int(v)), serialize=lambda d: str(d.x))
         confarg.register_leaf_type(_Positive, lambda v: _Positive(int(v)), serialize=lambda p: str(p.x))
+        confarg.register_leaf_type(_Note, _Note, serialize=lambda n: n.text)
 
     @pytest.mark.parametrize(
         ("raw", "reference"),
@@ -564,6 +624,22 @@ class TestAnExpressionReadsATaggedLeaf:
         held = _tag(_Spot, x={"call": f"{__name__}._spot_x"})
         built = confarg.build(_Tagged, {"origin": held, "label": "at ${origin}"})
         assert (built.origin, built.label, len(_SPOT_CALLS)) == (_Spot(3), f"at {held}", 1)
+
+    def test_a_literal_expression_below_the_tag_reads_as_the_leaf_it_builds(self) -> None:
+        """The literal ``${n}`` an escape resolves to is a field's text: the tagged dict reads as its leaf (BUG-310)."""
+        built = confarg.build(_Tagged, {"note": _tag(_Note, text="$${n}"), "label": "at ${note}"})
+        assert (built.note, built.label) == (_Note("${n}"), "at ${n}")
+
+    def test_a_tagged_leaf_holding_a_pending_expression_reads_as_written(self) -> None:
+        """The reading builds no leaf from an expression yet to resolve, which a read indexing its base meets (BUG-310).
+
+        ``notes.0`` spells no key of the data, so ``${notes[0]}`` indexes ``notes`` read whole,
+        ``t`` included while the expression it holds resolves.
+        """
+        _NOTES_BUILT.clear()
+        built = confarg.build(_Tagged, {"notes": {0: "a", "t": _tag(_Note, text="${notes[0]}")}})
+        assert built.notes == {0: _Note("a"), "t": _Note("a")}
+        assert not [text for text in _NOTES_BUILT if "${" in text]
 
     def test_a_callable_position_reads_the_leaf_it_builds(self) -> None:
         """A class key at a Callable builds the registered leaf it names, which the reference reads."""

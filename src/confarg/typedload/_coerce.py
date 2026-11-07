@@ -930,11 +930,14 @@ def read_as_object(ft: Any, value: Any) -> Any:
     ``_typed_read`` asks :func:`~confarg.typedload._construct.read_union_leaf` for. The reading
     never warns: construction warns of what it builds.
 
+    *value* has resolved, so text spelling ``${...}`` is a literal, which reads as construction
+    builds it: ``_typed_read`` reads an expression yet to resolve as written, by its position.
+
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
     tp = _certain_leaf(ft)
-    if tp is None or not (_reads_as_object(tp) or _is_eagerly_coercible(tp)) or contains_expression(value):
+    if tp is None or not (_reads_as_object(tp) or _is_eagerly_coercible(tp)):
         return value
     try:
         with warnings.catch_warnings():

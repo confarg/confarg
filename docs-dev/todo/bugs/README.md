@@ -9,8 +9,8 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-310 — An expression reads an escaped literal at a typed leaf as text](BUG-310-an-expression-reads-an-escaped-literal-at-a-typed-leaf-as-text.md) | critical |  | S | medium | behavior | BUG-246 |
 | [BUG-309 — `dump()` writes a registered leaf's unregistered subclass by its parent's serializer, silently](BUG-309-dump-writes-a-registered-leafs-subclass-by-the-parents-serializer.md) | critical |  | M | medium | behavior | BUG-11 |
+| [BUG-311 — A subscript indexing its base reads a sibling expression before it resolves](BUG-311-a-subscript-indexing-its-base-reads-a-sibling-expression-before-it-resolves.md) | critical |  | M | high | behavior | BUG-121 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |

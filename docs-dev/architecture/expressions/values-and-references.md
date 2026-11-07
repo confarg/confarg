@@ -26,9 +26,13 @@ The merged dict holds an `Enum` or registered leaf as it was written, on every c
 
 - **The reader** (`_typed_read.TypedReading`) steps from the root to the position read by the typed merge's own walk (`TypedAt`, which reads the tag or spec each node holds), and coerces the value there with `_coerce.read_as_object` where that type, an optional included, is one `Enum`, registered or `Literal`-over-`Enum` type, or a number, a bool or `None`: a file's `1` at a `float` reads `1.0`, as construction builds it (BUG-154).
   A union of several variants reads as the variant construction picks (`_construct.read_union_leaf`), every variant but a Callable tried: `str | Color` reads `red` as the member, `hello` as written, and `int | str` reads the token `5` as the number it builds.
-  `Any` and a base with untagged subclasses read as written, as do a value the type refuses and a pending op's items.
+  `Any` and a base with untagged subclasses read as written, as do a value the type refuses, a pending op's items and an expression yet to resolve.
   A dict whose class key names a registered leaf reads as the leaf construction builds from it, wherever construction takes the tag — at the leaf, a struct it subclasses, a union, an `Any` or a Callable — so `{class: pkg.Point, x: 3}` reads as `"3"` does (BUG-283); [a tagged leaf reads as the leaf it builds](#a-tagged-leaf-reads-as-the-leaf-it-builds) says where it does not.
   It applies to every read, a source's value, an earlier expression's result and each leaf of a subtree alike, so an expression never sees one leaf as text and another as the object.
+- **A value is pending by its position, never by its text.**
+  `resolve_expressions` hands the reader the positions whose expression has yet to resolve (`_Namespace.pending`), which read as written; every other value has resolved, so `$${HOME}`, resolved to the literal `${HOME}`, reads as `Path('${HOME}')` at a `Path` field, as construction builds it, and so does the same text an expression computes (BUG-310).
+  A read meets a pending position where the dependency graph did not order it: a subscript indexing its base (`${m[0]}` on an integer key, [spelling a path](#spelling-a-path)) reads the base whole, the reading expression itself included, and no coercer or constructor runs on that text.
+  `contains_expression`, the predicate of every gate before `build()` ([deferral rule](deferral-rule.md#deferral-rule)), matches the literal as well as the expression, so it cannot tell them apart once resolution has started; until BUG-310 the reader asked it, and read every literal as text.
 - **The writer** (`_serialize.written_form`) gives what an expression leaves behind — a pure result, an interpolated piece, a computed subscript key — in the form `dump()` writes: an `Enum` member's value, a registered type's serializer.
   `resolve()` rewrites only what expressions produced, so a source's `RED` comes out as `RED`.
 - **Without them**, `resolve_expressions` reads and writes values as they are: the engine knows no type ([resolution](resolution.md#resolution-algorithm)).
@@ -52,7 +56,8 @@ The reader (`_typed_read._read_tagged_leaf`) reads such a dict as what `construc
 - **What an expression leaves is the dump form**, as for any typed leaf: a pure `${origin}` leaves `'3'`, which an `Any` holds as text; the tagged spelling no longer escapes that cost.
   Rejected: writing back the tagged dict a leaf was read from, which needs the reader to hand the writer its source spelling, and writes one object two ways.
 - **A dict construction refuses reads as written**, the constructor's own exception included, for construction to raise.
-- **A dict holding what is yet to be computed reads as written**: an expression, or a `call:` or `bind:` at any depth below the tag (`_typed_read._computes`).
+- **A dict holding what is yet to be computed reads as written**: an expression yet to resolve, told by its position, or a `call:` or `bind:` at any depth below the tag (`_typed_read._computes`).
+  The literal an escape resolves to is a field's text, so `{class: pkg.Note, text: $${n}}` reads as the `Note('${n}')` it builds (BUG-310).
   An expression cannot read a call's result before construction ([calls and expressions share one graph](resolution.md#calls-and-expressions-share-one-graph)), and reading through construction would run the call once more per read; FEAT-35 lifts both together.
 - **A field below the tag** reads as the member the tagged dict holds: `${origin.x}` is the built `origin.x`.
 
