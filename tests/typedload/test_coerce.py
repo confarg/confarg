@@ -780,7 +780,7 @@ class TestTypeKind:
             (Callable[..., int], _TypeKind.CALLABLE),
             (Path, _TypeKind.LEAF),
             (UUID, _TypeKind.TAGGABLE_LEAF),
-            (Decimal, _TypeKind.TAGGABLE_LEAF),
+            (Decimal, _TypeKind.LEAF),
             (_Ticket, _TypeKind.STRUCT),
             (Literal["a"], _TypeKind.LEAF),
             (type[int], _TypeKind.LEAF),

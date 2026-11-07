@@ -1576,24 +1576,32 @@ def _constructor_parameters(tp: type) -> tuple[list[inspect.Parameter], Any]:
     """Return the parameters calling class *tp* takes, and the function that declares them.
 
     ``__init__``'s when the class does not inherit it from ``object``, else ``__new__``'s
-    when it does not inherit that one, else none: a class taking nothing.
+    when it does not inherit that one, else none: a class taking nothing. Each is read as
+    itself, past any metaclass ``__call__``, its first parameter dropped. A ``__new__``
+    written in C reads no signature.
 
     Raises:
-        ValueError: If the signature cannot be read.
+        ValueError: If the signature cannot be read, or the class is built by a C ``__new__``.
         TypeError: If the signature cannot be read.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#which-signature-is-read
+        docs-dev/architecture/design-decisions/a-structs-members-are-its-constructors-parameters.md#a-class-built-by-a-c-__new__-reads-no-signature
     """
     if tp.__init__ is not object.__init__:
-        params = list(inspect.signature(tp.__init__).parameters.values())
-        takes_self = bool(params) and params[0].kind in _POSITIONAL_KINDS
-        return (params[1:] if takes_self else params), tp.__init__
-    if tp.__new__ is not object.__new__:
-        # The class's own signature, not __new__'s: a builtin __new__ reads as (*args, **kwargs),
-        # where the class's text signature names its parameters (Decimal, Fraction).
-        return list(inspect.signature(tp).parameters.values()), tp.__new__
-    return [], None
+        constructor = tp.__init__
+    elif tp.__new__ is not object.__new__:
+        constructor = tp.__new__
+        # A C __new__ reads only through the class's text signature, unannotated, which CPython
+        # adds from one release to the next (datetime's on 3.15).
+        if isinstance(constructor, types.BuiltinFunctionType):
+            msg = f"{tp.__qualname__} is built by a __new__ written in C, whose signature is not read"
+            raise ValueError(msg)
+    else:
+        return [], None
+    params = list(inspect.signature(constructor).parameters.values())
+    takes_instance = bool(params) and params[0].kind in _POSITIONAL_KINDS
+    return (params[1:] if takes_instance else params), constructor
 
 
 @_per_class_cache

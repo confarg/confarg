@@ -9,6 +9,7 @@ So the rule splits by who asked.
 A registered leaf is opaque to every **implicit** decision: struct dispatch on a bare dict, the build from `{}` of a missing struct field, structural union disambiguation, tag emission on the way out ([`_is_struct_variant`](../invariants.md#delegate-to-the-canonical-function)).
 An **explicit** tag naming its class asks for field construction in so many words and gets it (`_is_taggable_leaf`).
 Both halves meet in `_construct_scalar`, the canonical single-value constructor, so the tag works wherever a leaf is addressed — a plain field, a list element, a union variant — and not just where the bug was noticed.
+A leaf that is no struct has no fields for a tag to name: one built by a `__new__` written in C, `Decimal` and the date and time types, is read from one value on every interpreter ([a class built by a C `__new__` reads no signature](a-structs-members-are-its-constructors-parameters.md#a-class-built-by-a-c-__new__-reads-no-signature)).
 
 It reaches every *channel* too, which took a second step.
 Construction saw the tag wherever a dict arrived, but on the CLI no dict arrived: the whole-value predicate asked `_is_dc`, so `--id '{"class": "uuid.UUID", …}'` stayed a string and the JSON text was coerced into a leaf, while the same blob in a file or an environment variable opened the class.
