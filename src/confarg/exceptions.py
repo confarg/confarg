@@ -705,6 +705,21 @@ class TypeCoercionError(ConfargError):
         )
 
     @classmethod
+    def keys_read_as_one(cls, what: str, path: str, keys: list[Any], reading: str) -> TypeCoercionError:
+        """Return the error for a value of *what* holding *keys*, two or more, that it reads as one key.
+
+        *reading* says what each of them is to the type (``read as the key 0``, ``name the field
+        x``); every key is listed by its ``repr``, in the value's order, so the text ``'0'`` and
+        the integer ``0`` read apart.
+
+        Dev Notes:
+            docs-dev/architecture/pipeline/deep-merge.md#one-value-holds-each-key-once
+        """
+        listed = f"{', '.join(map(repr, keys[:-1]))} and {keys[-1]!r}"
+        reason = f"keys {listed} {'both' if len(keys) == 2 else 'all'} {reading}"  # noqa: PLR2004  # a pair
+        return cls._refusal(f"Cannot construct {what} at '{path}': {reason}", reason=reason)
+
+    @classmethod
     def unknown_fields(cls, names: Any, what: str, path: str, valid: list[str]) -> TypeCoercionError:
         """Return the error for keys a struct or a namedtuple declares no field for.
 

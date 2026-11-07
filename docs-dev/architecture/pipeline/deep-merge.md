@@ -101,6 +101,32 @@ The alternatives weighed:
 
 Precedent: pydantic validates a dict's keys to the key type, a later duplicate winning; Python keeps the first key object of two equal keys.
 
+## One value holds each key once
+
+A value holding two keys its type reads as one key is refused, naming every spelling: `{'0': a, 0: b}` under `dict[int, str]` is `Cannot construct dict[int, str] at 'm': keys '0' and 0 both read as the key 0` (BUG-312).
+The identity is the one above, so the rule reaches every kind the merge reads keys by: a key type (`'1'` and `'1.0'` of a `dict[float, V]`, `RED` and `red` of an enum key), a fixed-length position (`{x: 1, 0: 2}` for a namedtuple, `keys 'x' and '0' both name the field x`), and JSON's spelling on an untyped node (`'1'` beside YAML's `!!int 1` on an `Any`, `both read as the key "1"`).
+It holds whatever the two values are, equal ones included: the keys are checked before any value is built.
+
+Such a value comes from one source handing it whole: a caller's dict, a file's mapping (`0:` beside `!!int 0:`, `0:` beside `00:`, a key YAML's `<<` merges in beside an own key spelled otherwise), a `{…}` value on argv or in the environment.
+Two flags or two variables are two writes, and the later writes over the earlier spelling as above (`--m.0 a --m.00 b` builds `{0: 'b'}`).
+Until BUG-312 construction built such a dict by a comprehension, the last spelling winning, and the merge did the same wherever a layer lay below the dict, a non-empty default included: `_deep_merge` indexed each key of the override as it wrote it, so the second spelling met the first.
+Neither said a value was dropped.
+
+Construction is the one place it is refused (`typedload._construct._refuse_keys_read_as_one`): `_construct_dict` files a dict's keys by `MergeAt.key_identity` (`_merge._key_index`), and the readers of a fixed-length dict, `_indexed_dict_to_positions` and `_lay_patch_over_positions`, by `_fixed_position`.
+The merge carries both spellings to it: keys of one override that are one key meet nothing in `_deep_merge`, each written as the source spelled it over every base key of theirs, so `merge()` holds what the source wrote and `build()` names the dict by its whole path.
+A key that does not coerce is refused as such first, and a union's variant that refuses the value leaves it to the next: `{'0': a, '00': b}` builds as the `dict[str, str]` of `dict[int, str] | dict[str, str]`, where the two are two keys.
+An expression reading such a dict meets it first and refuses the segment as ambiguous ([spelling a path](../expressions/values-and-references.md#spelling-a-path)).
+
+Precedent: OmegaConf refuses `'0'` beside `0` when a configuration is created, ruamel.yaml and tomllib refuse a duplicate key, and YAML 1.2 calls one an error; pydantic, cattrs, `json.loads` and PyYAML keep the last.
+
+Rejected:
+
+- **Keeping the last**, as pydantic does: a configured value is dropped with no error, and which one depends on the order of a mapping no one reads as ordered.
+- **Warning and keeping the last**: the value is still dropped, and a warning is easily missed where an error stops the run.
+- **Refusing in `_deep_merge`**: its error names only the innermost key, merge errors carrying no path, and the merges the walk makes ahead of the pipeline (`_naming`, `_tags`) would raise it too.
+- **Typed nodes only**: an untyped node would keep both keys with nothing below it and lose one with a layer below.
+- **Letting a YAML merge key's own key win**: the loader cannot tell `0` from `00` without the type, so it would hand construction which pair came from a merge, for one format.
+
 ## No channel types an op
 
 The four ops are the members of `confarg.ListOp`, an enum whose `str()` is the reserved key a file writes the op with, and which no string equals.

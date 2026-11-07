@@ -27,7 +27,7 @@ from confarg._merge import (
     MergeDict,
     _deep_merge,
 )
-from confarg.exceptions import ConfargError
+from confarg.exceptions import ConfargError, TypeCoercionError
 from tests.conftest import (
     AppConfig,
     Flat,
@@ -1400,3 +1400,79 @@ class TestKeyIdentityWithinOneSource:
         _yaml(tmp_path, "d: {1: 5, 2: 6}\n", "inc.yaml")
         (tmp_path / "main.json").write_text('{"__include__": "inc.yaml", "d": {"1": {"__unset__": true}}}')
         assert confarg.load(_Keyed, files=[str(tmp_path / "main.json")], argv=[], env={}).d == {2: 6}
+
+
+@dataclass
+class _KeyedOuter:
+    svc: _Keyed = dataclasses.field(default_factory=_Keyed)
+
+
+@dataclass
+class _KeyedWithDefault:
+    d: dict[int, int] = dataclasses.field(default_factory=lambda: {5: 0})
+
+
+class TestOneValueHoldsEachKeyOnce:
+    """The merge carries two spellings of one key in one value, which construction refuses (BUG-312).
+
+    No sibling meets another, so no value is dropped whatever lies below.
+    """
+
+    @pytest.mark.parametrize(
+        ("lower", "upper", "merged"),
+        [
+            pytest.param(
+                "d: {7: 1}\n", "d: {0: 2, 00: 3}\n", {"d": {"7": 1, "0": 2, "00": 3}}, id="beside-a-lower-key"
+            ),
+            pytest.param("d: {00: 1}\n", "d: {0: 2, 00: 3}\n", {"d": {"0": 2, "00": 3}}, id="over-one-spelling"),
+        ],
+    )
+    def test_a_layer_below_keeps_both_spellings(
+        self, tmp_path: Path, lower: str, upper: str, merged: MergeDict
+    ) -> None:
+        """``merge()`` holds what the source wrote; ``load()`` refuses it."""
+        files = [_yaml(tmp_path, lower, "lower.yaml"), _yaml(tmp_path, upper, "upper.yaml")]
+        assert confarg.merge(_Keyed, files=files, argv=[], env={}) == merged
+        message = "Cannot construct dict[int, int] at 'd': keys '0' and '00' both read as the key 0"
+        with pytest.raises(TypeCoercionError, match=re.escape(message)):
+            confarg.load(_Keyed, files=files, argv=[], env={})
+
+    def test_the_refusal_names_the_whole_path(self, tmp_path: Path) -> None:
+        """Construction names the dict by its construction path."""
+        files = [_yaml(tmp_path, "svc: {d: {7: 1}}\n", "lower.yaml"), _yaml(tmp_path, "svc: {d: {0: 2, 00: 3}}\n")]
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'svc.d': keys '0' and '00'")):
+            confarg.load(_KeyedOuter, files=files, argv=[], env={})
+
+    def test_a_default_below_keeps_both_spellings(self) -> None:
+        """The default layer combines through the merge, which drops neither."""
+        with pytest.raises(TypeCoercionError, match=re.escape("keys '0' and '00' both read as the key 0")):
+            confarg.build(_KeyedWithDefault, {"d": {"0": 1, "00": 2}})
+
+    def test_an_untyped_node_reads_keys_by_their_json_spelling(self, tmp_path: Path) -> None:
+        """``'1'`` and YAML's ``!!int 1`` are one key of an ``Any``, below a layer or not."""
+        upper = _yaml(tmp_path, "a: {'1': x, !!int 1: y}\n")
+        message = """keys '1' and 1 both read as the key "1\""""
+        for files in ([upper], [_yaml(tmp_path, "a: {k: 0}\n", "lower.yaml"), upper]):
+            with pytest.raises(TypeCoercionError, match=re.escape(message)):
+                confarg.load(_Keyed, files=files, argv=[], env={})
+
+    def test_a_namedtuple_position_spelled_twice_is_refused(self, tmp_path: Path) -> None:
+        """A name and an index of one position, in one value, over a layer below."""
+        files = [_yaml(tmp_path, "pt: {x: 7}\n", "lower.yaml"), _yaml(tmp_path, "pt: {x: 1, 0: 2}\n")]
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'pt': keys 'x' and '0' both name the field x")):
+            confarg.load(_Keyed, files=files, argv=[], env={})
+
+    def test_a_yaml_merge_key_meets_an_own_spelling(self, tmp_path: Path) -> None:
+        """A key ``<<`` merges in and an own key spelled otherwise are one value's two spellings."""
+        files = [_yaml(tmp_path, "s: &b {0: 1}\nd:\n  <<: *b\n  00: 2\n")]
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'd': keys '0' and '00' both read as the key 0")):
+            confarg.load(_Keyed, files=files, argv=[], env={})
+
+    def test_a_whole_value_flag_is_one_value(self) -> None:
+        """A JSON value on argv is handed whole, unlike two flags."""
+        with pytest.raises(TypeCoercionError, match=re.escape("at 'd': keys '0' and '00' both read as the key 0")):
+            confarg.load(_Keyed, argv=["--d", '{"0": 2, "00": 3}'], env={})
+
+    def test_two_flags_are_two_writes(self) -> None:
+        """A later flag writes over an earlier spelling of its key (BUG-244), so nothing is refused."""
+        assert confarg.load(_Keyed, argv=["--d.0", "2", "--d.00", "3"], env={}).d == {0: 3}

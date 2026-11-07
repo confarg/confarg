@@ -229,7 +229,7 @@ class TestAUnionKeyType:
         ("tp", "data", "expected"),
         [
             pytest.param(dict[int | None, int], {1: 5}, {1: 5}, id="native-int"),
-            pytest.param(dict[int | None, int], {"null": 5, "none": 6}, {None: 6}, id="none-words-are-one-key"),
+            pytest.param(dict[int | None, int], {"none": 6}, {None: 6}, id="a-none-word-is-none"),
             pytest.param(dict[str | int, int], {"1": 5, "a": 6}, {1: 5, "a": 6}, id="rank-not-declaration-order"),
             pytest.param(
                 dict[_Bug261Color | str, int], {"RED": 5, "x": 6}, {_Bug261Color.RED: 5, "x": 6}, id="enum-member"
@@ -258,6 +258,124 @@ class TestAUnionKeyType:
         """A key type is a leaf construction reads, or a union of them, as ``dump()`` requires."""
         with pytest.raises(TypeCoercionError, match=re.escape("Unsupported leaf type int | tuple[int, int] at 'd'")):
             construct(dict[int | tuple[int, int], int], {"1": 1}, path=("d",))
+
+
+class _Bug312Color(enum.Enum):
+    RED = "red"
+
+
+class _Bug312Pt(NamedTuple):
+    x: int = 0
+    y: int = 0
+
+
+class TestOneValueHoldsEachKeyOnce:
+    """A value holding two keys its type reads as one key is refused, naming every spelling (BUG-312)."""
+
+    @pytest.mark.parametrize(
+        ("tp", "data", "message"),
+        [
+            pytest.param(
+                dict[int, str],
+                {"0": "t", 0: "i"},
+                "dict[int, str] at 'd': keys '0' and 0 both read as the key 0",
+                id="int",
+            ),
+            pytest.param(
+                dict[float, str],
+                {"1": "t", "1.0": "f"},
+                "dict[float, str] at 'd': keys '1' and '1.0' both read as the key 1.0",
+                id="float",
+            ),
+            pytest.param(
+                dict[_Bug312Color, str],
+                {"RED": "n", "red": "v"},
+                "dict[_Bug312Color, str] at 'd': keys 'RED' and 'red' both read as the key _Bug312Color.RED",
+                id="enum",
+            ),
+            pytest.param(
+                dict[bool, str],
+                {"true": "a", "yes": "b"},
+                "dict[bool, str] at 'd': keys 'true' and 'yes' both read as the key True",
+                id="bool",
+            ),
+            pytest.param(
+                dict[int | None, int],
+                {"null": 5, "none": 6},
+                "dict[int | None, int] at 'd': keys 'null' and 'none' both read as the key None",
+                id="union-key",
+            ),
+            pytest.param(
+                dict[float, str],
+                {"1": "a", "1.0": "b", 1.0: "c"},
+                "dict[float, str] at 'd': keys '1', '1.0' and 1.0 all read as the key 1.0",
+                id="three-spellings",
+            ),
+            pytest.param(
+                dict[int, str],
+                {"0": "a", 0: "a"},
+                "dict[int, str] at 'd': keys '0' and 0 both read as the key 0",
+                id="equal",
+            ),
+            pytest.param(
+                Any, {"1": "x", 1: "y"}, """dict[Any, Any] at 'd': keys '1' and 1 both read as the key "1\"""", id="any"
+            ),
+            pytest.param(
+                dict, {"1": "x", 1: "y"}, """dict at 'd': keys '1' and 1 both read as the key "1\"""", id="bare-dict"
+            ),
+            pytest.param(
+                _Bug312Pt, {"x": 1, "0": 2}, "_Bug312Pt at 'd': keys 'x' and '0' both name the field x", id="namedtuple"
+            ),
+            pytest.param(
+                _Bug312Pt,
+                {"0": 1, "-2": 2},
+                "_Bug312Pt at 'd': keys '0' and '-2' both name the field x",
+                id="two-indices",
+            ),
+            pytest.param(
+                tuple[int, int],
+                {"0": 1, "-2": 2},
+                "tuple[int, int] at 'd': keys '0' and '-2' both name position 0",
+                id="fixed-tuple",
+            ),
+            pytest.param(
+                _Bug312Pt,
+                {ListOp.BASE: [1, 2], "x": 9, "0": 8},
+                "_Bug312Pt at 'd': keys 'x' and '0' both name the field x",
+                id="namedtuple-patch",
+            ),
+            pytest.param(
+                tuple[int, int],
+                {ListOp.BASE: [1, 2], "0": 9, "-2": 8},
+                "tuple[int, int] at 'd': keys '0' and '-2' both name position 0",
+                id="fixed-tuple-patch",
+            ),
+        ],
+    )
+    def test_two_spellings_of_one_key_are_refused(self, tp: Any, data: dict[Any, Any], message: str) -> None:
+        """No entry is dropped for another, whatever their values."""
+        with pytest.raises(TypeCoercionError) as exc_info:
+            construct(tp, data, path=("d",))
+        assert str(exc_info.value) == f"Cannot construct {message}"
+
+    def test_distinct_positions_in_two_spellings_build(self) -> None:
+        """A name and an index naming two positions are two keys (Q-1)."""
+        assert construct(_Bug312Pt, {"0": 1, "y": 2}, path=("d",)) == _Bug312Pt(1, 2)
+
+    def test_a_union_tries_the_next_variant(self) -> None:
+        """Under ``dict[str, str]`` the two spellings are two keys, so that variant holds them."""
+        assert construct(dict[int, str] | dict[str, str], {"0": "a", "00": "b"}, path=("d",)) == {"0": "a", "00": "b"}
+
+    def test_a_union_names_the_collision_as_its_variants_reason(self) -> None:
+        """No variant holds the value, and the dict variant says why."""
+        with pytest.raises(TypeCoercionError) as exc_info:
+            construct(dict[int, str] | None, {"0": "a", 0: "b"}, path=("d",))
+        assert "keys '0' and 0 both read as the key 0" in str(exc_info.value)
+
+    def test_a_key_that_does_not_coerce_is_refused_as_such(self) -> None:
+        """Two keys the key type refuses are no collision: the first is refused as construction refuses it."""
+        with pytest.raises(TypeCoercionError, match=r"Cannot coerce .* to int at 'd'"):
+            construct(dict[int, str], {1.5: "a", "1.5": "b"}, path=("d",))
 
 
 class TestUnionSeqTokenFallback:

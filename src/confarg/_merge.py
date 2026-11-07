@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import enum
 import json
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from confarg import _defaults
@@ -680,8 +681,13 @@ def _deep_merge(
 
     # A key meets every key of the base it is one key with to the type (BUG-244).
     index = _key_index(result, at)
+    identities = {key: at.key_identity(key) for key in override}
+    twice = _spelled_twice(identities, result, index)
     for key, val in override.items():
-        identity = at.key_identity(key)
+        identity = identities[key]
+        if identity in twice:
+            result[key] = val
+            continue
         met = index.get(identity, [])
         if isinstance(val, _DeleteSentinel) and fixed is not None:
             for k in met[:-1]:
@@ -700,6 +706,24 @@ def _deep_merge(
             result[key] = val
             index[identity] = [key]
     return result
+
+
+def _spelled_twice(identities: dict[Any, Any], result: MergeDict, index: dict[Any, list[Any]]) -> set[Any]:
+    """Return the identities two keys of an override share, taking every key of *result* filed under one out.
+
+    *identities* maps each key of the override to its identity, *index* files the keys of
+    *result* by theirs. Keys of one override that are one key meet nothing, not even each
+    other: each is written as the source spelled it, over every base key of theirs, so
+    construction refuses the value rather than one spelling drop the other (BUG-312).
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#one-value-holds-each-key-once
+    """
+    twice = {identity for identity, n in Counter(identities.values()).items() if n > 1}
+    for identity in twice:
+        for k in index.pop(identity, []):
+            del result[k]
+    return twice
 
 
 def _merge_within_source(base: MergeDict, override: MergeDict, *, at: MergeAt) -> MergeDict:

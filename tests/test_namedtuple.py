@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from collections import namedtuple
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
@@ -197,11 +198,18 @@ class TestConstruct:
         """An index and a name each fill the position they spell (Q-1)."""
         assert construct(Point, {"0": 7, "y": 9}) == Point(x=7, y=9)
 
-    def test_two_spellings_of_one_position_resolve_in_order(self) -> None:
-        """Two spellings of one position: the later in the dict wins, as a later write does (Q-1)."""
-        assert construct(Point, {"x": 13, "y": 2, "0": 9}) == Point(x=9, y=2)
-        assert construct(Point, {"0": 9, "y": 2, "x": 13}) == Point(x=13, y=2)
-        assert construct(Point, {"x": 1, "y": 2, "-1": 3}) == Point(x=1, y=3)
+    @pytest.mark.parametrize(
+        ("data", "keys"),
+        [
+            ({"x": 13, "y": 2, "0": 9}, "'x' and '0' both name the field x"),
+            ({"0": 9, "y": 2, "x": 13}, "'0' and 'x' both name the field x"),
+            ({"x": 1, "y": 2, "-1": 3}, "'y' and '-1' both name the field y"),
+        ],
+    )
+    def test_two_spellings_of_one_position_are_refused(self, data: dict, keys: str) -> None:
+        """One value spells each position once: neither entry is dropped for the other (Q-1, BUG-312)."""
+        with pytest.raises(TypeCoercionError, match=re.escape(f"keys {keys}")):
+            construct(Point, data)
 
     @pytest.mark.parametrize("key", ["01", "-0", "+1", "1_0", " 1", "\u0661", "\u00b2"])
     def test_an_odd_index_spelling_names_no_position(self, key: str) -> None:
@@ -674,9 +682,10 @@ class TestPatchOverAPositionalBase:
             construct(Point, {ListOp.BASE: [1, 2, 3], "x": 9})
 
     def test_construct_lays_a_mixed_patch(self) -> None:
-        """A patch mixing names and indices lays each over the position it spells (Q-1)."""
+        """A patch mixing names and indices lays each over the position it spells, one spelling each (Q-1, BUG-312)."""
         assert construct(Point, {ListOp.BASE: [1, 2], "x": 9, "1": 8}) == Point(x=9, y=8)
-        assert construct(Point, {ListOp.BASE: [1, 2], "x": 9, "0": 8}) == Point(x=8, y=2)
+        with pytest.raises(TypeCoercionError, match=re.escape("keys 'x' and '0' both name the field x")):
+            construct(Point, {ListOp.BASE: [1, 2], "x": 9, "0": 8})
 
     def test_name_patch_on_the_cli_over_a_file_list(self, tmp_path) -> None:
         """``--pair.x`` over a file's ``pair: [1, 2]`` builds as over ``--pair 1 2``."""

@@ -131,7 +131,7 @@ The path model's segments stay strings, as everywhere else in `dictexpr` and on 
 A key equal to the integer is reached as Python's subscript reaches it, so `${m[1]}` reads a key `True` or `1.0`, as the fallback did.
 
 A dict holding both the text and such a key is refused, whichever way the segment is spelled: `Field 'm.0' is ambiguous: '0' could be either the key '0' or the key 0`.
-The segment could name either entry, and construction keeps only one of them under a `dict[int, …]`, so no answer would be the built value.
+The segment could name either entry, and construction refuses the dict too, under a `dict[int, …]` and an untyped node alike ([one value holds each key once](../pipeline/deep-merge.md#one-value-holds-each-key-once)), so no answer would be a built value.
 A position the scan names is its key exactly, so an expression held under the key `'0'` of such a dict still resolves: only what an expression spells is refused (`_step`'s `spelled`).
 
 Until BUG-124 a position was a dotted string, so `m.0` named the integer key and the text one alike.
