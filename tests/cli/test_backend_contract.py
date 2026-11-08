@@ -10454,7 +10454,7 @@ class TestALiteralMemberIsWhatPep586AllowsContract:
 
     def test_a_skipped_unsupported_branch_is_named(self, loader: ConfargLoader) -> None:
         """A value no branch takes is refused naming the branch confarg reads nothing as."""
-        with pytest.raises(TypeCoercionError, match=re.escape("bytes is no leaf type confarg reads")):
+        with pytest.raises(TypeCoercionError, match=re.escape("\n  bytes: no leaf type confarg reads")):
             loader.load(_UnsupportedBranch, argv=["--x", "ab"], env={})
 
     def test_an_unsupported_branch_lets_the_others_read(self, loader: ConfargLoader) -> None:

@@ -42,6 +42,31 @@ Precedents: pydantic's discriminated unions and msgspec's tagged ones refuse a d
 
 Until BUG-276 the union read the key as the tag whatever its variants were, so `int | dict[str, str]` refused a value its dict variant holds, and the merge replaced a lower layer's entries with it.
 
+### A union refusal names each variant's reason
+
+When no variant takes a value, the refusal names the field and the union, then each variant whose refusal says more than that, on a line of its own, in the union's order (FEAT-46):
+
+```text
+Cannot coerce str 'os.dubble' to Callable | Opts at 'f':
+  Callable: cannot import 'os.dubble': module 'os' has no attribute 'dubble'
+```
+
+Every rung that tries a variant and catches its refusal keeps it (`_construct._Refusals`): the struct variants tried one by one when none matches structurally, the fixed-length and collection variants, the scalar walk and the one-item fallback of a lone token; each variant is named by the last refusal it gave.
+The walk used to drop each one as it tried the next variant, so a typo'd import, an Enum's members, a field a struct does not declare or the bound of a `type[X]` were one lone-field load away.
+
+Which refusals give a line is the error's to say, read by `exceptions._variant_reason`:
+
+- **None, where it says only that the value is no value of the variant, or not of its shape** (`TypeCoercionError.cannot_coerce` and `wrong_shape` mark it `_plain` with the path and the value they refused).
+  `int` refusing `'x'` repeats the union's line, a `Literal` lists its members in its own spelling already, and a struct handed a string, or a scalar leaf a dict or a list (`_construct._variant_reasons`), refused a shape the user did not mean, whatever its message says: a `datetime`'s format hint, or the refusal of a `class` key it cannot take.
+- **Its own clause, where a factory says it apart** (`_reason`): an Enum's members, a registered leaf's format hint (`cannot_coerce_because`), the fields a struct does not declare, a class outside a `type[X]` bound, a branch confarg reads nothing as (`no leaf type confarg reads`, which the union used to append to its one line), and a missing field, named without the flag a remedy would spell, since only the front-end that parsed argv knows its `cli_prefix`.
+- **Its message as a clause otherwise**, which covers a refusal inside the value, at its own path (`list[int]: cannot coerce str 'x' to int at 'u[0]'`), an import that failed, and a Python exception's text.
+
+Where no line is left, the refusal is the one line it was; with lines, the none-word remedy closes them on one of its own.
+
+The format follows the per-variant breakdown `AmbiguousUnionError` already gives, and pydantic v2, which lists one error per union member.
+Listing every variant, as pydantic does, was rejected: `int: cannot coerce str 'x' to int` is the noise that hides the one line that matters.
+So was giving the most specific reason alone, as msgspec does (`Invalid enum value 'x'`): with two informative variants, which one is dropped is a guess (maintainer-chosen).
+
 ### An optional field fails as its variant
 
 `X | None` fails exactly as an `X` field does: same exception type, same message, same path.

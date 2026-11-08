@@ -56,9 +56,13 @@ def _spell_long_path(path: FieldPath) -> str:
     return f"{_spell_field_path(path[:3])} ... {_spell_field_path(path[-2:])}"
 
 
+#: The remedy for a field whose ``None`` a channel spells as a none word.
+_NONE_REMEDY = "To set this field to None, pass 'none' or 'null'."
+
+
 def _append_none_remedy(message: str) -> str:
     """Return *message* followed by the remedy for a field whose ``None`` a channel spells as a none word."""
-    return f"{message.removesuffix('.')}. To set this field to None, pass 'none' or 'null'."
+    return f"{message.removesuffix('.')}. {_NONE_REMEDY}"
 
 
 def _capitalized(reason: str) -> str:
@@ -165,8 +169,39 @@ def _failure_text(exc: BaseException) -> str:
     return name + (f": {'; '.join(texts)}" if texts else "") + (f" ({', '.join(signals)})" if signals else "")
 
 
+def _variant_reason(exc: BaseException, path: str, value: Any) -> str | None:
+    """Return the reason a union refusing *value* at *path* gives for *exc*, one variant's refusal; None for none.
+
+    A refusal that says only that *value* is no value of the variant, or not of its shape,
+    says nothing the union's own line does not, and gives none. Any other gives its own
+    reason, the clause its factory says it in, else its message as a clause: what a value
+    inside *value* failed on, at its own path, an Enum's members, an import's failure. A
+    Python exception gives its text.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
+    """
+    if not isinstance(exc, ConfargError):
+        return _as_clause(_failure_text(exc))
+    if exc._plain is not None and exc._plain == (path, value):
+        return None
+    return _as_clause(exc._reason or str(exc))
+
+
+def _as_clause(text: str) -> str:
+    """Return the sentence *text* as a clause a line gives after a colon: its first letter lowered, no period."""
+    return text[:1].lower() + text[1:].removesuffix(".")
+
+
 class ConfargError(Exception):
     """Base exception for all confarg errors."""
+
+    #: The reason a union's refusal gives for this error, raised by one of its variants, where
+    #: the message says more than it (:func:`_variant_reason`); None for the message itself.
+    _reason: str | None = None
+    #: The path and the value this error says only to be no value of its type, or not of its
+    #: shape, where it says nothing else; a union's refusal gives no reason for it there.
+    _plain: tuple[str, Any] | None = None
 
     def _with_none_remedy(self) -> Self:
         """Return an error of this type whose message ends with the none-word remedy.
@@ -386,6 +421,8 @@ class MissingFieldError(ConfargError):
         self._path = path
         self._field_type = field_type
         self._descriptor = descriptor
+        # A union's line names what is missing, never the flag, which only the front-end's prefix spells.
+        self._reason = f"missing required field '{_spell_field_path(path)}' of type {field_type}" if path else None
         self._cli_prefix = ""
         self._in_root_value = False
         self._none_remedy = False
@@ -474,29 +511,38 @@ class TypeCoercionError(ConfargError):
         among its variants: anywhere else the remedy would ask for the value just refused.
         """
         msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
-        return cls(_append_none_remedy(msg) if none_sentinel else msg)
+        error = cls(_append_none_remedy(msg) if none_sentinel else msg)
+        error._plain = (path, value)
+        return error
 
     @classmethod
-    def cannot_coerce_to_union(  # noqa: PLR0913  # cannot_coerce's arguments, and the branches skipped
+    def cannot_coerce_to_union(  # noqa: PLR0913  # cannot_coerce's arguments, and the variants' reasons
         cls,
         src: str,
         value: Any,
         tp: str,
         path: str,
         *,
-        unread: Sequence[str] = (),
+        reasons: Sequence[tuple[str, str]] = (),
         none_sentinel: bool = False,
     ) -> TypeCoercionError:
-        """Return :meth:`cannot_coerce`'s error for a union, naming the branches *unread* that read no value.
+        """Return :meth:`cannot_coerce`'s error for a union, each of its variants' *reasons* on a line of its own.
 
-        A branch confarg reads nothing as is skipped, so the refusal says why no value could
-        reach it, ahead of the none remedy :meth:`cannot_coerce` offers.
+        *reasons* pairs a variant, as spelled, with the reason it refused the value, which the
+        caller keeps only where it says more than this line (:func:`_variant_reason`). With
+        none, the refusal is :meth:`cannot_coerce`'s one line; with some, the none remedy
+        closes the lines, on one of its own.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
         """
-        msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
-        if unread:
-            names = " and ".join(unread)
-            msg += f"; {names} {'is no leaf type' if len(unread) == 1 else 'are no leaf types'} confarg reads"
-        return cls(_append_none_remedy(msg) if none_sentinel else msg)
+        if not reasons:
+            return cls.cannot_coerce(src, value, tp, path, none_sentinel=none_sentinel)
+        lines = [f"Cannot coerce {src} {value!r} to {tp} at '{path}':"]
+        lines += [f"  {variant}: {reason}".replace("\n", "\n    ") for variant, reason in reasons]
+        if none_sentinel:
+            lines.append(_NONE_REMEDY)
+        return cls("\n".join(lines))
 
     @classmethod
     def subclass_refuses(cls, name: str, builtin: str, path: str, reason: str) -> TypeCoercionError:
@@ -517,7 +563,9 @@ class TypeCoercionError(ConfargError):
     @classmethod
     def cannot_coerce_because(cls, src: str, value: Any, tp: str, path: str, hint: str) -> TypeCoercionError:
         """Return :meth:`cannot_coerce`'s error followed by *hint*, what the type reads, after a colon."""
-        return cls(f"{cls.cannot_coerce(src, value, tp, path)}: {hint}")
+        error = cls(f"{cls.cannot_coerce(src, value, tp, path)}: {hint}")
+        error._reason = hint
+        return error
 
     @classmethod
     def wrong_shape(cls, src: str, value: Any, what: str, accepted: str, path: str) -> TypeCoercionError:
@@ -531,7 +579,9 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
-        return cls(f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}")
+        error = cls(f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}")
+        error._plain = (path, value)
+        return error
 
     @classmethod
     def unknown_fields(cls, names: Any, what: str, path: str, valid: list[str]) -> TypeCoercionError:
@@ -544,9 +594,10 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
-        return cls(
-            f"Unknown field(s) {sorted(str(name) for name in names)} for {what} at '{path}'. Valid fields: {valid}"
-        )
+        unknown = sorted(str(name) for name in names)
+        error = cls(f"Unknown field(s) {unknown} for {what} at '{path}'. Valid fields: {valid}")
+        error._reason = f"unknown field(s) {unknown}. Valid fields: {valid}"
+        return error
 
     @classmethod
     def cast_not_held(cls, cast: str, field: str, path: str) -> TypeCoercionError:
@@ -628,7 +679,28 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
-        return cls(f"Class {name!r} at '{path}' is not a subclass of {parent}.")
+        error = cls(f"Class {name!r} at '{path}' is not a subclass of {parent}.")
+        error._reason = f"class {name!r} is not a subclass of {parent}"
+        return error
+
+    @classmethod
+    def not_a_member(cls, src: str, value: Any, enum: str, path: str, members: Sequence[str]) -> TypeCoercionError:
+        """Return the error for a value that names no member of the Enum *enum*, its *members* as spelled."""
+        listed = ", ".join(members)
+        error = cls(f"Cannot coerce {src} {value!r} to {enum} at '{path}'. Valid members: {listed}")
+        error._reason = f"valid members {listed}"
+        return error
+
+    @classmethod
+    def unsupported_leaf(cls, tp: str, path: str) -> TypeCoercionError:
+        """Return the error for a value at a leaf of the type *tp* spells, which construction builds none of.
+
+        Dev Notes:
+            docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
+        """
+        error = cls(f"Unsupported leaf type {tp} at '{path}'")
+        error._reason = "no leaf type confarg reads"
+        return error
 
     @classmethod
     def refused_empty_call(cls, name: Any, path: str, reason: str, beside: str) -> TypeCoercionError:
