@@ -151,8 +151,7 @@ def _check_namedtuple_length(tp: Any, got: int, path: FieldPath) -> None:
     """Refuse *got* positions for a namedtuple that has fewer fields."""
     n = len(_namedtuple_fields(tp))
     if got > n:
-        msg = f"Cannot construct {tp.__name__} at '{_spell_field_path(path)}': expected {n} elements, got {got}"
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), n, got)
 
 
 _LENGTH_OPS = (ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER)
@@ -247,7 +246,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     if isinstance(data, dict):
         # A name and an index each name a position, the fixed tuple's own resolver for both.
         kwargs: dict[str, Any] = {}
-        for idx, v in _indexed_dict_to_positions(tp, data, path, tp.__name__).items():
+        for idx, v in _indexed_dict_to_positions(tp, data, path, _spell_type(tp)).items():
             if isinstance(v, _DeleteSentinel):
                 continue  # the position is unset (BUG-243)
             fname = field_names[idx]
@@ -854,8 +853,7 @@ def _indexed_dict_to_positions(
         fields = list(_namedtuple_fields(tp))
         raise TypeCoercionError.unknown_fields(set(unknown), tp.__name__, _spell_field_path(path), fields)
     if unknown:
-        msg = f"Cannot construct {what} at '{_spell_field_path(path)}': dict keys must be integer indices"
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path))
     return out
 
 
@@ -994,8 +992,8 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
             # One reading of an index key, whether a file spelled it as text or as a YAML integer.
             positions = {int(k): v for k, v in data.items()}
         except (TypeError, ValueError):
-            msg = f"Cannot construct collection at '{_spell_field_path(path)}': dict keys must be integer indices"
-            raise TypeCoercionError(msg) from None
+            what = "collection"  # a list, a set or a variable-length tuple
+            raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path)) from None
         _refuse_an_index_delete(positions, path)
         neg = [k for k in positions if k < 0]
         if neg:
@@ -1058,17 +1056,9 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
     if isinstance(data, dict):
         data = _apply_carried_ops(data, tp, f"{tp}", path, union_tag)
     if isinstance(data, list | tuple):
-        if len(data) > len(tt):
-            msg = f"Cannot construct {tp} at '{_spell_field_path(path)}': expected {len(tt)} elements, got {len(data)}"
-            raise TypeCoercionError(msg)
-        if len(data) < len(tt):
-            missing = [i for i in range(len(data), len(tt)) if not _allows_none(tt[i])]
-            if missing:
-                msg = (
-                    f"Cannot construct {tp} at '{_spell_field_path(path)}'"
-                    f": expected {len(tt)} elements, got {len(data)}"
-                )
-                raise TypeCoercionError(msg)
+        # Too many positions, or too few where one left out holds no None.
+        if len(data) > len(tt) or any(not _allows_none(t) for t in tt[len(data) :]):
+            raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), len(tt), len(data))
         seq = list(data)
     else:
         seq = _patched_positions(tp, tt, data, path, union_tag)
@@ -1085,14 +1075,12 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
         # A deferred index patch carrying a base (e.g. a config list completed by --field.N).
         base_seq = _replace_base(data, _spell_field_path(path))
         if len(base_seq) > len(tt):
-            spelled = _spell_field_path(path)
-            msg = f"Cannot construct {tp} at '{spelled}': expected {len(tt)} elements, got {len(base_seq)}"
-            raise TypeCoercionError(msg)
+            raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), len(tt), len(base_seq))
         patches = {k: v for k, v in data.items() if k != ListOp.BASE}
     seq = [base_seq[i] if i < len(base_seq) else _UNSET for i in range(len(tt))]
     # A patch refines what the base holds at its position, as the merge would have.
     at = _merge_at(tp, union_tag)
-    for i, v in _indexed_dict_to_positions(tp, patches, path, f"{tp}").items():
+    for i, v in _indexed_dict_to_positions(tp, patches, path, _spell_type(tp)).items():
         if isinstance(v, _DeleteSentinel):
             seq[i] = _UNSET  # the position is unset (BUG-243)
         elif i < len(base_seq):

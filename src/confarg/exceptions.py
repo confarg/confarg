@@ -615,6 +615,27 @@ class TypeCoercionError(ConfargError):
         return error
 
     @classmethod
+    def wrong_length(cls, what: str, path: str, expected: int, got: int) -> TypeCoercionError:
+        """Return the error for *got* positions where the fixed-length sequence *what* holds *expected*.
+
+        The one spelling of an arity refusal, a fixed tuple's and a namedtuple's, their list
+        and the base a patch carries alike; *what* is the type as ``_spell_type`` spells it.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
+        """
+        return cls(f"Cannot construct {what} at '{path}': expected {expected} elements, got {got}")
+
+    @classmethod
+    def keys_not_indices(cls, what: str, path: str) -> TypeCoercionError:
+        """Return the error for a dict standing for the sequence *what*, whose keys name no position.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
+        """
+        return cls(f"Cannot construct {what} at '{path}': dict keys must be integer indices")
+
+    @classmethod
     def unknown_fields(cls, names: Any, what: str, path: str, valid: list[str]) -> TypeCoercionError:
         """Return the error for keys a struct or a namedtuple declares no field for.
 
