@@ -313,35 +313,6 @@ def _take_instance(tp: Any, data: Any, path: FieldPath) -> Any:
     raise TypeCoercionError.no_instance_of(spelled, _src_type(data), data, _spell_field_path(path))
 
 
-def _ambiguous_structs_msg(
-    matches: list[Any], provided: set[str | ListOp], path: FieldPath, header: str, remedy: str
-) -> str:
-    """Build the per-variant field breakdown of an ambiguity refusal.
-
-    *header* names what the provided fields cannot tell apart, *remedy* how to make them
-    tell it, and *provided* the keys the data carries. A field is listed as required where
-    the struct match reads it so (:func:`_struct_needs`), so the breakdown says why the
-    value matched: a field built from nothing is optional.
-    """
-    lines = [
-        f"{header} at '{_spell_field_path(path)}': cannot distinguish between "
-        + ", ".join(m.__name__ for m in matches)
-        + ".",
-    ]
-    for var in matches:
-        required = _struct_needs(var)
-        optional = sorted(n for n in _struct_fields(var) if n not in required)
-        parts = []
-        if required:
-            parts.append("required: " + ", ".join(sorted(required)))
-        if optional:
-            parts.append("optional: " + ", ".join(optional))
-        lines.append(f"  {var.__name__}: {'; '.join(parts) if parts else '(no fields)'}")
-    lines.append(f"Provided fields: {sorted(str(k) for k in provided) if provided else '(none)'}")
-    lines.append(remedy)
-    return "\n".join(lines)
-
-
 def _construct_taggable_leaf(tp: Any, data: MergeDict, path: FieldPath) -> Any:
     """Construct a struct-shaped registered leaf from the dict that tags it.
 
@@ -606,10 +577,10 @@ class TagReading(enum.Enum):
 
 
 def tag_reading(tp: Any) -> TagReading:
-    """Return what the union *tp* reads a dict's class key as: a member's, a variant's data, or the tag.
+    """Return what the union *tp* reads a dict's class key as: a variant's data, or the tag.
 
-    The key is the tag where it can select a variant (:func:`tag_selects_a_variant`), unless a
-    member owns its spelling. Where it can select none, a variant that reads a dict, a ``dict``,
+    The key is the tag where it can select a variant (:func:`tag_selects_a_variant`).
+    Where it can select none, a variant that reads a dict, a ``dict``,
     a set, a sequence or a namedtuple, reads it as data, as it does alone; a union of variants
     that read no dict reads it as the tag, to refuse it as a leaf does. Construction, the
     merge's replace-or-refine reading and its walk, the tag pre-import and the default layer
@@ -1560,8 +1531,8 @@ def _construct_union(tp: Any, data: Any, path: FieldPath) -> Any:
     Tries tag-based disambiguation, structural disambiguation for struct
     (dataclass or plain-class) variants, and finally leaf coercion in order.
     A tag-shaped key is the tag only where the union reads it as one
-    (:func:`tag_reading`): not where a member owns its spelling, nor where a
-    variant that reads a dict holds it as data. A ``None`` reaching here is no
+    (:func:`tag_reading`): not where a variant that reads a dict holds it as
+    data. A ``None`` reaching here is no
     value the union holds outright, :func:`construct` having taken it where the
     union counts ``None``, so it meets the variants as any value does (BUG-298).
 
@@ -1712,11 +1683,29 @@ def _value_matches_type(value: Any, tp: Any) -> bool:
 def _ambiguous_union_msg(matches: list[Any], data: MergeDict, path: FieldPath) -> str:
     """Build a diagnostic AmbiguousUnionError message with per-variant field breakdowns.
 
-    The remedy offers the class key, naming the first match by the dotted path it imports by.
+    A field is listed as required where the struct match reads it so (:func:`_struct_needs`),
+    so the breakdown says why the value matched: a field built from nothing is optional. The
+    remedy offers the class key, naming the first match by the dotted path it imports by.
     """
+    lines = [
+        f"Ambiguous union at '{_spell_field_path(path)}': cannot distinguish between "
+        + ", ".join(m.__name__ for m in matches)
+        + ".",
+    ]
+    for var in matches:
+        required = _struct_needs(var)
+        optional = sorted(n for n in _struct_fields(var) if n not in required)
+        parts = []
+        if required:
+            parts.append("required: " + ", ".join(sorted(required)))
+        if optional:
+            parts.append("optional: " + ", ".join(optional))
+        lines.append(f"  {var.__name__}: {'; '.join(parts) if parts else '(no fields)'}")
+    provided = _field_keys(data)
+    lines.append(f"Provided fields: {sorted(str(k) for k in provided) if provided else '(none)'}")
     example = dotted_name(_class_of(matches[0]))
-    remedy = f"To select a variant add a {_defaults.CLASS_KEY!r} key, e.g. {_defaults.CLASS_KEY!r}: {example!r}."
-    return _ambiguous_structs_msg(matches, _field_keys(data), path, "Ambiguous union", remedy)
+    lines.append(f"To select a variant add a {_defaults.CLASS_KEY!r} key, e.g. {_defaults.CLASS_KEY!r}: {example!r}.")
+    return "\n".join(lines)
 
 
 def _structurally_matches(var: Any, keys: set[str | ListOp]) -> bool:
