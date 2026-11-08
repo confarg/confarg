@@ -62,12 +62,13 @@ class TypedAt(MergeAt):
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
 
-    __slots__ = ("_reading", "tp")
+    __slots__ = ("_reading", "tp", "union_tag")
 
-    union_tag: str
+    union_tag: str  # a slot over MergeAt's read-only property: a typed node always reads the tag
 
     def __init__(self, tp: Any, union_tag: str) -> None:
         super().__init__(union_tag)
+        self.union_tag = union_tag
         self.tp = _resolve_type(tp)
         self._reading: _KeyReading | None = None
 
@@ -166,12 +167,13 @@ def _branch_key_reading(tp: Any) -> _KeyReading:
 class _RootAt(MergeAt):
     """Where the merge stands at the root of a target that is no struct, which the root key holds."""
 
-    __slots__ = ("tp",)
+    __slots__ = ("tp", "union_tag")
 
-    union_tag: str
+    union_tag: str  # a slot over MergeAt's read-only property: a typed node always reads the tag
 
     def __init__(self, tp: Any, union_tag: str) -> None:
         super().__init__(union_tag)
+        self.union_tag = union_tag
         self.tp = tp
 
     def replaces(self, override: MergeDict) -> bool:  # noqa: ARG002  # the root key's holder is no value
@@ -186,12 +188,13 @@ class _RootAt(MergeAt):
 class _ArgsAt(MergeAt):
     """Where the merge stands at the ``args`` of a target: a mapping typed by the target's parameters."""
 
-    __slots__ = ("params",)
+    __slots__ = ("params", "union_tag")
 
-    union_tag: str
+    union_tag: str  # a slot over MergeAt's read-only property: a typed node always reads the tag
 
     def __init__(self, params: dict[str, Any], union_tag: str) -> None:
         super().__init__(union_tag)
+        self.union_tag = union_tag
         self.params = params
 
     def replaces(self, override: MergeDict) -> bool:  # noqa: ARG002  # its keys are parameter names

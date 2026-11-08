@@ -341,7 +341,7 @@ dev = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", specifier = "==0.16.9" },
     { name = "tomli-w", specifier = ">=1.0" },
-    { name = "ty", specifier = ">=0.0.85" },
+    { name = "ty", specifier = "==0.0.99" },
     { name = "typer", specifier = ">=0.27" },
     { name = "typing-extensions", specifier = ">=4.16.0" },
     { name = "zensical", specifier = ">=0.0.59" },

@@ -4131,8 +4131,8 @@ class _OverSame(_OverBase):
 class _OverOverride(_OverBase):
     """Subclass overriding both base-declared fields with other types."""
 
-    a: float = 2.0  # type: ignore[assignment]  # the override under test
-    n: _OverInnerWide = dataclasses_field(default_factory=_OverInnerWide)  # type: ignore[assignment]  # the override under test
+    a: float = 2.0  # ty: ignore[invalid-attribute-override]  # the override under test
+    n: _OverInnerWide = dataclasses_field(default_factory=_OverInnerWide)  # ty: ignore[invalid-attribute-override]  # the override under test
 
 
 @dataclass
@@ -6021,8 +6021,8 @@ class TestCallableBesideAnotherVariantContract:
                 for part in parents:
                     child = node.get(part)
                     if not isinstance(child, dict):
-                        child = {"bind": child} if isinstance(child, str) else {}
-                        node[part] = child
+                        opened: dict[str, Any] = {"bind": child} if isinstance(child, str) else {}
+                        child = node[part] = opened
                     node = child
                 node[leaf] = int(value) if value.isdigit() else value
             argv = ["--config", str(tmp_json(json.dumps(doc)))]
@@ -11058,7 +11058,7 @@ class _WidenBase:
 class _WidenSub(_WidenBase):
     """A subclass widening ``x`` to a list, which a tag naming it types the flag by."""
 
-    x: list[int] = dataclasses_field(default_factory=list)
+    x: list[int] = dataclasses_field(default_factory=list)  # ty: ignore[invalid-attribute-override]  # the override under test
 
 
 @dataclass

@@ -1916,7 +1916,7 @@ def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_
     after = _competing_openers({**node, key: ""})
     if names_an_opener(key) and (key not in after or not set(_competing_openers(node)) & set(after)):
         return False
-    kept = {ListOp.BASE: DICT_DELETE} if node.get(ListOp.BASE) is DICT_DELETE else {}
+    kept: MergeDict = {ListOp.BASE: DICT_DELETE} if node.get(ListOp.BASE) is DICT_DELETE else {}
     node.clear()
     node.update(kept)
     return True

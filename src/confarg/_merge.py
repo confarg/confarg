@@ -376,10 +376,18 @@ class MergeAt:
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
 
-    __slots__ = ("union_tag",)
+    __slots__ = ("_union_tag",)
 
     def __init__(self, union_tag: str | None = None) -> None:
-        self.union_tag = union_tag
+        self._union_tag = union_tag
+
+    @property
+    def union_tag(self) -> str | None:
+        """The key naming a union's class, None where the merge reads none.
+
+        Read-only, so a typed reading narrows it to the ``str`` it always holds.
+        """
+        return self._union_tag
 
     def replaces(self, override: MergeDict) -> bool:
         """Return whether the dict *override* is a value of its own, which replaces what lies below."""
