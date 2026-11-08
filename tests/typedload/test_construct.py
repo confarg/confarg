@@ -13,6 +13,7 @@ import threading
 import warnings
 from collections.abc import Callable
 from dataclasses import InitVar, dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
@@ -81,12 +82,15 @@ class TestConstructStructDispatch:
         assert result == _BaseNoSubs()
 
 
-def _no_struct_refusal(tp: str, tag: str) -> str:
-    """Return the refusal of a ``class`` tag at ``x`` on *tp*, a type spelled as written that accepts no struct."""
+def _no_struct_refusal(tp: str, tag: str, *, union: bool) -> str:
+    """Return the refusal of a ``class`` tag at ``x`` on *tp*, a type spelled as written that no tag selects in.
+
+    A leaf is built from one value; no variant of a *union* is built from keys (BUG-280).
+    """
+    why = f"no variant of {tp} is built from keys" if union else f"{tp} is built from one value, not from keys"
     return (
-        f"Cannot coerce dict {{'class': {tag!r}}} to {tp} at 'x'. The 'class' key is the union tag, which names a"
-        f" subclass of a struct-typed field's annotation; {tp} accepts no struct, so the tag cannot select one."
-        " A 'call:' spec computes a value the field's type accepts."
+        f"Cannot coerce dict {{'class': {tag!r}}} to {tp} at 'x'. The 'class' key picks the class to build"
+        f" from the keys beside it, and {why}. A 'call:' spec computes a value the field's type accepts."
     )
 
 
@@ -94,21 +98,23 @@ class TestATagNoVariantTakes:
     """A union no variant of which a tag selects refuses the tag as a leaf does, importing nothing (BUG-252)."""
 
     @pytest.mark.parametrize(
-        ("tp", "spelled"),
+        ("tp", "spelled", "union"),
         [
-            pytest.param(int, "int", id="leaf"),
-            pytest.param(Path, "Path", id="untaggable-leaf"),
-            pytest.param(int | str, "int | str", id="scalars"),
-            pytest.param(int | Path, "int | Path", id="untaggable-leaf-variant"),
-            pytest.param(list[int] | str, "list[int] | str", id="sequence-variant"),
-            pytest.param(int | dict[str, str], "int | dict[str, str]", id="dict-variant"),
+            pytest.param(int, "int", False, id="leaf"),
+            pytest.param(Path, "Path", False, id="untaggable-leaf"),
+            pytest.param(datetime, "datetime", False, id="registered-leaf"),
+            pytest.param(int | str, "int | str", True, id="scalars"),
+            pytest.param(int | Path, "int | Path", True, id="untaggable-leaf-variant"),
+            pytest.param(int | datetime, "int | datetime", True, id="registered-leaf-variant"),
+            pytest.param(list[int] | str, "list[int] | str", True, id="sequence-variant"),
+            pytest.param(int | dict[str, str], "int | dict[str, str]", True, id="dict-variant"),
         ],
     )
-    def test_the_refusal_says_no_variant_accepts_a_struct(self, tp: Any, spelled: str) -> None:
-        """The leaf's refusal, naming the union as written: there is no candidate to list."""
+    def test_the_refusal_says_why_no_class_is_picked(self, tp: Any, spelled: str, union: bool) -> None:  # noqa: FBT001  # a parametrized case
+        """The leaf's refusal says it is built from one value, the union's that no variant is built from keys."""
         with pytest.raises(TypeCoercionError) as exc_info:
             construct(tp, {"class": "pathlib.Path"}, path=("x",))
-        assert str(exc_info.value) == _no_struct_refusal(spelled, "pathlib.Path")
+        assert str(exc_info.value) == _no_struct_refusal(spelled, "pathlib.Path", union=union)
 
     def test_the_tag_is_not_imported(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
@@ -120,7 +126,7 @@ class TestATagNoVariantTakes:
         for tag in ("bug252_broken.Thing", "bug252_nothere.Thing"):
             with pytest.raises(TypeCoercionError) as exc_info:
                 construct(int | str, {"class": tag}, path=("x",))
-            assert str(exc_info.value) == _no_struct_refusal("int | str", tag)
+            assert str(exc_info.value) == _no_struct_refusal("int | str", tag, union=True)
         assert "bug252_broken" not in sys.modules
 
 
@@ -1022,26 +1028,26 @@ class _OtherStruct:
 class TestClassKeyOnAScalarField:
     """A tagged dict on a scalar field is refused naming the tag and a 'call:' spec (BUG-188).
 
-    The tag selects a subclass of a struct-typed field's annotation; a scalar is no struct,
-    so no class can be selected, and the refusal names the key it refuses and where a value
-    can come from instead.
+    The tag picks the class to build from the keys beside it; a scalar is built from one value,
+    so no class can be picked, and the refusal names the key it refuses and where a value can
+    come from instead.
     """
 
     def test_the_refusal_names_the_tag_and_points_to_call(self) -> None:
         """The repro's dict on an int field names the 'class' key and a 'call:' spec."""
         data = {"class": f"{__name__}._OtherStruct", "z": 1}
-        with pytest.raises(TypeCoercionError, match="'class' key is the union tag") as ei:
+        with pytest.raises(TypeCoercionError, match="'class' key picks the class to build") as ei:
             confarg.build(_ScalarFieldConfig, {"n": data})
         assert "'call:' spec computes a value the field's type accepts" in str(ei.value)
 
     def test_the_refusal_spells_the_union_tag_it_was_given(self) -> None:
         """A custom tag spelling is named as the key, not the default 'class'."""
-        with pytest.raises(TypeCoercionError, match="'Kind' key is the union tag"):
+        with pytest.raises(TypeCoercionError, match="'Kind' key picks the class to build"):
             construct(int, {"Kind": f"{__name__}._OtherStruct"}, path=("n",), union_tag="Kind")
 
     def test_an_optional_scalar_fails_as_its_variant(self) -> None:
         """Optional[int] fails as an int field does: the same refusal, same path."""
-        with pytest.raises(TypeCoercionError, match="'class' key is the union tag"):
+        with pytest.raises(TypeCoercionError, match="'class' key picks the class to build"):
             construct(int | None, {"class": f"{__name__}._OtherStruct"}, path=("n",))
 
     def test_an_untagged_dict_keeps_the_generic_refusal(self) -> None:

@@ -267,8 +267,8 @@ def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
         return
     name = _spell_type(resolved)
     msg = (
-        f"Cannot serialize {name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}': {name} is no struct"
-        f" and no leaf type confarg reads, so the value would not load back."
+        f"Cannot serialize {name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}': {name} is no leaf type"
+        f" confarg reads, so the value would not load back."
         f" confarg.register_leaf_type({_spell_type(_registration_key(resolved))}, ...) makes it one."
     )
     raise ConfargError(msg)

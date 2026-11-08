@@ -660,20 +660,24 @@ class TypeCoercionError(ConfargError):
         )
 
     @classmethod
-    def tag_selects_no_struct(cls, data: Any, tp: str, path: str, union_tag: str, call: str) -> TypeCoercionError:
-        """Return the error for a class tag on a field whose type, *tp* as spelled, accepts no struct.
+    def tag_selects_no_struct(  # noqa: PLR0913  # the refused dict, where, and the two keys it names
+        cls, data: Any, tp: str, path: str, union_tag: str, call: str, *, union: bool
+    ) -> TypeCoercionError:
+        """Return the error for a class tag on a field whose type, *tp* as spelled, no tag selects in.
 
-        A leaf or a union none of whose variants is a struct or reads a spec: no tag can select
-        anything there, whatever it names. *call* is spelled by the caller, as for
+        A leaf or a *union* none of whose variants is a struct or reads a spec: no tag can select
+        anything there, whatever it names. The reason is said in the words the user docs use for
+        the tag, a class built from the keys beside it: a leaf is built from one value, and no
+        variant of the union is built from keys. *call* is spelled by the caller, as for
         :meth:`tag_not_a_subclass`.
 
         Dev Notes:
             docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
         """
+        why = f"no variant of {tp} is built from keys" if union else f"{tp} is built from one value, not from keys"
         return cls(
             f"Cannot coerce dict {data!r} to {tp} at '{path}'."
-            f" The {union_tag!r} key is the union tag, which names a subclass of a struct-typed"
-            f" field's annotation; {tp} accepts no struct, so the tag cannot select one."
+            f" The {union_tag!r} key picks the class to build from the keys beside it, and {why}."
             f" A '{call}:' spec computes a value the field's type accepts.",
         )
 

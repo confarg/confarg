@@ -1751,9 +1751,13 @@ class TestDumpRefusesAnUnsupportedLeaf:
     """``dump()`` refuses a value typed by a leaf construction does not build, as construction refuses it."""
 
     def test_a_complex_field_is_refused(self) -> None:
-        """``complex`` is no struct and no registered leaf, so it is refused, naming the remedy."""
-        with pytest.raises(ConfargError, match=r"Cannot serialize complex at 'z'.*register_leaf_type"):
+        """``complex`` is no leaf type confarg reads, so it is refused, naming the remedy (BUG-280)."""
+        with pytest.raises(ConfargError) as exc_info:
             confarg.dump(_StateComplex())
+        assert str(exc_info.value) == (
+            "Cannot serialize complex at 'z': complex is no leaf type confarg reads, so the value would not"
+            " load back. confarg.register_leaf_type(complex, ...) makes it one."
+        )
 
     def test_a_lock_field_is_refused(self) -> None:
         """A lock holds state no attribute reaches, so it is refused, not written as a fresh lock's ``{}`` (BUG-268)."""
