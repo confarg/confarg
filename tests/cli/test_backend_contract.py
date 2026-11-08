@@ -6955,6 +6955,83 @@ class TestTheTypeDecidesAcrossLayersContract:
         assert loader.load(_LayeredTypes, argv=[], env=env, env_prefix="APP_", files=[base]).n == 6
 
 
+@dataclass
+class _TagSpelledLabelsJob:
+    """A class a tag can select beside a dict variant."""
+
+    kind: str = "batch"
+
+
+@dataclass
+class _TagSpelledLabels:
+    """A dict variant beside a variant no tag selects, and beside one a tag selects; a union reading no dict."""
+
+    labels: int | dict[str, str] = 0
+    job: _TagSpelledLabelsJob | dict[str, str] = dataclasses_field(default_factory=dict)
+    nested: int | dict[str, dict[str, str]] = 0
+    plain: int | str = 0
+
+
+class TestATagSpelledKeyInAUnionWithADictContract:
+    """A union no tag selects a variant of holds a ``class`` key as its dict variant's data (BUG-276).
+
+    A union read the key as the tag whatever its variants were, so ``int | dict[str, str]``
+    refused ``{class: confidential}``, which a lone ``dict[str, str]`` holds as an entry.
+    """
+
+    def test_a_dict_variant_holds_the_key_over_a_file(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--labels.class`` and ``APP_LABELS__CLASS`` add an entry beside the file's, as on a lone dict."""
+        base = tmp_yaml("labels: {team: ml}\n")
+        expected = {"team": "ml", "class": "confidential"}
+        argv = ["--labels.class", "confidential"]
+        assert loader.merge(_TagSpelledLabels, argv=argv, env={}, files=[base]) == {"labels": expected}
+        assert loader.load(_TagSpelledLabels, argv=argv, env={}, files=[base]).labels == expected
+        env = {"APP_LABELS__CLASS": "confidential"}
+        assert loader.load(_TagSpelledLabels, argv=[], env=env, env_prefix="APP_", files=[base]).labels == expected
+
+    def test_a_variant_a_tag_selects_keeps_the_tag(self, loader: ConfargLoader) -> None:
+        """Beside a struct variant the key is still the tag, so a class that does not import is refused."""
+        with pytest.raises(TypeCoercionError, match="Cannot import class 'confidential'"):
+            loader.load(_TagSpelledLabels, argv=["--job.class", "confidential"], env={})
+
+    def test_the_entry_is_never_imported(
+        self, loader: ConfargLoader, tmp_path: Path, tmp_yaml, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No channel imports the module an entry spells: the tag pre-import and the default layer read it as data.
+
+        Both read every unshadowed ``class`` key as a tag, so a module the entry named ran
+        on every channel, ``build()`` included, while construction held the entry as data.
+        Nor does the pre-import import a tag the union refuses unimported, as ``int | str`` does.
+        """
+        (tmp_path / "bug276_entry.py").write_text(
+            "import pathlib\npathlib.Path(__file__).with_suffix('.ran').touch()\n"
+        )
+        ran = tmp_path / "bug276_entry.ran"
+        monkeypatch.syspath_prepend(str(tmp_path))
+        monkeypatch.delitem(sys.modules, "bug276_entry", raising=False)
+        expected = {"class": "bug276_entry.Thing"}
+        base = tmp_yaml("labels: {class: bug276_entry.Thing}\n")
+        assert loader.load(_TagSpelledLabels, argv=["--labels.class", "bug276_entry.Thing"], env={}).labels == expected
+        env = {"APP_LABELS__CLASS": "bug276_entry.Thing"}
+        assert loader.load(_TagSpelledLabels, argv=[], env=env, env_prefix="APP_").labels == expected
+        assert loader.load(_TagSpelledLabels, argv=[], env={}, files=[base]).labels == expected
+        assert confarg.build(_TagSpelledLabels, {"labels": expected}).labels == expected
+        with pytest.raises(TypeCoercionError, match="picks the class"):
+            loader.load(_TagSpelledLabels, argv=["--plain.class", "bug276_entry.Thing"], env={})
+        assert not ran.exists()
+
+    def test_an_entry_beside_the_key_merges_as_the_dict_variant_reads_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """An entry's dict refines the one below whatever key stands beside it, as on a lone dict.
+
+        The merge walk typed the node's entries by the tag where it held a ``class`` key, so a
+        ``class`` key inside ``a`` replaced the ``a`` below instead of refining it.
+        """
+        base = tmp_yaml("nested: {class: {k: v}, a: {team: ml}}\n", "base.yaml")
+        over = tmp_yaml("nested: {a: {class: c}}\n", "over.yaml")
+        expected = {"class": {"k": "v"}, "a": {"team": "ml", "class": "c"}}
+        assert loader.load(_TagSpelledLabels, argv=[], env={}, files=[base, over]).nested == expected
+
+
 # ---------------------------------------------------------------------------
 # An opener's word as a field of a class: or classfn: spec, parity across channels
 # ---------------------------------------------------------------------------

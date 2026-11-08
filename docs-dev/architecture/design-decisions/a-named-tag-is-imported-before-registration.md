@@ -11,6 +11,7 @@ It closes the CLI half and nothing else: vanilla still cannot resolve `--handler
 
 - Cost: a `populate_*` call imports modules the command line names, so a class path is side-effecting at registration time and not only at construction time. confarg already imported `--<field>.class` targets there for callables, so the exposure is not new.
   A failed import is swallowed — it is a visibility hint, not a decision point, and `construct` raises the authoritative `SymbolImportError` naming the path a moment later.
+  At a union it imports only a tag construction imports, one that selects a variant (`typedload._construct.tag_reading`): a dict variant's `class` entry is data, and a tag no variant is selected by is refused unimported ([types](../types/construction.md#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data)).
 - Cost: a subclass that nobody imported *and* nobody names is still absent from `--help` ([limitations](../limitations.md)).
 
 This completes [no implicit subclass inference](no-implicit-subclass-inference.md#no-implicit-subclass-inference) rather than reopening it: confarg still never *searches* for a subclass.

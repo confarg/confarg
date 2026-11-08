@@ -38,7 +38,7 @@ from confarg._types import (
 )
 from confarg.exceptions import ConfargError
 from confarg.typedload._coerce import _coerce_leaf, _type_kind, _TypeKind
-from confarg.typedload._construct import reads_as_new_value
+from confarg.typedload._construct import reads_as_new_value, tag_reading
 
 
 def merge_root(target: Any, union_tag: str) -> MergeAt:
@@ -264,7 +264,7 @@ def _union_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:
     variant = named_variant(tp, node, union_tag)
     if variant is not None:
         return _child(variant, key, node, union_tag)
-    if union_tag in node and not _union_tag_shadowed(tp, union_tag):
+    if union_tag in node and tag_reading(tp, union_tag).is_the_tag:
         return MergeAt(union_tag)
     found = [at for m in members if isinstance(at := _child(m, key, node, union_tag), TypedAt)]
     return found[0] if found and all(at.tp == found[0].tp for at in found[1:]) else MergeAt(union_tag)

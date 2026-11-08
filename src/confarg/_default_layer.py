@@ -64,7 +64,7 @@ from confarg.dictexpr import contains_expression, escape_expressions
 from confarg.exceptions import _spell_field_path
 from confarg.typedload._coerce import _is_struct_variant, _registered_leaf_of, _type_kind, _TypeKind
 from confarg.typedload._construct import _UNSET as _UNSET_POSITION
-from confarg.typedload._construct import _is_typed_call, reads_as_new_value, unset_position
+from confarg.typedload._construct import TagReading, _is_typed_call, reads_as_new_value, tag_reading, unset_position
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -378,7 +378,11 @@ def _union(tp: Any, node: Any, path: DataPath, walk: _Walk) -> Any:
         sequence = _sequence_taking_ops(variants)
         if sequence is not None:
             return _sequence(sequence, node, path, walk)
-    if not isinstance(node, dict) or walk.union_tag not in node or _union_tag_shadowed(tp, walk.union_tag):
+    if (
+        not isinstance(node, dict)
+        or walk.union_tag not in node
+        or tag_reading(tp, walk.union_tag) is not TagReading.SELECTS
+    ):
         return _untyped(node)
     cls = _tagged_class(node[walk.union_tag])
     # A generic parameterized apiece (Box[int] | Box[str]) matches once per binding, which only
