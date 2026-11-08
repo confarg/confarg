@@ -9,8 +9,11 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
+| [BUG-314 — `dump()` writes a dict key its key type does not hold without a warning](BUG-314-dump-writes-a-dict-key-its-key-type-does-not-hold-without-a-warning.md) | critical |  | S | medium | behavior | BUG-267 |
 | [BUG-309 — `dump()` writes a registered leaf's unregistered subclass by its parent's serializer, silently](BUG-309-dump-writes-a-registered-leafs-subclass-by-the-parents-serializer.md) | critical |  | M | medium | behavior | BUG-11 |
+| [BUG-313 — A document's duplicate key keeps the last, silently](BUG-313-a-documents-duplicate-key-keeps-the-last-silently.md) | critical |  | M | medium | config | PR-5 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
+| [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
@@ -21,6 +24,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-292 — A help group is headed by a docstring its class inherits](BUG-292-a-help-group-is-headed-by-a-docstring-its-class-inherits.md) | minor |  | S | low | behavior | PR-13 |
 | [BUG-299 — A union with a struct variant registers no cast flag](BUG-299-a-union-with-a-struct-variant-registers-no-cast-flag.md) | minor |  | S | medium | behavior | PR-54 |
 | [BUG-308 — An unannotated argument of a call target receives the argv token](BUG-308-an-unannotated-argument-of-a-call-target-receives-the-argv-token.md) | minor |  | S | medium | behavior | PR-93 |
+| [BUG-316 — A refusal at a recursive type alias raises `RecursionError`](BUG-316-a-refusal-at-a-recursive-type-alias-raises-recursionerror.md) | minor |  | S | low | behavior | unknown |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor |  | M | medium | behavior | PR-38 |
 | [BUG-181 — An out-of-domain Literal or Enum flag exits with the framework's choice error on the adapters](BUG-181-an-out-of-domain-literal-or-enum-flag-exits-with-the-frameworks-choice-error.md) | minor |  | M | medium | behavior | PR-5, PR-13, PR-26 |
