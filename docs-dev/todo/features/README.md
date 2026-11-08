@@ -44,8 +44,8 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-2 — A callback Protocol reads as a Callable](FEAT-2-a-callback-protocol-reads-as-a-callable.md) | minor | FEAT-57 | M | high | behavior |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
 | [FEAT-39 — A struct instance default is no base layer](FEAT-39-a-struct-instance-default-is-no-base.md) | minor | FEAT-38 | M | medium | none |
-| [FEAT-59 — A Protocol that leaves satisfy reads as the union of those leaves](FEAT-59-a-protocol-leaves-satisfy-reads-as-their-union.md) | minor | FEAT-57 | M | high | behavior |
 | [FEAT-61 — A call's value is configuration on an `Any` and a Callable node](FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) | minor | BUG-293 | M | high | config |
+| [FEAT-59 — A Protocol that scalars satisfy reads as the union of those scalars](FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md) | minor | FEAT-57, BUG-299 | L | high | behavior |
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | minor | FEAT-8 | XL | low | behavior |
 | [FEAT-4 — An explicit ordered patch-op stream](FEAT-4-ordered-patch-op-stream.md) | trivial |  | M | high | none |
 | [FEAT-44 — YAML tags for a file's merge ops](FEAT-44-yaml-tags-for-a-files-merge-ops.md) | trivial |  | M | medium | none |

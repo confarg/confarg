@@ -1,6 +1,6 @@
 # Plan — Protocol-typed fields
 
-**Drafted:** 2026-10-26 · **Status:** approved · **Tickets:** [BUG-291](../bugs/BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [BUG-294](../bugs/BUG-294-the-dump-writes-a-class-its-type-field-does-not-admit.md), [BUG-295](../bugs/BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md), [BUG-296](../bugs/BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md), [FEAT-57](../features/FEAT-57-protocol-typed-fields.md), [FEAT-2](../features/FEAT-2-a-callback-protocol-reads-as-a-callable.md) · **Amended:** 2026-10-26, after a third review: a Protocol class refused in `construct_named_class` (BUG-296), the dump of a conforming non-struct value, the effective member map, abstract and coroutine members, `Concatenate`; after a second review: trivial inherited bodies, a tag-demanding variant left out of the untagged union match (BUG-295), the `type[X]` dump (BUG-294), `_is_callable` for FEAT-2, the non-struct conformer; and after a first review: a Protocol class refused at the tag, `_unproducible_return` and the synthetic constructor rewired, the member shapes settled, BUG-293 moved before FEAT-57's third step
+**Drafted:** 2026-10-26 · **Status:** approved · **Tickets:** [BUG-291](../bugs/BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [BUG-294](../bugs/BUG-294-the-dump-writes-a-class-its-type-field-does-not-admit.md), [BUG-295](../bugs/BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md), [BUG-296](../bugs/BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md), [FEAT-57](../features/FEAT-57-protocol-typed-fields.md), [FEAT-2](../features/FEAT-2-a-callback-protocol-reads-as-a-callable.md), [BUG-300](../bugs/BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) · **Amended:** 2026-10-28, after FEAT-59's design: members looked up in the `__mro__`, never on the metaclass, and a tag naming a class two Protocol variants admit (BUG-300); 2026-10-26, after a third review: a Protocol class refused in `construct_named_class` (BUG-296), the dump of a conforming non-struct value, the effective member map, abstract and coroutine members, `Concatenate`; after a second review: trivial inherited bodies, a tag-demanding variant left out of the untagged union match (BUG-295), the `type[X]` dump (BUG-294), `_is_callable` for FEAT-2, the non-struct conformer; and after a first review: a Protocol class refused at the tag, `_unproducible_return` and the synthetic constructor rewired, the member shapes settled, BUG-293 moved before FEAT-57's third step
 
 A field annotated with a `typing.Protocol` has no story today, and most of what reaches one crashes with a raw `TypeError`: every site that asks "is this class one the annotation accepts?" calls `issubclass` or `isinstance`, which Python refuses for a Protocol that is not `@runtime_checkable`.
 Where nothing calls them, a Protocol reads as a plain class whose fields are `typing.Protocol.__init__`'s `*args, **kwargs`.
@@ -79,6 +79,9 @@ Today both read as the fields `{'args': list[Any], 'kwargs': dict[str, Any]}`, a
 So `_types._constructor_parameters` reads that constructor as `object.__init__`'s, recognized by identity with `typing._no_init_or_replace_init`: `typing.Protocol.__init__` resolves to `object.__init__` on 3.12 to 3.15, so it cannot be the key, and the private name is stable across those versions, pinned by a test on each.
 Keyed on the function rather than on `is_protocol(cls)`, it covers the implementers, and both states of the class give the same answer, `{}`, so the cache cannot go stale.
 
+A tag naming a class that implements two Protocol variants of a union (`{class: pkg.Structural}` under `Greeter | Named`) builds it: [BUG-300](../bugs/BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) tries the distinct bindings a tag selects in declaration order across variant classes, as `Box[int] | Box[str]` does today, where a tag matching variants of two classes is refused as ambiguous, nominally too (`AB(A, B)` under `A | B`).
+A structural implementer binds by its defaults under each, so its bindings are one.
+
 A custom `union_tag` spelled like a field of a nominal implementer keeps the recorded rule: the real field wins ([real field wins](../../architecture/design-decisions/real-field-wins.md)), as under an ABC.
 With `union_tag="kind"` and `Kinded(RG)` declaring `kind`, `{kind: x}` builds `Kinded(kind='x')`, chosen by its fields with the shadowed-tag warning, as it does today for a `@runtime_checkable` Protocol (run); a structural implementer is unreachable under that tag, which goes in limitations beside the ABC one.
 The default tag cannot collide, `class` being a keyword ([union tag defaults to class](../../architecture/design-decisions/union-tag-defaults-to-class.md)).
@@ -137,6 +140,8 @@ confarg instantiates the class itself, so no type checker ever sees the `Partial
 Rejected: **counting it**, the runtime view, for that reason; **never counting a member found on a Protocol class**, which refuses `Inherits`; **excluding only `@abstractmethod` members**, which still accepts `Partial`.
 
 A Protocol with no members — every member excluded, as `__init__` is from `__protocol_attrs__` — is satisfied by every class, as type checkers read it; only the refusal of a Protocol class applies to it.
+
+A member is looked up in the class's `__mro__`, as an instance sees it, never on its metaclass: `inspect.getattr_static(int, "__call__")` finds `type.__call__` and `getattr_static(int, "__name__")` `type`'s attribute (run), which no instance of `int` has, so a lookup reaching the metaclass would take a class with no `__call__` for an implementer of a Protocol declaring one beside another member, and build a value that cannot be called.
 
 Three member shapes the rule settles explicitly:
 
@@ -282,7 +287,7 @@ Under `Any` today a `UUID`, a `Path`, an `Enum` member and a `str` are each writ
 ### A Protocol takes no plain value, for now
 
 `ratio: SupportsFloat` takes `{class: ...}` only, so `--ratio 3.5` is refused with a message naming the tag; jsonargparse 4.53 answers `Expected a dot import path string: 3` the same way.
-Reading a Protocol that leaves satisfy as the union of those leaves is [FEAT-59](../features/FEAT-59-a-protocol-leaves-satisfy-reads-as-their-union.md), designed separately: it touches union ranking, help and dump.
+Reading a Protocol that a scalar satisfies as the union of those scalars is [FEAT-59](../features/FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md), designed in [its own plan](a-protocol-reads-the-scalars-that-satisfy-it.md).
 
 ## Where it lives
 
@@ -379,6 +384,8 @@ Each row of the tables above becomes a test against the `loader` fixture, so a f
 - A Protocol with no members, and a Protocol defining `__init__`.
 - `f: Callable[..., Greeter]` given the bare path of a conforming class: a factory, where today it is refused.
 - `protocol_members` asked of a nominal implementer is refused by its guard, on 3.12 and on 3.13+ alike.
+- A class with no `__call__` of its own is refused under a Protocol declaring `__call__` beside another member, though `getattr_static` finds `type.__call__` on it.
+- `{class: pkg.Structural}` under `Greeter | Named` builds `Structural`, once BUG-300 has landed.
 - `--help` of a Protocol field lists `--g.class` and a nominal implementer's flags; naming a structural implementer earlier on the line lists its flags ([a named tag is imported before registration](../../architecture/design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)).
 - `dump()` of a Protocol field writes the tag and reads back; a non-conforming value is written as `_serialize_foreign` writes it, with its warning.
 - A `call:` spec on a Protocol field: a conforming result is taken, any other built as the annotation, hence refused.
@@ -404,6 +411,7 @@ Run the touched tests on 3.12 to 3.15: the introspection API differs between 3.1
 
 ## Related, not part of this plan
 
+- [BUG-300](../bugs/BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md): a tag matching variants of two classes is refused as ambiguous, which a union of two Protocols meets whenever a class implements both.
 - [BUG-269](../bugs/BUG-269-a-constructors-own-exception-escapes-construction-raw.md): an implementer that is still abstract escapes as `Can't instantiate abstract class`, as an ABC does today.
 - [FEAT-39](../features/FEAT-39-a-struct-instance-default-is-no-base.md): a Protocol field's default is always an instance, so `--g.name z` over it is refused for want of a tag, as under an ABC, until instance defaults are laid.
 - [FEAT-58](../features/FEAT-58-a-kwargs-parameter-takes-extra-keys-typed-by-its-annotation.md): a target's `**kwargs`, the other half of what FEAT-2 used to hold.

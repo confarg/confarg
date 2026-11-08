@@ -29,4 +29,4 @@ A field annotated with a `typing.Protocol` crashes with a raw `TypeError` at the
 The design is settled in [the Protocol plan](../plans/protocol-typed-fields.md), which carries the decisions, the rejected alternatives, the precedents and the build order.
 In short: a Protocol is an abstract base its implementers are named into with `class:`; a class conforms by having every member and calling each method as the Protocol calls it, annotations ignored; data members are checked on the built instance; `type[P]` takes a concrete class whose methods conform; the conformance rule lives in one new module and `_tagged_struct` stays the decision-maker for what a tag builds.
 
-Callback Protocols (`__call__` only) are [FEAT-2](FEAT-2-a-callback-protocol-reads-as-a-callable.md), and a Protocol taking plain leaf values is [FEAT-59](FEAT-59-a-protocol-leaves-satisfy-reads-as-their-union.md).
+Callback Protocols (`__call__` only) are [FEAT-2](FEAT-2-a-callback-protocol-reads-as-a-callable.md), and a Protocol taking plain leaf values is [FEAT-59](FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md).
