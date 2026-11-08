@@ -460,9 +460,9 @@ def _construct_scalar(tp: Any, data: Any, path: FieldPath, union_tag: str) -> An
     """Construct a type reference or leaf value.
 
     Raises:
-        TypeCoercionError: If *data* is a dict carrying the union tag on a field that is
-            no struct — the tag has no subclass to select, so the refusal names the key
-            and the ``call:`` spec that computes a value the field accepts.
+        TypeCoercionError: If *data* is a dict carrying the union tag on a leaf, which is
+            built from one value, not from keys: the tag picks no class there, so the refusal
+            names the key and the ``call:`` spec that computes a value the field accepts.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/class-names-a-subclass-call-computes.md#class-names-a-subclass-call-computes
@@ -473,19 +473,9 @@ def _construct_scalar(tp: Any, data: Any, path: FieldPath, union_tag: str) -> An
     if _is_taggable_leaf(resolved) and isinstance(data, dict):
         return _construct_taggable_leaf(resolved, data, path, union_tag)
     if isinstance(data, dict) and union_tag in data:
-        raise _tag_selects_no_struct(resolved, data, path, union_tag)
+        spelled = _spell_type(resolved)
+        raise TypeCoercionError.leaf_takes_no_tag(data, spelled, _spell_field_path(path), union_tag, _defaults.CALL_KEY)
     return _coerce_leaf(tp, data, _spell_field_path(path))
-
-
-def _tag_selects_no_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> TypeCoercionError:
-    """Return the refusal of the union tag in *data* at a field of type *tp*, which accepts no struct.
-
-    Dev Notes:
-        docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
-    """
-    return TypeCoercionError.tag_selects_no_struct(
-        data, _spell_type(tp), _spell_field_path(path), union_tag, _defaults.CALL_KEY, union=_is_union(tp)
-    )
 
 
 def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:  # noqa: PLR0911  # one return per kind
@@ -1292,7 +1282,10 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
     reader = _first_spec_reader(non_none)
     structs = [rv for v in non_none if _is_struct(rv := _resolve_type(v))]
     if reader is None and not structs:
-        raise _tag_selects_no_struct(tp, data, path, union_tag)
+        spelled = _spell_type(tp)
+        raise TypeCoercionError.union_takes_no_tag(
+            data, spelled, _spell_field_path(path), union_tag, _defaults.CALL_KEY
+        )
     tag = data[union_tag]
     cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
     # Each variant the tagged class is a subclass of, by its class, with the class bound as it binds it.

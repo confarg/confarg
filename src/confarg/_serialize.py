@@ -264,12 +264,13 @@ def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
         docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
     """
     resolved = _resolve_type(tp)
-    _refuse_a_forbidden_literal(resolved, _spell_field_path(path) or _defaults.ROOT_KEY)
+    where = _spell_field_path(path) or _defaults.ROOT_KEY
+    _refuse_a_forbidden_literal(resolved, where)
     if _is_type_ref(resolved) or _is_coercible_leaf(resolved):
         return
     name = _spell_type(resolved)
     msg = (
-        f"Cannot serialize {name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}': {name} is no leaf type"
+        f"Cannot serialize {name} at '{where}': {name} is no leaf type"
         f" confarg reads, so the value would not load back."
         f" confarg.register_leaf_type({_spell_type(_registration_key(resolved))}, ...) makes it one."
     )
