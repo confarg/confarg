@@ -42,7 +42,6 @@ from confarg._types import (
     _is_tuple,
     _is_type_ref,
     _is_union,
-    _literal_members,
     _literal_values,
     _registered_class,
     _registration_key,
@@ -544,13 +543,8 @@ def _match_literal_member(v: Any, value: Any, path: str) -> bool:  # noqa: PLR09
     return False
 
 
-def _members_spelling(vals: tuple[Any, ...]) -> str:
-    """Return the Literal the members *vals* make up as Python writes it, ``Literal['a', 1]``."""
-    return f"Literal[{', '.join(repr(m) for m in vals)}]"
-
-
-def _match_literal_str_token(vals: tuple[Any, ...], value: _StrToken, path: str) -> Any:
-    """Try to match a _StrToken against Literal members; return the matched member or raise."""
+def _match_literal_str_token(tp: Any, vals: tuple[Any, ...], value: _StrToken, path: str) -> Any:
+    """Try to match a _StrToken against the members *vals* of the Literal *tp*; return the matched member or raise."""
     s = str(value)
 
     if s.lower() in _NONE_TOKENS:
@@ -562,7 +556,7 @@ def _match_literal_str_token(vals: tuple[Any, ...], value: _StrToken, path: str)
         if _match_literal_member(v, value, path):
             return v
 
-    raise TypeCoercionError.cannot_coerce(_src_type(value), value, _members_spelling(vals), path)
+    raise TypeCoercionError.cannot_coerce(_src_type(value), value, _spell_type(tp), path)
 
 
 def _coerce_literal_value(tp: Any, value: Any, path: str) -> Any:
@@ -577,11 +571,11 @@ def _coerce_literal_value(tp: Any, value: Any, path: str) -> Any:
     """
     vals = _literal_values(tp)
     if isinstance(value, _StrToken):
-        return _match_literal_str_token(vals, value, path)
+        return _match_literal_str_token(tp, vals, value, path)
     for v in _steal_order(list(vals), key=type):
         if _match_literal_member(v, value, path):
             return v
-    raise TypeCoercionError.cannot_coerce(_src_type(value), value, _members_spelling(vals), path)
+    raise TypeCoercionError.cannot_coerce(_src_type(value), value, _spell_type(tp), path)
 
 
 def _coerce_enum_value(tp: Any, value: Any, path: str) -> Any:
@@ -835,11 +829,6 @@ def _default_factory(tp: Any) -> Any:
     return None
 
 
-def _literal_spelling(tp: Any) -> str:
-    """Return the Literal type *tp* as written, ``Literal[1.0, 2.5]``, every member included."""
-    return _members_spelling(_literal_members(tp))
-
-
 def _refuse_a_forbidden_literal(tp: Any, path: str) -> None:
     """Refuse the type *tp* at *path* when it reaches a Literal member PEP 586 forbids.
 
@@ -852,7 +841,7 @@ def _refuse_a_forbidden_literal(tp: Any, path: str) -> None:
     """
     found = _forbidden_literal_member(tp)
     if found is not None:
-        raise TypeCoercionError.forbidden_literal_member(_literal_spelling(found[0]), found[1], path)
+        raise TypeCoercionError.forbidden_literal_member(_spell_type(found[0], as_written=True), found[1], path)
 
 
 def _coerce_registered(tp: Any, value: Any, path: str) -> Any:

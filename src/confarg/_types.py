@@ -100,12 +100,15 @@ def _spell_type(tp: Any, *, as_written: bool = False) -> str:
     Its wrappers are unwrapped, an alias, a ``NewType`` and an ``Annotated`` named by the type
     they stand for, since a message names what confarg tried; then a class by its
     ``__name__``, ``None`` as ``None``, a union by its variants (:func:`_union_args`) joined by
-    ``|``, anything else as written. A union reads ``int | str`` on every Python, though its
-    ``__name__`` is ``Union`` since 3.14.
+    ``|``, a ``Literal`` by the members confarg reads (:func:`_literal_values`), a generic by its
+    origin's name and its arguments spelled the same way, anything else as Python writes it.
+    So a type reads alike alone and nested, and on every Python: a union reads ``int | str``,
+    though its ``__name__`` is ``Union`` since 3.14, and ``list[Optional[int]]`` reads
+    ``list[int | None]``, where its ``repr`` reads ``list[typing.Optional[int]]`` on 3.12.
 
     *as_written* names an argument a refusal echoes back to its caller: nothing is unwrapped,
     an alias and a ``NewType`` named by their own name, ``NoneType`` passed alone as the class
-    it is, a union by its variants as written.
+    it is, a union by its variants as written, a ``Literal`` by every member it holds.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-message-names-a-type-by-what-confarg-reads.md#a-message-names-a-type-by-what-confarg-reads
@@ -114,13 +117,33 @@ def _spell_type(tp: Any, *, as_written: bool = False) -> str:
         tp = _resolve_type(tp)
     if tp is None or (tp is types.NoneType and not as_written):
         return "None"
-    if _is_union_origin(get_origin(tp)):
+    origin = get_origin(tp)
+    if _is_union_origin(origin):
         variants = get_args(tp) if as_written else _union_args(tp)
         return " | ".join("None" if v is types.NoneType else _spell_type(v, as_written=as_written) for v in variants)
+    if origin is Literal:
+        # A Literal confarg reads no member of, ``Literal[b'a']``, is named by what it holds.
+        members = get_args(tp) if as_written else (_literal_values(tp) or get_args(tp))
+        return f"Literal[{', '.join(repr(m) for m in members)}]"
     # ``typing.Any`` is a class since 3.11, so it reads ``Any`` here, not ``typing.Any``.
     if isinstance(tp, type | NewType) or _is_type_alias(tp):
         return tp.__name__
+    if isinstance(origin, type) and (args := get_args(tp)):
+        return f"{origin.__name__}[{', '.join(_spell_argument(a, as_written=as_written) for a in args)}]"
     return repr(tp)
+
+
+def _spell_argument(arg: Any, *, as_written: bool) -> str:
+    """Return how :func:`_spell_type` names *arg*, an argument of a generic.
+
+    A Callable's parameter list is a list of types, and ``...`` stands for any arguments or
+    for a variadic tuple's rest.
+    """
+    if arg is Ellipsis:
+        return "..."
+    if isinstance(arg, list):
+        return f"[{', '.join(_spell_type(a, as_written=as_written) for a in arg)}]"
+    return _spell_type(arg, as_written=as_written)
 
 
 def _is_type_alias(tp: Any) -> bool:

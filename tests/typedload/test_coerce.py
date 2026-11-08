@@ -168,7 +168,7 @@ class TestRegisterLeafType:
     def test_a_parameterized_class_names_the_class_to_register(self) -> None:
         """``re.Pattern[str]`` is no class, but its class is, and that registration reads it."""
         with pytest.raises(
-            TypeError, match=re.escape("re.Pattern[str] is no class; the registration of Pattern reads it")
+            TypeError, match=re.escape("Pattern[str] is no class; the registration of Pattern reads it")
         ):
             confarg.register_leaf_type(re.Pattern[str], re.compile)
 
