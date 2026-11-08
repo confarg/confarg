@@ -1946,7 +1946,7 @@ class TestAnAliasedUnionVariantDumps:
 @_dc
 class _UnreadKeys:
     pair: dict[tuple[int, int], int] = field(default_factory=dict)
-    maybe: dict[int | None, int] = field(default_factory=dict)
+    maybe: dict[int | tuple[int, int], int] = field(default_factory=dict)
     kind: dict[type, int] = field(default_factory=dict)
 
 
@@ -1957,7 +1957,7 @@ class TestDumpRefusesAKeyTypeConstructionRefuses:
         ("name", "key", "spelled"),
         [
             pytest.param("pair", (1, 2), r"tuple\[int, int\]", id="tuple"),
-            pytest.param("maybe", None, r"int \| None", id="union"),
+            pytest.param("maybe", 1, r"int \| tuple\[int, int\]", id="union-with-a-variant-no-key-is"),
             pytest.param("kind", int, "type", id="type-reference"),
         ],
     )
@@ -1971,3 +1971,31 @@ class TestDumpRefusesAKeyTypeConstructionRefuses:
         """The refusal is construction's: such a dict does not build either."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Unsupported leaf type"):
             confarg.build(_UnreadKeys, {name: {"1": 5}})
+
+
+@_dc
+class _UnionKeyedState:
+    u: dict[int | str, int] = field(default_factory=dict)
+    n: dict[int | None, int] = field(default_factory=dict)
+
+
+class TestAUnionKeyDumps:
+    """A dict keyed by a union dumps each key as its variant writes it (BUG-261)."""
+
+    def test_keys_that_read_back(self, tmp_path) -> None:
+        """A key each variant reads back as itself is written as it is, and the file loads back."""
+        held = _UnionKeyedState(u={1: 5, "a": 6}, n={None: 7, 2: 8})
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ConfargWarning)
+            assert confarg.dump(held) == {"u": {1: 5, "a": 6}, "n": {None: 7, 2: 8}}
+            path = tmp_path / "held.yaml"
+            confarg.dump_file(held, path)
+        assert confarg.load(_UnionKeyedState, files=[path], argv=[], env={}) == held
+
+    def test_a_key_another_variant_takes_warns(self) -> None:
+        """The text ``'1'`` reads back as the int: the dump writes it, and warns, as for a value no cast pins."""
+        with pytest.warns(ConfargWarning) as record:
+            assert confarg.dump(_UnionKeyedState(u={"1": 5})) == {"u": {"1": 5}, "n": {}}
+        assert [str(w.message) for w in record] == [
+            "Key '1' at 'u' will not read back as str: int, another variant of int | str, takes its text."
+        ]

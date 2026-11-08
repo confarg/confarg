@@ -210,6 +210,48 @@ class TestATagSpelledKeyIsDataWhereNoTagSelects:
             construct(tp, {"class": "confidential"}, path=("x",))
 
 
+class _Bug261Color(enum.Enum):
+    RED = "red"
+
+
+class TestAUnionKeyType:
+    """A dict keyed by a union reads each key as a union reads a token (BUG-261)."""
+
+    @pytest.mark.parametrize(
+        ("tp", "data", "expected"),
+        [
+            pytest.param(dict[int | None, int], {1: 5}, {1: 5}, id="native-int"),
+            pytest.param(dict[int | None, int], {"null": 5, "none": 6}, {None: 6}, id="none-words-are-one-key"),
+            pytest.param(dict[str | int, int], {"1": 5, "a": 6}, {1: 5, "a": 6}, id="rank-not-declaration-order"),
+            pytest.param(
+                dict[_Bug261Color | str, int], {"RED": 5, "x": 6}, {_Bug261Color.RED: 5, "x": 6}, id="enum-member"
+            ),
+        ],
+    )
+    def test_keys_read_as_a_union_reads_a_token(self, tp: Any, data: dict[Any, Any], expected: Any) -> None:
+        """The text spelling a number is the number; a variant's member is the member; the rest is text."""
+        assert construct(tp, data, path=("d",)) == expected
+
+    def test_a_key_no_variant_takes_is_the_unions_refusal(self) -> None:
+        """A key no variant reads is refused as the union refuses a value."""
+        with pytest.raises(TypeCoercionError) as exc_info:
+            construct(dict[int | None, int], {"x": 1}, path=("d",))
+        assert str(exc_info.value) == "Cannot coerce str 'x' to int at 'd'"
+
+    def test_a_key_refusal_offers_no_field_remedy(self) -> None:
+        """A key is no field: the none-word remedy a field's token gets is left out, the variants' reasons kept."""
+        with pytest.raises(TypeCoercionError) as exc_info:
+            construct(dict[_Bug261Color | int | None, int], {"x": 1}, path=("d",))
+        assert str(exc_info.value) == (
+            "Cannot coerce str 'x' to _Bug261Color | int | None at 'd':\n  _Bug261Color: valid members 'RED' ('red')"
+        )
+
+    def test_a_variant_no_key_is_refuses_the_key_type(self) -> None:
+        """A key type is a leaf construction reads, or a union of them, as ``dump()`` requires."""
+        with pytest.raises(TypeCoercionError, match=re.escape("Unsupported leaf type int | tuple[int, int] at 'd'")):
+            construct(dict[int | tuple[int, int], int], {"1": 1}, path=("d",))
+
+
 class TestUnionSeqTokenFallback:
     """A _UnionSeqToken (a lone CLI token) falls back to the sequence variant.
 

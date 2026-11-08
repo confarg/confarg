@@ -11176,3 +11176,33 @@ class TestANamingTypedRunWinsOverTheStaticShapeContract:
         registration = parser.parse_args(["--db.x", "1", "2"]).__confarg_registration__
         assert nargs["--db.x"] == "*"
         assert "db.x" in registration.runs
+
+
+@dataclass
+class _UnionKeyed:
+    """Dicts keyed by a union."""
+
+    u: dict[int | str, int] = dataclasses_field(default_factory=dict)
+    n: dict[int | None, int] = dataclasses_field(default_factory=dict)
+
+
+class TestAUnionKeyReadsAsATokenContract:
+    """A dict keyed by a union reads each key as a union reads a token, on every channel and front-end (BUG-261).
+
+    Each key went through the leaf coercion, which takes no union, so every key was refused.
+    """
+
+    def test_argv_and_environment(self, loader: ConfargLoader) -> None:
+        """A key that spells a number is the int, any other the text; ``null`` is the None key."""
+        argv = ["--u.1", "5", "--u.a", "6", "--n.null", "7"]
+        cfg = loader.load(_UnionKeyed, argv=argv, env={})
+        assert (cfg.u, cfg.n) == ({1: 5, "a": 6}, {None: 7})
+        env = {"APP_U__1": "5", "APP_U__A": "6", "APP_N__NULL": "7"}
+        cfg = loader.load(_UnionKeyed, argv=[], env=env, env_prefix="APP_")
+        assert (cfg.u, cfg.n) == ({1: 5, "a": 6}, {None: 7})
+
+    def test_a_flag_meets_the_files_key(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """``--u.1`` writes the key a file's ``1`` is: the merge reads both as the one int key."""
+        base = tmp_yaml("u: {1: 5, a: 6}\nn: {null: 1}\n")
+        cfg = loader.load(_UnionKeyed, argv=["--u.1", "9", "--n.none", "2"], env={}, files=[base])
+        assert (cfg.u, cfg.n) == ({1: 9, "a": 6}, {None: 2})

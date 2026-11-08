@@ -22,7 +22,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-225 — argparse completion offers nothing below a tagged class that holds itself](BUG-225-argparse-completion-offers-nothing-below-a-tagged-class-that-holds-itself.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-240 — A `*args` parameter cannot be set under the `args` of `bind:` or `call:`](BUG-240-a-var-positional-parameter-cannot-be-set-under-args.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-257 — A lone expression token on a list flag is one item, where the environment reads it as the whole list](BUG-257-a-lone-expression-token-on-a-list-flag-is-one-item.md) | minor |  | M | medium | behavior | PR-5 |
-| [BUG-261 — A dict keyed by a union refuses every key](BUG-261-a-dict-keyed-by-a-union-refuses-every-key.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-266 — A root union's scalar variant has no spelling in any channel](BUG-266-a-root-unions-scalar-variant-has-no-spelling.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-269 — A constructor's own exception escapes construction raw, with no path](BUG-269-a-constructors-own-exception-escapes-construction-raw.md) | minor |  | L | high | api | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |

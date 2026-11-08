@@ -31,14 +31,13 @@ from confarg._types import (
     _fixed_seq_types,
     _is_struct_like,
     _resolve_type,
-    _StrToken,
     _struct_member_type,
     _union_branches,
     _union_tag_shadowed,
 )
 from confarg.exceptions import ConfargError
-from confarg.typedload._coerce import _coerce_leaf, _type_kind, _TypeKind
-from confarg.typedload._construct import reads_as_new_value, tag_reading
+from confarg.typedload._coerce import _type_kind, _TypeKind
+from confarg.typedload._construct import read_key, reads_as_new_value, tag_reading
 
 
 def merge_root(target: Any, union_tag: str) -> MergeAt:
@@ -116,7 +115,7 @@ class TypedAt(MergeAt):
         reading = self._reading
         if reading.kind is _KeyKind.KEY:
             try:
-                value = _coerce_leaf(reading.tp, _StrToken(key) if isinstance(key, str) else key)
+                value = read_key(reading.tp, key, (), self.union_tag)
                 hash(value)
             except (ConfargError, TypeError, ValueError):
                 return _key_spelling(key)
