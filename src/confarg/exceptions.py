@@ -649,6 +649,33 @@ class TypeCoercionError(ConfargError):
         return cls._refusal(message, plain=(path, value))
 
     @classmethod
+    def no_instance_of(cls, what: str, src: str, value: Any, path: str) -> TypeCoercionError:
+        """Return the error for a value that is neither a dict nor an instance of the struct *what*.
+
+        A struct node takes an instance of its class or a dict of its fields, so the message
+        names both; *src* is the value's type as text, as for :meth:`wrong_shape`.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
+        """
+        message = (
+            f"Cannot construct {what} at '{path}': got {src} {value!r}, which is no {what};"
+            f" a {what}, or a dict of its fields, builds one."
+        )
+        return cls._refusal(message, plain=(path, value))
+
+    @classmethod
+    def unheld_member(cls, what: str, path: str, member_path: str, value: Any, member_type: str) -> TypeCoercionError:
+        """Return the error for an instance of the generic struct *what* holding *value*, no *member_type*, at a member.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
+        """
+        return cls(
+            f"Cannot construct {what} at '{path}': it holds {value!r} at '{member_path}', which is no {member_type}."
+        )
+
+    @classmethod
     def wrong_length(cls, what: str, path: str, expected: int, value: Sequence[Any]) -> TypeCoercionError:
         """Return the error for the positions *value* where the fixed-length sequence *what* holds *expected*.
 

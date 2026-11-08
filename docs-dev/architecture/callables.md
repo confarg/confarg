@@ -86,7 +86,7 @@ The target may be any callable spec, as under `bind:`: `{call: {classfn: C.m, k:
 
 A `call:` spec also fills a field whose annotation is not a Callable: an `int`, a dataclass, an `Optional`, any other type.
 The function is called with the arguments under `args`, and its value is the field.
-A value the annotation already accepts is taken as it is; any other is built as the annotation, so a wrong type fails the way a wrong literal does.
+The value is read by construction as the annotation, as `build()` data is: a built instance of what a node names is taken as it is, a dict or a list read as the same value written in the configuration where the call stands, each item coerced or refused at its own position, so a wrong type fails the way a wrong literal does ([a call's value is read by construction](design-decisions/a-calls-value-is-read-by-construction.md#a-calls-value-is-read-by-construction)).
 A `bind:` beside it is a second opener, and any other key beside it is refused, as in a Callable spec.
 The value is bounded where it enters, as `build()` data is: it nests at most 64 levels from the root and never holds itself, and a value that is a call again at the node is made in its place, a chain bounded on its own ([a chain of calls is bounded on its own](design-decisions/a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own)).
 `dump()` writes the value, not the spec ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
@@ -119,7 +119,7 @@ The method's own arguments belong under the `args` of a `bind:` or `call:` whose
 
 ## An `Any` node reads every opener
 
-An `Any` field reads a dict holding an opener (`_callable.holds_an_opener`) as the spec it is, through the same `_spec_parts` a Callable field reads: `{class: pkg.S, a: 1}` builds `S(a=1)`, `{call: pkg.f, args: {x: 4}}` takes `f(x=4)` as it is, `{bind: pkg.f}` yields `f` and `{classfn: pkg.C.m, k: 1}` the bound method.
+An `Any` field reads a dict holding an opener (`_callable.holds_an_opener`) as the spec it is, through the same `_spec_parts` a Callable field reads: `{class: pkg.S, a: 1}` builds `S(a=1)`, `{call: pkg.f, args: {x: 4}}` reads `f(x=4)` as configuration written in its place, an opener in it read again, `{bind: pkg.f}` yields `f` and `{classfn: pkg.C.m, k: 1}` the bound method.
 `_callable.resolve_held_spec` is that reader: it checks nothing against a Callable, so `class:` builds any class, callable or not, through `construct_named_class` as a Callable's `class:` does ([class builds an instance](#class-builds-an-instance)).
 A dict holding no opener is a `dict[Any, Any]` and a list a `list[Any]`, so every value below is an `Any` node in turn and a spec at any depth is read (`typedload._construct._construct_any`); a bare `dict` or `list` annotation reads the same way, being `dict[Any, Any]` and `list[Any]` (BUG-187).
 A bare dotted string stays a string: the shorthand applies only where the type asks for a callable.

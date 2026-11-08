@@ -11,9 +11,10 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | Ticket | Severity | Blocked by | Effort | Risk | Impact |
 |---|---|---|---|---|---|
 | [FEAT-58 — A `**kwargs` parameter takes extra keys, typed by its annotation](FEAT-58-a-kwargs-parameter-takes-extra-keys-typed-by-its-annotation.md) | critical |  | L | medium | config |
-| [FEAT-57 — Protocol-typed fields](FEAT-57-protocol-typed-fields.md) | major | BUG-293, BUG-295 | L | high | config |
+| [FEAT-57 — Protocol-typed fields](FEAT-57-protocol-typed-fields.md) | major | BUG-295 | L | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
+| [FEAT-61 — A call's value is configuration on an `Any` and a Callable node](FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) | minor |  | S | medium | behavior |
 | [FEAT-7 — Lazy resolution between `merge` and `build`](FEAT-7-lazy-resolution-merge-to-build.md) | minor |  | M | high | behavior |
 | [FEAT-8 — Value provenance](FEAT-8-value-provenance.md) | minor |  | M | high | behavior |
 | [FEAT-15 — No way to inspect the flags of a class the tag has not named yet](FEAT-15-inspect-flags-of-unnamed-class.md) | minor |  | M | low | behavior |
@@ -43,7 +44,6 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-2 — A callback Protocol reads as a Callable](FEAT-2-a-callback-protocol-reads-as-a-callable.md) | minor | FEAT-57 | M | high | behavior |
 | [FEAT-20 — Derived values that cannot be made inconsistent](FEAT-20-enforced-derived-values.md) | minor | FEAT-19 | M | medium | behavior |
 | [FEAT-39 — A struct instance default is no base layer](FEAT-39-a-struct-instance-default-is-no-base.md) | minor | FEAT-38 | M | medium | none |
-| [FEAT-61 — A call's value is configuration on an `Any` and a Callable node](FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) | minor | BUG-293 | M | high | config |
 | [FEAT-59 — A Protocol that scalars satisfy reads as the union of those scalars](FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md) | minor | FEAT-57, BUG-299 | L | high | behavior |
 | [FEAT-10 — A `confarg explain` command showing the final configuration and each value's origin](FEAT-10-confarg-explain-command.md) | minor | FEAT-8 | XL | low | behavior |
 | [FEAT-4 — An explicit ordered patch-op stream](FEAT-4-ordered-patch-op-stream.md) | trivial |  | M | high | none |

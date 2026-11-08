@@ -1472,8 +1472,8 @@ class TestSilentFailureFixes:
             (tuple[str, int], "hello 1", "expected list, tuple, or dict"),
             (tuple[str, int], None, "expected list, tuple, or dict"),
             (tuple[int, ...], "1 2 3", "expected sequence or dict"),
-            (DbConfig, "not_a_dict", "expected dict"),
-            (DbConfig, None, "expected dict"),
+            (DbConfig, "not_a_dict", "which is no DbConfig"),
+            (DbConfig, None, "which is no DbConfig"),
         ],
         ids=[
             "list-str",

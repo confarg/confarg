@@ -1,9 +1,9 @@
 # Plan — A call's value is read by construction
 
-**Drafted:** 2026-10-27 · **Status:** approved · **Tickets:** BUG-297 (landed), FEAT-60 (landed), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) · **Amended:** 2026-10-28, FEAT-60 landed: its rule and rejected alternatives are in [construction](../../architecture/types/construction.md#a-tuple-reads-where-a-list-reads), and a union's scalar variant refuses a tuple on its shape as it refuses a list; 2026-10-28, BUG-297 landed: the call-value helper is `_callable._call_value`, which makes a chain of calls in a loop, off the stack, and charges a value's copies to a budget of its own, construction carrying none; `_accepts` still answers before it chains, so under an `Any` a call returning a call keeps it as data until `_accepts` goes with BUG-293
+**Drafted:** 2026-10-27 · **Status:** approved · **Tickets:** BUG-297 (landed), FEAT-60 (landed), BUG-293 (landed), [FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) · **Amended:** 2026-10-28, BUG-293 landed: its decisions are in [a call's value is read by construction](../../architecture/design-decisions/a-calls-value-is-read-by-construction.md#a-calls-value-is-read-by-construction) and [construction](../../architecture/types/construction.md#a-built-instance-is-taken-as-it-is); deleting `_accepts` read an `Any`'s call value by construction too, since `_accepts(Any, …)` answering first was all that kept it as it was, so FEAT-61's `Any` half landed with it, the recorded sentence amended, and FEAT-61 is the Callable's; the union's instance rung is the first of `_construct_union_leaf`, asking `first_holding_variant`, `_find_variant_type`'s walk over a list of variants; a Protocol that is not runtime-checkable holds nothing until FEAT-57, so a file's scalar under it is not met by `isinstance`'s `TypeError`; 2026-10-28, FEAT-60 landed: its rule and rejected alternatives are in [construction](../../architecture/types/construction.md#a-tuple-reads-where-a-list-reads), and a union's scalar variant refuses a tuple on its shape as it refuses a list; 2026-10-28, BUG-297 landed: the call-value helper is `_callable._call_value`, which makes a chain of calls in a loop, off the stack, and charges a value's copies to a budget of its own, construction carrying none; `_accepts` still answers before it chains, so under an `Any` a call returning a call keeps it as data until `_accepts` goes with BUG-293
 
 A `call:` spec on a typed field takes its function's value "as it is" when `_callable._accepts` says the annotation already accepts it, and builds any other through construction ([call in a typed field](../../architecture/callables.md#call-in-a-typed-field)).
-`_accepts` asks `isinstance` of the annotation's origin alone, so a value whose outer class matches is taken unchecked at every depth below it, and it disagrees with `_serialize._holds`, the dump's answer to the same question ([BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md)).
+`_accepts` asks `isinstance` of the annotation's origin alone, so a value whose outer class matches is taken unchecked at every depth below it, and it disagrees with `_serialize._holds`, the dump's answer to the same question (BUG-293, landed).
 Construction, the other half, refuses the one thing a function most often returns that no file can spell: an instance of the struct its node names, at any depth (`list[Model]` given `[Model(1)]`, run).
 
 ```text
@@ -214,15 +214,15 @@ Rejected: **refused until FEAT-35**, which breaks legitimate template or shell t
 1. **BUG-297**, landed: the call-value helper on `resolve_typed_call`, with `refuse_overflow`, the cycle and the chain bound; test-first, both reproductions.
    `_accepts` still answers at its end.
 2. **FEAT-60**, landed: a tuple read where a list is, in construction and in the union's sequence routing.
-3. **[BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md)**, in this order, each step green before the next:
+3. **BUG-293**, landed, in this order, each step green before the next:
    1. Move the holding predicate to `typedload/_holding.py`, with no change in behavior.
    2. A struct node, a union and an unsupported leaf take a built instance; the refusal messages.
       `build()` data starts taking an instance here.
    3. `resolve_typed_call` hands every value to construction; `_accepts` deleted.
       Test-first: the ticket's reproduction, then the tables above.
-4. **[FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md)**: `_resolve_call_spec` and `resolve_held_spec`'s `call` branch through the helper, so an `Any` and a Callable read a call's value as configuration; the recorded sentence amended.
+4. **[FEAT-61](../features/FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md)**: `_resolve_call_spec` through the helper, so a Callable reads a call's value as configuration; the `Any` half and the recorded sentence landed with BUG-293.
 
-[FEAT-57](../features/FEAT-57-protocol-typed-fields.md) waits for BUG-293: its third step writes `instance_conforms` into the predicate step 3.1 moves, and from 3.2 on that predicate is asked by construction too, so a built instance under a non-runtime-checkable Protocol field raises the raw `TypeError` there until FEAT-57's third step, as the dump does today.
+[FEAT-57](../features/FEAT-57-protocol-typed-fields.md) waited for BUG-293: its third step writes `instance_conforms` into the predicate step 3.1 moved, which construction asks too from 3.2 on; until then a Protocol that is not runtime-checkable holds nothing there, so construction refuses a value under it and the dump writes one as foreign, where the plan had expected `isinstance`'s raw `TypeError` (amended above).
 
 ## Verification
 

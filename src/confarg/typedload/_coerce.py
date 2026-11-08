@@ -980,7 +980,7 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
     tp = _resolve_type(tp)
     _refuse_a_forbidden_literal(tp, path)
     if not _is_coercible_leaf(tp):
-        raise TypeCoercionError.unsupported_leaf(_spell_type(tp), path)
+        return _unsupported_leaf_instance(tp, value, path)
     if tp is Any:
         return _held_by_any(value)
     if _is_none_type(tp):
@@ -998,6 +998,25 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
     if _is_enum(tp):
         return _coerce_enum_value(tp, value, path)
     return _coerce_registered(tp, value, path)
+
+
+def _unsupported_leaf_instance(tp: Any, value: Any, path: str) -> Any:
+    """Return *value*, an instance of the unsupported leaf *tp*: the one reading such a leaf has.
+
+    So ``{call: threading.Lock}`` and a caller's own lock build a lock field, as its default
+    factory does (BUG-268).
+
+    Raises:
+        TypeCoercionError: If *value* is no instance of *tp*, which no other value reads as.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
+    """
+    from confarg.typedload._holding import _holds  # noqa: PLC0415  # import cycle: it reads the kind table here
+
+    if _holds(tp, value):
+        return value
+    raise TypeCoercionError.unsupported_leaf(_spell_type(tp), path)
 
 
 def _try_coerce(ft: Any, token: _StrToken, spelling: str) -> Any:

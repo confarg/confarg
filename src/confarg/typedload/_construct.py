@@ -117,6 +117,7 @@ from confarg.typedload._coerce import (
     _TypeKind,
     as_subclass,
 )
+from confarg.typedload._holding import _holds, _holds_anything, first_holding_variant, unheld_member
 
 
 def _try_pinned_dict(data: Any) -> _Pinned | None:
@@ -295,11 +296,16 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath, union_tag: s
     fields, and a subclass-only field constructs through the subclass that owns it,
     the union's structural answer (BUG-103).
 
+    A value that is no dict is taken as it is when it is an instance of ``tp`` (:func:`_holds`),
+    a subclass's included, before any tag or subclass is asked: its class answers what a tag
+    would. Any other is refused, naming the member of a generic struct that does not hold.
+
     Dev Notes:
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+        docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
     """
     if not isinstance(data, dict):
-        raise TypeCoercionError.wrong_shape(_src_type(data), data, tp.__name__, "dict", _spell_field_path(path))
+        return _take_instance(tp, data, path)
     direct_subs = _direct_struct_subclasses(tp)
     if union_tag in data:
         if not _union_tag_shadowed(tp, union_tag):
@@ -329,6 +335,25 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath, union_tag: s
         )
         raise TypeCoercionError(msg)
     return _construct_struct(tp, data, path, union_tag)
+
+
+def _take_instance(tp: Any, data: Any, path: FieldPath) -> Any:
+    """Return *data*, an instance of the struct *tp* that holds it; refuse anything else.
+
+    Raises:
+        TypeCoercionError: Naming the member of a generic struct whose value does not hold,
+            else naming the value's class and *tp*.
+    """
+    if _holds(tp, data):
+        return data
+    spelled = _spell_type(tp)
+    if _holds(_class_of(tp), data) and (unheld := unheld_member(tp, data)) is not None:
+        name, member_type, value = unheld
+        where = _spell_field_path(path)
+        raise TypeCoercionError.unheld_member(
+            spelled, where, _spell_field_path((*path, name)), value, _spell_type(member_type)
+        )
+    raise TypeCoercionError.no_instance_of(spelled, _src_type(data), data, _spell_field_path(path))
 
 
 def _construct_shadowed_subclass(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
@@ -1197,15 +1222,6 @@ type _Refusals = list[tuple[Any, BaseException]]
 _READ_FROM_ONE_VALUE = frozenset({_TypeKind.LEAF, _TypeKind.TAGGABLE_LEAF})
 
 
-def _holds_anything(variant: Any) -> bool:
-    """Return whether union *variant* is ``Any``, the variant every value is held by.
-
-    Dev Notes:
-        docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
-    """
-    return _type_kind(_resolve_type(variant)) is _TypeKind.ANY
-
-
 def _first_constructible(variants: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals) -> Any:
     """Construct *data* as the first of *variants* that accepts it, or return _UNION_NO_MATCH.
 
@@ -1501,6 +1517,8 @@ def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, a
 ) -> Any:
     """Construct a union value by trying leaf variants in priority order.
 
+    A built instance of a struct or an unsupported-leaf variant is first taken by that variant
+    (:func:`_instance_variant`).
     An ``Any`` variant is the last rung: it takes what every other variant refused. A value no
     variant accepts fails naming the whole union and, on a line each, the reason of each variant
     that says more than that (FEAT-46), the struct variants' already in *refusals*; for a
@@ -1511,6 +1529,10 @@ def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, a
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
         docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
     """
+    instance_of = _instance_variant(non_none, data)
+    if instance_of is not None:
+        return construct(instance_of, data, path=path, union_tag=union_tag)
+
     fixed_vars, coll_vars, scalar_leaf_vars, any_vars = _leaf_variants(non_none)
 
     result = _try_fixed_seq_variants(fixed_vars, data, path, union_tag, refusals)
@@ -1630,6 +1652,28 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
             return result
 
     return _construct_union_leaf(all_args, non_none, data, path, union_tag, refusals=refusals)
+
+
+def _instance_variant(non_none: list[Any], data: Any) -> Any:
+    """Return the struct or unsupported-leaf variant among *non_none* that holds the built instance *data*, or None.
+
+    The variant the dump picks (:func:`first_holding_variant`), so a value is read by
+    the variant it is written by; a dict, a list or a tuple is read by shape instead, and a
+    variant with a coercion takes what its coercion takes, in the leaf walk.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
+    """
+    if isinstance(data, dict | list | tuple):
+        return None
+    variant = first_holding_variant([_resolve_type(v) for v in non_none], data)
+    match None if variant is None else _type_kind(variant):
+        case _TypeKind.STRUCT:
+            return variant
+        case _TypeKind.LEAF if not _is_coercible_leaf(variant):
+            return variant
+        case _:
+            return None
 
 
 def _struct_matches_value(tp: Any, value: Any, union_tag: str) -> bool:

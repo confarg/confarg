@@ -14,7 +14,7 @@ import functools
 import inspect
 import types
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, NoReturn, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, NoReturn, get_args, get_type_hints
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -25,13 +25,11 @@ from confarg._import import _import_dotted, dotted_name, has_dotted_name, import
 from confarg._types import (
     _expected_call_signature,
     _is_struct,
-    _is_union,
     _PositionalGapError,
     _PositionalParams,
     _resolve_type,
     _spell_type,
     _src_type,
-    _union_args,
 )
 from confarg.exceptions import (
     ConfargError,
@@ -660,37 +658,21 @@ def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
     return _resolve_class_spec(_ClassSpec(spec[opener], args), ctx)
 
 
-def _accepts(tp: Any, value: Any) -> bool:
-    """True if ``value`` already is a ``tp``, so it needs no construction to be one.
-
-    A plain class or a parametrized one (by its origin) is an ``isinstance`` test; a union
-    accepts what any of its members accepts. Anything else answers no, and the caller
-    constructs the value, which is what coerces or refuses it.
-    """
-    if tp is Any:
-        return True
-    if _is_union(tp):
-        return any(_accepts(_resolve_type(arg), value) for arg in _union_args(tp))
-    base = get_origin(tp) or tp
-    return isinstance(base, type) and isinstance(value, base)
-
-
 def resolve_typed_call(spec: dict, tp: Any, path: FieldPath, union_tag: str, construct_fn: Any) -> Any:
-    """Build a non-Callable value from a ``call:`` spec: call the function and take its value as the field's.
+    """Build a non-Callable value from a ``call:`` spec: call the function and read its value as the field's.
 
-    The mapping under ``args`` holds the function's arguments. A value the annotation already
-    accepts is returned as it is; any other is built as ``tp`` from the raw value, so a wrong
-    type fails the way a wrong literal does. A ``bind`` beside ``call`` is a second opener,
-    and any other key beside it is refused, as in a Callable spec (:func:`_computation_parts`).
+    The mapping under ``args`` holds the function's arguments. The value is read by
+    construction as ``tp``, as ``build()`` data is: a built instance of what a node names is
+    taken as it is, any other value coerced or refused at its own position. A ``bind`` beside
+    ``call`` is a second opener, and any other key beside it is refused, as in a Callable spec
+    (:func:`_computation_parts`).
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
+        docs-dev/architecture/design-decisions/a-calls-value-is-read-by-construction.md#a-calls-value-is-read-by-construction
     """
     ctx = _SpecContext(path, union_tag, construct_fn)
-    value = _call_value(spec, tp, ctx)
-    if _accepts(tp, value):
-        return value
-    return ctx.construct(tp, value)
+    return ctx.construct(tp, _call_value(spec, tp, ctx))
 
 
 def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
@@ -717,7 +699,7 @@ def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
         _opener, kwargs = _computation_parts(spec, ctx.where)
         value = _call_factory(spec[_defaults.CALL_KEY], kwargs, ctx)
         refuse_overflow(value, action, at=ctx.path, copies=Copies())
-        if _accepts(tp, value) or not _is_typed_call(value, tp):
+        if not _is_typed_call(value, tp):
             return value
         targets = [repr(made_spec[_defaults.CALL_KEY]) for made_spec in made]
         if value in made:
