@@ -251,6 +251,7 @@ That is also why a bare instance method function, `C.m` unbound, is refused: its
 A class method is a new bound method on each access, so it is compared with `==`, which holds for the same function bound to the same class.
 
 `dotted_name` spells a bound method through the class it is bound to: a method a base defines has the base in its qualified name, and `"pkg.Sub.m"` loaded through auto-binding would dump as `pkg.Base.m`, bound to a base on read-back.
+A C type's method, which has no `__module__`, is spelled through the class that owns it, `str.upper` as `builtins.str.upper` (BUG-195, [dotted imports](types/dotted-imports.md#a-c-types-method-is-named-through-its-class)).
 The check does not see an owner's state, which is written beside the path ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)).
 
 Precedent: `pickle` writes a function by reference the same way, which catches every unimportable or shadowed name, not only the two markers ([dotted imports](types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back)).

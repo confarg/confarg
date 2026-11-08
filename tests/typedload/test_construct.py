@@ -81,6 +81,49 @@ class TestConstructStructDispatch:
         assert result == _BaseNoSubs()
 
 
+def _no_struct_refusal(tp: str, tag: str) -> str:
+    """Return the refusal of a ``class`` tag at ``x`` on *tp*, a type spelled as written that accepts no struct."""
+    return (
+        f"Cannot coerce dict {{'class': {tag!r}}} to {tp} at 'x'. The 'class' key is the union tag, which names a"
+        f" subclass of a struct-typed field's annotation; {tp} accepts no struct, so the tag cannot select one."
+        " A 'call:' spec computes a value the field's type accepts."
+    )
+
+
+class TestATagNoVariantTakes:
+    """A union no variant of which a tag selects refuses the tag as a leaf does, importing nothing (BUG-252)."""
+
+    @pytest.mark.parametrize(
+        ("tp", "spelled"),
+        [
+            pytest.param(int, "int", id="leaf"),
+            pytest.param(Path, "Path", id="untaggable-leaf"),
+            pytest.param(int | str, "int | str", id="scalars"),
+            pytest.param(int | Path, "int | Path", id="untaggable-leaf-variant"),
+            pytest.param(list[int] | str, "list[int] | str", id="sequence-variant"),
+            pytest.param(int | dict[str, str], "int | dict[str, str]", id="dict-variant"),
+        ],
+    )
+    def test_the_refusal_says_no_variant_accepts_a_struct(self, tp: Any, spelled: str) -> None:
+        """The leaf's refusal, naming the union as written: there is no candidate to list."""
+        with pytest.raises(TypeCoercionError) as exc_info:
+            construct(tp, {"class": "pathlib.Path"}, path=("x",))
+        assert str(exc_info.value) == _no_struct_refusal(spelled, "pathlib.Path")
+
+    def test_the_tag_is_not_imported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+    ) -> None:
+        """Every tag is refused, so none is imported: a module the tag names never runs."""
+        (tmp_path / "bug252_broken.py").write_text("raise RuntimeError('boom')\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        request.addfinalizer(lambda: sys.modules.pop("bug252_broken", None))
+        for tag in ("bug252_broken.Thing", "bug252_nothere.Thing"):
+            with pytest.raises(TypeCoercionError) as exc_info:
+                construct(int | str, {"class": tag}, path=("x",))
+            assert str(exc_info.value) == _no_struct_refusal("int | str", tag)
+        assert "bug252_broken" not in sys.modules
+
+
 class TestUnionSeqTokenFallback:
     """A _UnionSeqToken (a lone CLI token) falls back to the sequence variant.
 

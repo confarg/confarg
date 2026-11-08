@@ -1220,6 +1220,42 @@ class TestSerialization:
         """A callable loaded from a path dumps as that path, a method bound to an owner with no fields included."""
         assert confarg.dump(confarg.build(WithBareCallable, {"fn": path}))["fn"] == path
 
+    @pytest.mark.parametrize(
+        ("path", "dumped"),
+        [
+            pytest.param("str.upper", "builtins.str.upper", id="method-descriptor"),
+            pytest.param("collections.OrderedDict.move_to_end", "collections.OrderedDict.move_to_end", id="c-type"),
+            pytest.param("int.__add__", "builtins.int.__add__", id="slot-wrapper"),
+            pytest.param("dict.fromkeys", "builtins.dict.fromkeys", id="builtin-class-method"),
+            pytest.param("datetime.datetime.now", "datetime.datetime.now", id="c-type-class-method"),
+            pytest.param("bool.__add__", "builtins.int.__add__", id="inherited-descriptor"),
+            pytest.param("bool.from_bytes", "builtins.bool.from_bytes", id="inherited-class-method"),
+        ],
+    )
+    def test_a_c_types_method_dumps_through_the_class_that_owns_it(self, path: str, dumped: str) -> None:
+        """A C type's method has no ``__module__``, and is named through its class (BUG-195).
+
+        A descriptor names its class by ``__objclass__``, the class defining it, which a subclass
+        shares it with; a builtin class method by ``__self__``, the class it was reached through.
+        """
+        cfg = confarg.build(WithBareCallable, {"fn": path})
+        assert confarg.dump(cfg)["fn"] == dumped
+        assert confarg.build(WithBareCallable, {"fn": dumped}).fn == cfg.fn
+
+    def test_a_c_static_method_dumps_once_python_gives_it_a_module(self) -> None:
+        """A C static method names no class before 3.15, which gives it ``__module__``; it has no path until then."""
+        cfg = confarg.build(WithBareCallable, {"fn": "str.maketrans"})
+        if sys.version_info >= (3, 15):
+            assert confarg.dump(cfg)["fn"] == "builtins.str.maketrans"
+        else:
+            with pytest.raises(ConfargError, match=r"it has no dotted path"):
+                confarg.dump(cfg)
+
+    def test_a_c_method_bound_to_an_instance_cannot_be_dumped(self) -> None:
+        """No spec builds a C method bound to an instance: ``classfn:`` opens no C method."""
+        with pytest.raises(ConfargError, match=r"it has no dotted path"):
+            confarg.dump(WithBareCallable(fn="abc".upper))
+
     def test_an_inherited_method_dumps_through_the_class_it_is_bound_to(self) -> None:
         """A method a base defines is named through its owner's class, not by its qualified name.
 

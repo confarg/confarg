@@ -94,6 +94,19 @@ def _src_type(value: Any) -> str:
     return "str" if isinstance(value, _StrToken) else type(value).__name__
 
 
+def _spell_type(tp: Any) -> str:
+    """Return how a message names the annotation *tp*.
+
+    A class by its name, a union by its variants joined by ``|``, anything else as written. A
+    union reads ``int | str`` on every Python: since 3.14 its ``__name__`` is ``Union``.
+    """
+    if tp is None or tp is types.NoneType:
+        return "None"
+    if _is_union(tp):
+        return " | ".join(_spell_type(v) for v in _union_args(tp))
+    return tp.__name__ if isinstance(tp, type) else repr(tp)
+
+
 def _per_class_cache[R](fn: Callable[[Any], R]) -> Callable[[Any], R]:
     """Cache *fn*'s answer per class, for as long as the class lives.
 

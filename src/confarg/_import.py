@@ -25,6 +25,8 @@ def dotted_name(obj: Any) -> str:
     as ``Outer.Inner``, and the tag confarg writes has to be one it can import. A bound
     method is named through the class it is bound to (the class itself for a class
     method), since its qualified name names the class that defines it, which may be a base.
+    A C type's method has no ``__module__``, and is named through the class that owns it
+    (:func:`_c_owner`).
 
     Dev Notes:
         docs-dev/architecture/types/dotted-imports.md#dotted-imports
@@ -32,7 +34,34 @@ def dotted_name(obj: Any) -> str:
     if inspect.ismethod(obj):
         owner = obj.__self__ if isinstance(obj.__self__, type) else type(obj.__self__)
         return f"{dotted_name(owner)}.{obj.__name__}"
+    if (owner := _c_owner(obj)) is not None:
+        return f"{dotted_name(owner)}.{obj.__name__}"
     return f"{obj.__module__}.{obj.__qualname__}"
+
+
+def has_dotted_name(obj: Any) -> bool:
+    """True if :func:`dotted_name` spells a path for *obj*: it has a module, or a C type owns it.
+
+    Whether the path imports back is :func:`imports_back`'s to say.
+    """
+    return _c_owner(obj) is not None or bool(getattr(obj, "__module__", None))
+
+
+def _c_owner(obj: Any) -> type | None:
+    """Return the class whose C method *obj* is, or None.
+
+    A method descriptor or a slot wrapper names it by ``__objclass__`` (``str.upper``,
+    ``int.__add__``), a builtin class method by ``__self__`` (``dict.fromkeys``). A builtin
+    bound to a module or an instance (``len``, ``"abc".upper``) has none, and neither has a C
+    static method (``str.maketrans``), whose ``__self__`` is None.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-c-types-method-is-named-through-its-class
+    """
+    owner = getattr(obj, "__objclass__", None)
+    if owner is None and inspect.isbuiltin(obj):
+        owner = obj.__self__
+    return owner if isinstance(owner, type) else None
 
 
 def imports_back(path: str, obj: Any) -> bool:
@@ -40,7 +69,9 @@ def imports_back(path: str, obj: Any) -> bool:
 
     Equality, for a class method: it is a new bound method on each access. What a dump writes
     is checked this way before it is written, since a qualified name holding ``<locals>`` or
-    ``<lambda>``, or a name the module rebinds, has no import that leads back.
+    ``<lambda>``, or a name the module rebinds, has no import that leads back. A
+    ``RecursionError`` or a ``MemoryError`` the import raises passes through, as it does
+    out of :func:`_import_dotted`.
 
     Dev Notes:
         docs-dev/architecture/types/dotted-imports.md#a-dotted-path-is-written-only-when-it-imports-back
@@ -52,26 +83,14 @@ def imports_back(path: str, obj: Any) -> bool:
     return bool(named is obj or named == obj)
 
 
-def _prefix_not_importable(e: ModuleNotFoundError, module_path: str) -> bool:
-    """True when ``module_path`` itself (or an ancestor) is the module not found.
-
-    A ``ModuleNotFoundError`` carries the name of the module the import machinery
-    could not find in ``name``. When that is ``module_path`` or one of its
-    ancestors, the prefix is simply not an importable module — try a shorter
-    one. When it is anything else, ``module_path`` exists but a transitive
-    dependency it imports is missing, which is a real error to surface.
-    """
-    name = e.name
-    return name is not None and (name == module_path or module_path.startswith(name + "."))
-
-
 def _import_dotted(path: str) -> Any:
-    """Import an object by dotted path, trying decreasing module prefixes.
+    """Import an object by dotted path: its longest module prefix, then the attributes after it.
 
-    Tries importing the longest valid module prefix first, then chains
-    getattr for the remaining parts.  As a final fallback, resolves the path
-    against the ``builtins`` module so bare builtin names (``int``, ``str``,
-    ``list``, ...) work without a ``builtins.`` prefix.
+    The prefixes are imported shortest first, so the first one whose import raises is the
+    module that failed, which the error names. Every ancestor of a module is one, so the walk
+    stops at the first prefix that is not, and the parts after it are attributes. As a final
+    fallback, resolves the path against the ``builtins`` module so bare builtin names
+    (``int``, ``str``, ``list``, ...) work without a ``builtins.`` prefix.
 
     An undotted name is looked up in ``builtins`` only, never imported: a module is no class
     and no callable, so importing one could only run its code. A string that is no dotted
@@ -80,11 +99,11 @@ def _import_dotted(path: str) -> Any:
     A failure raised *inside* an importable module is kept distinct from "this
     prefix is not a module": only a ``ModuleNotFoundError`` whose ``name`` is the
     prefix itself or one of its ancestors means the prefix is simply not
-    importable (try a shorter one). Any other failure — a broken transitive
-    dependency, a failed ``from x import y``, a circular import — comes from a
-    module that does exist and is surfaced as
-    :class:`~confarg.exceptions.SymbolImportError` rather than masked as a
-    typo'd path.
+    importable. Any other failure — a broken transitive dependency, a failed
+    ``from x import y``, a circular import — comes from a module that does exist
+    and is surfaced as :class:`~confarg.exceptions.SymbolImportError` rather than
+    masked as a typo'd path. A ``RecursionError`` or a ``MemoryError`` passes
+    through as it is: the module's code or the caller's stack may have raised it.
 
     Raises:
         SymbolNotFoundError: If nothing answers to *path*: no module, no attribute, or no
@@ -100,35 +119,13 @@ def _import_dotted(path: str) -> Any:
         msg = f"Cannot import {path!r}: not a dotted path of identifiers"
         raise SymbolNotFoundError(msg)
     # An undotted name is never imported: it is looked up in builtins alone, below.
-    module_prefixes = range(len(parts), 0, -1) if len(parts) > 1 else range(0)
-    for i in module_prefixes:
-        module_path = ".".join(parts[:i])
+    module, length = _longest_module_prefix(path, parts) if len(parts) > 1 else (None, 0)
+    if module is not None:
         try:
-            obj = importlib.import_module(module_path)
-        except ModuleNotFoundError as e:
-            # `name` is the module the import machinery could not find. When it
-            # is `module_path` or an ancestor of it, the prefix itself is not
-            # importable — try a shorter prefix. Otherwise the module exists but
-            # a transitive dependency it imports is missing: surface that
-            # instead of masking it as a typo'd path.
-            if _prefix_not_importable(e, module_path):
-                continue
-            msg = f"Cannot import {path!r}: error loading module '{module_path}': {e}"
-            raise SymbolImportError(msg) from e
-        except Exception as e:
-            # A non-``ModuleNotFoundError`` failure (bare ``ImportError`` from a
-            # failed ``from x import y``, circular import, or any other error
-            # raised while executing the module) comes from a module that does
-            # exist, so surface it rather than walking down to shorter prefixes.
-            msg = f"Cannot import {path!r}: error loading module '{module_path}': {e}"
-            raise SymbolImportError(msg) from e
-        try:
-            obj = functools.reduce(getattr, parts[i:], obj)
+            return functools.reduce(getattr, parts[length:], module)
         except AttributeError as e:
             msg = f"Cannot import {path!r}: {e}"
             raise SymbolNotFoundError(msg) from e
-        else:
-            return obj
     # No importable module prefix matched; fall back to builtins so a bare
     # name like "int" resolves.  See docs-dev/architecture/types/dotted-imports.md#dotted-imports.
     obj = _resolve_builtin(parts)
@@ -136,6 +133,44 @@ def _import_dotted(path: str) -> Any:
         return obj
     msg = f"Cannot import {path!r}: no importable module found in path"
     raise SymbolNotFoundError(msg)
+
+
+def _longest_module_prefix(path: str, parts: list[str]) -> tuple[Any, int]:
+    """Import the prefixes of *parts* shortest first, and return the module the longest names and its length.
+
+    The module is None, of length 0, when the first part names no module. The length counts
+    parts, since a module's ``__name__`` may not be the path that reached it (``os.path``).
+
+    Raises:
+        SymbolImportError: If a prefix is a module that fails while it is imported, named in
+            the message.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-path-names-nothing-or-a-module-fails
+    """
+    module = None
+    for i in range(1, len(parts) + 1):
+        module_path = ".".join(parts[:i])
+        try:
+            module = importlib.import_module(module_path)
+        except ModuleNotFoundError as e:
+            # `name` is the module the import machinery could not find. When it is `module_path`,
+            # the prefix is not a module, and the parts after the last one are attributes: its
+            # ancestors all imported before it. Otherwise the module exists but a dependency it
+            # imports is missing: surface that instead of masking it as a typo'd path.
+            if e.name == module_path:
+                return module, i - 1
+            msg = f"Cannot import {path!r}: error loading module '{module_path}': {e}"
+            raise SymbolImportError(msg) from e
+        except (RecursionError, MemoryError):
+            raise
+        except Exception as e:
+            # A non-``ModuleNotFoundError`` failure (bare ``ImportError`` from a
+            # failed ``from x import y``, circular import, or any other error
+            # raised while executing the module) comes from a module that does exist.
+            msg = f"Cannot import {path!r}: error loading module '{module_path}': {e}"
+            raise SymbolImportError(msg) from e
+    return module, len(parts)
 
 
 def _resolve_builtin(parts: list[str]) -> Any:
