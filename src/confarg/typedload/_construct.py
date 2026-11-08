@@ -424,8 +424,15 @@ def _ambiguous_subclass_msg(matches: list[Any], data: MergeDict, path: FieldPath
         set(data),
         path,
         "Ambiguous subclasses",
+        _owned_tag_remedy(union_tag),
+    )
+
+
+def _owned_tag_remedy(union_tag: str) -> str:
+    """Return the remedy an ambiguity refusal offers where a member owns the tag's spelling: no tag selects."""
+    return (
         f"A member spelled {union_tag!r} owns the tag's spelling, so no class-path tag"
-        " can select between them. Rename the field or pass a different union_tag.",
+        " can select between them. Rename the field or pass a different union_tag."
     )
 
 
@@ -1347,7 +1354,7 @@ def _try_construct_union_struct(
     if len(matches) == 1:
         return construct(matches[0], data, path=path, union_tag=union_tag)
     if len(matches) > 1:
-        raise AmbiguousUnionError(_ambiguous_union_msg(matches, data, path, union_tag))
+        raise AmbiguousUnionError(_ambiguous_union_msg(matches, dc_vars, data, path, union_tag))
     return _first_constructible(dc_vars, data, path, union_tag, refusals)
 
 
@@ -1762,16 +1769,26 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
     return True
 
 
-def _ambiguous_union_msg(matches: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> str:
-    """Build a diagnostic AmbiguousUnionError message with per-variant field breakdowns."""
-    return _ambiguous_structs_msg(
-        matches,
-        {k for k in data if k != union_tag},
-        path,
-        "Ambiguous union",
-        f"To select a variant add a {union_tag!r} field, e.g. {union_tag!r}: {matches[0].__name__!r}."
-        f" The field name can be changed via the union_tag= parameter.",
-    )
+def _ambiguous_union_msg(
+    matches: list[Any], variants: list[Any], data: MergeDict, path: FieldPath, union_tag: str
+) -> str:
+    """Build a diagnostic AmbiguousUnionError message with per-variant field breakdowns.
+
+    Where one of the union's struct *variants* owns the tag's spelling, the key is a provided
+    field, as the match read it (:func:`_field_keys`), and adding it selects no variant, so no
+    tag is offered.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
+    if any(_union_tag_shadowed(var, union_tag) for var in variants):
+        remedy = _owned_tag_remedy(union_tag)
+    else:
+        remedy = (
+            f"To select a variant add a {union_tag!r} field, e.g. {union_tag!r}: {matches[0].__name__!r}."
+            " The field name can be changed via the union_tag= parameter."
+        )
+    return _ambiguous_structs_msg(matches, _field_keys(variants, data, union_tag), path, "Ambiguous union", remedy)
 
 
 def _structurally_matches(var: Any, keys: set[str | ListOp]) -> bool:

@@ -10,7 +10,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-298 — A union without `None` takes a file's `null`](BUG-298-a-union-without-none-takes-a-files-null.md) | critical |  | S | medium | config | PR-11 |
-| [BUG-302 — A union's dump overwrites the field that owns the tag's spelling](BUG-302-a-unions-dump-overwrites-the-field-that-owns-the-tags-spelling.md) | critical |  | S | medium | behavior | BUG-102 |
+| [BUG-303 — A fallback reads a key a member owns as the tag](BUG-303-a-fallback-reads-a-key-a-member-owns-as-the-tag.md) | critical |  | S | medium | config | BUG-102, BUG-103 |
 | [BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict](BUG-283-a-reference-to-a-tagged-registered-leaf-reads-its-dict.md) | critical |  | M | high | config | BUG-16, BUG-246 |
 | [BUG-288 — An ambiguity inside a union variant lets the next variant take the value](BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md) | critical |  | M | high | config | PR-5 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
