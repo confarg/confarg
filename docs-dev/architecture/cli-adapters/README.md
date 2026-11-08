@@ -15,7 +15,7 @@ What they translate *from* is [CLI parsing](../cli-parsing/README.md).
 | [collection-patch-parity.md](collection-patch-parity.md) | the second parse over argv that recovers what a framework's parse result cannot express |
 | [a-flag-that-stands-bare.md](a-flag-that-stands-bare.md) | flags legal with nothing after them, and the one marker with two readers that keeps them working |
 | [parity.md](parity.md) | byte-identical merged dicts, and the choice gates that must let an expression through |
-| [union-inheritance-and-cast-flags.md](union-inheritance-and-cast-flags.md) | registering a union tag and its variants' fields, and reading the same tag back |
+| [union-inheritance-and-cast-flags.md](union-inheritance-and-cast-flags.md) | registering a class key and its variants' fields, and reading the same tag back |
 | [framework-specifics.md](framework-specifics.md) | what each of the four frameworks spells its own way |
 | [completion.md](completion.md) | shell completion per framework, and why it never raises |
 | [list-syntax-divergence.md](list-syntax-divergence.md) | the approved spelling divergence, and what repeating a flag means in every front-end |

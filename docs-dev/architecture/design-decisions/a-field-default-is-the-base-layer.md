@@ -29,7 +29,7 @@ Reading these calls nothing: the defaults stay the class's business, confarg rea
   Until BUG-243 such a node got no default laid inside it.
 - Below a node, the defaults laid are those of the class construction will build there: the class a `class:` tag names (`_tags._tag_named_struct`, as construction dispatches), the one non-`None` variant of an optional, the variant a tag selects in a union.
   Where that is not certain — a tag that is an expression, a union a structural match decides, a struct with subclasses and no tag — nothing is laid below.
-- A node that replaces what lies below is never combined with a default: one carrying its own `__base__`, a cast pin, or one construction reads as naming what it builds, a union tag or a typed `call:` (`typedload._construct.reads_as_new_value`).
+- A node that replaces what lies below is never combined with a default: one carrying its own `__base__`, a cast pin, or one construction reads as naming what it builds, a class key or a typed `call:` (`typedload._construct.reads_as_new_value`).
 
 ## A delete meets the defaults last
 

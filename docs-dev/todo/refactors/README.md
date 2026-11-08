@@ -23,7 +23,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-82 — `greetings.py` in two examples carries a dead `Config` dataclass](REF-82-greetings-py-carries-a-dead-config-dataclass.md) | trivial |  | S | low | none |
 | [REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading](REF-85-api-seams-round-trip-paragraphs-sit-under-the-option-set-heading.md) | trivial |  | S | low | none |
 | [REF-94 — Construction reads a sequence's index keys in two places](REF-94-construction-reads-a-sequences-index-keys-in-two-places.md) | trivial |  | S | medium | none |
-| [REF-95 — The tag-collision tests leave their warnings uncaptured](REF-95-the-tag-collision-tests-leave-their-warnings-uncaptured.md) | trivial |  | S | low | none |
 | [REF-98 — `_typed_read._read` and `_serialize.written_form` are one walk spelled twice](REF-98-typed_read-read-and-written-form-are-one-walk.md) | trivial |  | S | low | none |
 | [REF-101 — `_coerce_type_ref` repeats the class-tag import step for step](REF-101-coerce-type-ref-repeats-the-class-tag-import.md) | trivial |  | S | low | none |
 | [REF-102 — `make_parser` tells a merge option from a parser keyword by its own test](REF-102-make-parser-tells-a-merge-option-by-its-own-test.md) | trivial |  | S | low | none |
@@ -42,12 +41,11 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | trivial |  | M | medium | none |
 | [REF-45 — The argv value-run scan is written seven times](REF-45-argv-value-run-scan-duplicated.md) | trivial |  | M | high | none |
 | [REF-50 — Adapter registration and completion boilerplate](REF-50-adapter-registration-boilerplate.md) | trivial |  | M | low | none |
-| [REF-71 — Four functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | trivial |  | M | medium | none |
+| [REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | trivial |  | M | medium | none |
 | [REF-83 — The registration walk dispatches on shape outside `_type_kind`](REF-83-registration-walk-dispatches-outside-the-kind-table.md) | trivial |  | M | medium | none |
 | [REF-91 — The documentation written before the no-hard-wrap rule is still hard-wrapped](REF-91-the-older-documentation-is-hard-wrapped.md) | trivial |  | M | low | none |
 | [REF-105 — A fixed-length position is read and spelled by hand around `_fixed_position`](REF-105-a-fixed-length-position-is-read-and-spelled-per-site.md) | trivial |  | M | low | none |
 | [REF-108 — The library steers by process-wide warning filters](REF-108-the-library-steers-by-process-wide-warning-filters.md) | trivial |  | M | medium | none |
 | [REF-111 — `_merge`, `_types` and `dictexpr` import each other, through two small leaves](REF-111-merge-types-and-dictexpr-import-each-other.md) | trivial |  | M | low | none |
-| [REF-121 — Drop the `union_tag` option: the class key is always `class`](REF-121-drop-the-union-tag-option.md) | trivial |  | L | low | api |
 
 <!-- tickets:end -->

@@ -5,7 +5,7 @@
 """What a node names, and the type that gives each key below it.
 
 A node names a class through an opener on a Callable, an ``Any`` or a typed call, or through
-the union tag on a struct, a taggable leaf or a union. Construction builds the keys below it
+the class key on a struct, a taggable leaf or a union. Construction builds the keys below it
 as that class reads them, so the type walk of a path (:mod:`confarg._parse_cli`) and the
 typed merge (:mod:`confarg._typed_merge`) both ask :func:`named_variant` and
 :func:`named_child` what a key is, and cannot drift from construction or from each other.
@@ -35,7 +35,6 @@ from confarg._callable import (
     _instance_method_owner,
     _target_signature,
     holds_an_opener,
-    openers,
     spec_opener,
     target_parameter_types,
     yielded_callable_path,
@@ -51,7 +50,6 @@ from confarg._types import (
     _struct_member_type,
     _tagged_struct,
     _union_branches,
-    _union_tag_shadowed,
 )
 from confarg.dictexpr import contains_expression
 from confarg.dictexpr._expressions import _list_index
@@ -97,7 +95,7 @@ UNREADABLE = (ConfargError, ImportError, ValueError, TypeError, NameError, Attri
 class _Reading(NamedTuple):
     """What a node names: the key naming it, and how its other keys read."""
 
-    #: The opener or the union tag naming the node; its value is a dotted-path leaf, or a target spec.
+    #: The opener or the class key naming the node; its value is a dotted-path leaf, or a target spec.
     key: str
     #: The class whose members the node's other keys are; None for a computation, or a class no import reads.
     cls: type | None
@@ -105,31 +103,31 @@ class _Reading(NamedTuple):
     computation: bool = False
 
 
-def _reading(tp: Any, node: Any, union_tag: str) -> _Reading | None:  # noqa: PLR0911  # one return per kind
+def _reading(tp: Any, node: Any) -> _Reading | None:  # noqa: PLR0911  # one return per kind
     """Return what the node of the non-union type *tp* holding *node* names, None when it names nothing.
 
     The one reading of a node :func:`named_child` types a key by and :func:`named_member_names`
-    lists the keys of: a typed call, an opener on a Callable or an ``Any``, the union tag on a
+    lists the keys of: a typed call, an opener on a Callable or an ``Any``, the class key on a
     struct or a taggable leaf naming a subclass of it.
     """
     if not isinstance(node, dict):
         return None
-    if _is_typed_call(node, tp, union_tag):
+    if _is_typed_call(node, tp):
         return _Reading(_defaults.CALL_KEY, None, computation=True)
     match _type_kind(tp):
         case _TypeKind.CALLABLE | _TypeKind.ANY:
-            opener = spec_opener(node, union_tag) if holds_an_opener(node, union_tag) else None
+            opener = spec_opener(node) if holds_an_opener(node) else None
             if opener is None:
                 return None
             if opener in _COMPUTATION_OPENERS:
                 return _Reading(opener, None, computation=True)
             return _Reading(opener, _object_class(opener, node.get(opener)))
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
-            if union_tag not in node or _union_tag_shadowed(tp, union_tag):
+            if _defaults.CLASS_KEY not in node:
                 return None
-            cls = class_named(node[union_tag])
+            cls = class_named(node[_defaults.CLASS_KEY])
             bound = _tagged_struct(cls, tp) if cls is not None and _is_struct(cls) else None
-            return None if bound is None else _Reading(union_tag, bound)
+            return None if bound is None else _Reading(_defaults.CLASS_KEY, bound)
         case _:
             return None
 
@@ -146,12 +144,12 @@ def _object_class(opener: str, target: Any) -> type | None:
         return None
 
 
-def names_something(node: Any, union_tag: str) -> bool:
-    """Return whether the dict *node* holds a key that may name what it builds: an opener or the union tag."""
-    return isinstance(node, dict) and holds_an_opener(node, union_tag)
+def names_something(node: Any) -> bool:
+    """Return whether the dict *node* holds a key that may name what it builds: an opener or the class key."""
+    return isinstance(node, dict) and holds_an_opener(node)
 
 
-def named_variant(tp: Any, node: MergeDict, union_tag: str) -> Any:
+def named_variant(tp: Any, node: MergeDict) -> Any:
     """Return the variant of the union *tp* that builds the dict *node*, None when *node* names none.
 
     The variant a tag names (a struct variant the class subclasses, else the variant that reads
@@ -164,8 +162,8 @@ def named_variant(tp: Any, node: MergeDict, union_tag: str) -> Any:
     members = _union_branches(tp)
     if len(members) < 2 or not isinstance(node, dict):  # noqa: PLR2004  # a union of several variants
         return None
-    if union_tag in node and tag_reading(tp, union_tag) is TagReading.SELECTS:
-        cls = class_named(node[union_tag])
+    if _defaults.CLASS_KEY in node and tag_reading(tp) is TagReading.SELECTS:
+        cls = class_named(node[_defaults.CLASS_KEY])
         if cls is None:
             return None
         matching = [m for m in members if _is_struct(m) and _tagged_struct(cls, m) is not None]
@@ -174,16 +172,16 @@ def named_variant(tp: Any, node: MergeDict, union_tag: str) -> Any:
             # as construction tries it first.
             return matching[0]
         return None if matching else _first_spec_reader(members)
-    if _is_typed_call(node, tp, union_tag):
+    if _is_typed_call(node, tp):
         return None
-    return spec_reading_variant(tp, node, union_tag)
+    return spec_reading_variant(tp, node)
 
 
-def named_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> Any:  # one return per kind
+def named_child(tp: Any, key: str, node: MergeDict) -> Any:  # one return per kind
     """Return the type of *key* below a node of the non-union type *tp* holding *node*, or a :class:`Named`.
 
     The node names a class by an opener on a Callable, an ``Any`` or a typed call, or by the
-    union tag on a struct or a taggable leaf, and *key* is what that class reads it as: a
+    class key on a struct or a taggable leaf, and *key* is what that class reads it as: a
     field of the class an object opener or a tag names, a nested target below ``bind:`` or
     ``call:``, the arguments of the target under ``args``. The value of a tag or an object
     opener is a dotted path, so it is a ``str`` leaf.
@@ -191,23 +189,23 @@ def named_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> Any:  # o
     Dev Notes:
         docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names
     """
-    reading = _reading(tp, node, union_tag)
+    reading = _reading(tp, node)
     if reading is None:
         return Named.NOTHING
     if reading.computation:
-        return _computation_child(key, node.get(reading.key), union_tag)
+        return _computation_child(key, node.get(reading.key))
     if key == reading.key:
         return str
     return Named.UNTYPED if reading.cls is None else _member(reading.cls, key)
 
 
-def _computation_child(key: str, target: Any, union_tag: str) -> Any:
+def _computation_child(key: str, target: Any) -> Any:
     """Return the type of *key* in a ``bind:`` or ``call:`` spec over *target*: a nested target, or its arguments."""
     if key in _COMPUTATION_OPENERS:
         return TARGET
     if key != _defaults.ARGS_KEY:
         return Named.REFUSED
-    path = yielded_callable_path(target, union_tag) if isinstance(target, dict) else target
+    path = yielded_callable_path(target) if isinstance(target, dict) else target
     return Named.UNTYPED if path is None else arguments_of(path)
 
 
@@ -264,12 +262,6 @@ def takes_untyped_argument(tp: Any, key: str) -> bool:
     return is_arguments(tp) and (key in getattr(tp, UNTYPED_ARGUMENTS) or getattr(tp, ANY_ARGUMENT))
 
 
-@functools.cache
-def opener_keys(union_tag: str) -> frozenset[str]:
-    """Return the keys that may name what a node builds: the openers, the union tag among them."""
-    return frozenset(openers(union_tag))
-
-
 def node_at(data: Any, prefix: Sequence[str]) -> Any:
     """Return the node at *prefix* in *data*, stepping a dict by its key and a list by an index; None where absent.
 
@@ -299,10 +291,10 @@ class MergedNaming:
         docs-dev/architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#which-naming-types-a-key
     """
 
-    __slots__ = ("_at", "_below", "_layer", "_merged", "_union_tag")
+    __slots__ = ("_at", "_below", "_layer", "_merged")
 
-    def __init__(self, below: MergeDict, layer: MergeDict, at: MergeAt, union_tag: str) -> None:
-        self._below, self._layer, self._at, self._union_tag = below, layer, at, union_tag
+    def __init__(self, below: MergeDict, layer: MergeDict, at: MergeAt) -> None:
+        self._below, self._layer, self._at = below, layer, at
         self._merged: MergeDict | None = None
 
     def changed(self) -> None:
@@ -314,10 +306,10 @@ class MergedNaming:
         if self._merged is None:
             self._merged = _deep_merge(self._below, self._layer, at=self._at)
         node = node_at(self._merged, prefix)
-        return node if names_something(node, self._union_tag) else None
+        return node if names_something(node) else None
 
 
-def named_member_names(tp: Any, node: MergeDict, union_tag: str) -> list[str]:
+def named_member_names(tp: Any, node: MergeDict) -> list[str]:
     """Return the names the class a node of type *tp* holding *node* names reads as its keys, [] for none.
 
     The listing view of :func:`named_child`, for the environment, which matches a segment's
@@ -325,10 +317,10 @@ def named_member_names(tp: Any, node: MergeDict, union_tag: str) -> list[str]:
     """
     if not isinstance(node, dict):
         return []
-    variant = named_variant(tp, node, union_tag)
+    variant = named_variant(tp, node)
     if variant is None and len(_union_branches(tp)) > 1:  # a union naming no variant
         return []
-    reading = _reading(_union_branches(variant if variant is not None else tp)[0], node, union_tag)
+    reading = _reading(_union_branches(variant if variant is not None else tp)[0], node)
     if reading is None or reading.cls is None or not _is_struct(reading.cls):
         return []
     try:

@@ -152,6 +152,6 @@ Construction then walks the resolved dict with no memo keyed by node identity, a
 `build()` hides that — it constructs from the dict and drops it — but the three-step seam ([pipeline](../pipeline/api-seams.md#public-api-seams)) exposes it: mutating `resolved["db"]` in place also mutates every path that referenced it, and, when no expression is written in `db`, the caller's own `data["db"]`, which resolution does not copy ([resolution](resolution.md#resolution-copies-only-what-it-writes)).
 Copying on substitution would pay a deep copy per reference to protect a caller the seam does not invite (its documented use is to inspect and dump), so the aliasing stands as a limitation ([limitations](../limitations.md#expressions)) rather than a defect.
 
-**The union tag travels with the node.**
+**The class key travels with the node.**
 A referenced struct carries its `class` key along, and `_construct_struct_dispatch` honors a tag even on a non-union field ([types](../types/construction.md#union-construction)).
 The referencing field's *declared* type therefore governs what is built: annotated with the tagged class it constructs, annotated with a leaf type it is a coercion error — `${db.port}` is the reference for a single field.

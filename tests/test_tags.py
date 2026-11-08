@@ -113,41 +113,40 @@ class TestTagsFromArgv:
 
     def test_space_separated(self) -> None:
         """Test that space-separated --field.class value is parsed."""
-        tags = _tags_from_argv(["--db.class", "myapp.ServerDB"], "class")
+        tags = _tags_from_argv(["--db.class", "myapp.ServerDB"])
         assert tags == {"db": "myapp.ServerDB"}
 
     def test_equals_form(self) -> None:
         """Test that --field.class=value form is parsed."""
-        tags = _tags_from_argv(["--db.class=myapp.ServerDB"], "class")
+        tags = _tags_from_argv(["--db.class=myapp.ServerDB"])
         assert tags == {"db": "myapp.ServerDB"}
 
     def test_multiple_tags(self) -> None:
         """Test that multiple class tag flags are all collected."""
         tags = _tags_from_argv(
             ["--db.class", "myapp.ServerDB", "--cache.class", "myapp.Redis"],
-            "class",
         )
         assert tags == {"db": "myapp.ServerDB", "cache": "myapp.Redis"}
 
     def test_nested_prefix(self) -> None:
         """Test that a deeply nested class tag is keyed by full prefix."""
-        tags = _tags_from_argv(["--db.backend.class", "myapp.Redis"], "class")
+        tags = _tags_from_argv(["--db.backend.class", "myapp.Redis"])
         assert tags == {"db.backend": "myapp.Redis"}
 
     def test_no_match(self) -> None:
         """Test that argv with no class tags returns an empty dict."""
-        tags = _tags_from_argv(["--host", "localhost", "--port", "5432"], "class")
+        tags = _tags_from_argv(["--host", "localhost", "--port", "5432"])
         assert tags == {}
 
     def test_ignores_flag_without_value(self) -> None:
         """Test that a class tag flag with no following value is ignored."""
         # --db.class at end of argv with no following value
-        tags = _tags_from_argv(["--db.class"], "class")
+        tags = _tags_from_argv(["--db.class"])
         assert tags == {}
 
     def test_ignores_flag_followed_by_another_flag(self) -> None:
         """Test that a class tag flag followed by another flag is ignored."""
-        tags = _tags_from_argv(["--db.class", "--other"], "class")
+        tags = _tags_from_argv(["--db.class", "--other"])
         assert tags == {}
 
 
@@ -187,29 +186,29 @@ class TestTagsFromConfig:
         It descended into every struct field the data lacks as ``{}``, so a self-holding
         type recursed forever, whatever a ``--config`` file held.
         """
-        assert _tags_from_config({"other": 1}, _SelfHolder, prefix="", union_tag="class") == {}
+        assert _tags_from_config({"other": 1}, _SelfHolder, prefix="") == {}
 
-    def test_finds_struct_union_tag(self) -> None:
-        """Test that a union tag is found in the merged config dict."""
+    def test_finds_struct_class_key(self) -> None:
+        """Test that a class key is found in the merged config dict."""
         merged: MergeDict = {"db": {"class": "myapp.ServerDB", "host": "localhost"}}
-        tags = _tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
+        tags = _tags_from_config(merged, _AppConfig, prefix="")
         assert tags == {"db": "myapp.ServerDB"}
 
-    def test_empty_when_no_union_tag(self) -> None:
-        """Test that no union tag in config yields an empty dict."""
+    def test_empty_when_no_class_key(self) -> None:
+        """Test that no class key in config yields an empty dict."""
         merged: MergeDict = {"db": {"host": "localhost"}}
-        tags = _tags_from_config(merged, _AppConfig, prefix="", union_tag="class")
+        tags = _tags_from_config(merged, _AppConfig, prefix="")
         assert tags == {}
 
     def test_empty_when_merged_empty(self) -> None:
         """Test that an empty merged config yields an empty tags dict."""
-        tags = _tags_from_config({}, _AppConfig, prefix="", union_tag="class")
+        tags = _tags_from_config({}, _AppConfig, prefix="")
         assert tags == {}
 
     def test_uses_given_prefix(self) -> None:
         """Test that a non-empty prefix is applied when resolving tags."""
         merged: MergeDict = {"class": "myapp.ServerDB"}
-        tags = _tags_from_config(merged, _DBBase, prefix="db", union_tag="class")
+        tags = _tags_from_config(merged, _DBBase, prefix="db")
         # _DBBase is not a union field itself; struct walk yields nothing here
         assert isinstance(tags, dict)
 
@@ -220,25 +219,20 @@ class TestTagsFromConfig:
 
 
 class TestRootLevelTag:
-    """The root target is tagged by a bare ``--<union_tag>``, keyed by the empty path."""
+    """The root target is tagged by a bare ``--class``, keyed by the empty path."""
 
     def test_bare_flag_from_argv(self) -> None:
         """A bare --class carries the root target's own tag."""
-        assert _tags_from_argv(["--class", "myapp.ServerDB"], "class") == {"": "myapp.ServerDB"}
+        assert _tags_from_argv(["--class", "myapp.ServerDB"]) == {"": "myapp.ServerDB"}
 
     def test_bare_flag_equals_form(self) -> None:
         """The --class=PATH spelling too."""
-        assert _tags_from_argv(["--class=myapp.ServerDB"], "class") == {"": "myapp.ServerDB"}
-
-    def test_custom_union_tag(self) -> None:
-        """The scan follows *union_tag*, so 'class' is no longer a tag flag."""
-        argv = ["--kind", "myapp.ServerDB", "--db.class", "not.a.tag"]
-        assert _tags_from_argv(argv, "kind") == {"": "myapp.ServerDB"}
+        assert _tags_from_argv(["--class=myapp.ServerDB"]) == {"": "myapp.ServerDB"}
 
     def test_root_tag_from_config(self) -> None:
         """A tag on the root struct itself, not on one of its fields."""
         """A tag on the root struct itself, not on one of its fields."""
-        assert _tags_from_config({"class": "myapp.ServerDB"}, _DBBase, "", "class") == {"": "myapp.ServerDB"}
+        assert _tags_from_config({"class": "myapp.ServerDB"}, _DBBase, "") == {"": "myapp.ServerDB"}
 
 
 class TestCollectTags:
@@ -251,7 +245,6 @@ class TestCollectTags:
         tags = collect_tags(
             ["--config", str(cfg), "--db.class", "myapp.ServerDB"],
             _AppConfig,
-            union_tag="class",
             config_flag="config",
         )
         assert tags == {"db": "myapp.ServerDB"}
@@ -260,12 +253,12 @@ class TestCollectTags:
         """A tag reaches the scan through a --config file alone."""
         cfg = tmp_path / "c.toml"
         cfg.write_text('[db]\nclass = "myapp.SQLiteDB"\n', newline="\n")
-        tags = collect_tags(["--config", str(cfg)], _AppConfig, union_tag="class", config_flag="config")
+        tags = collect_tags(["--config", str(cfg)], _AppConfig, config_flag="config")
         assert tags == {"db": "myapp.SQLiteDB"}
 
     def test_config_flag_disabled(self, tmp_path) -> None:
         """With no config flag there is no file to read, and argv still answers."""
-        tags = collect_tags(["--db.class", "myapp.ServerDB"], _AppConfig, union_tag="class", config_flag="")
+        tags = collect_tags(["--db.class", "myapp.ServerDB"], _AppConfig, config_flag="")
         assert tags == {"db": "myapp.ServerDB"}
 
 
@@ -277,7 +270,7 @@ class TestImportTaggedClasses:
         import sys  # noqa: PLC0415
 
         sys.modules.pop("wave", None)  # a stdlib module nothing else here imports
-        import_tagged_classes(["--db.class", "wave.Wave_read"], _AppConfig, union_tag="class", config_flag="")
+        import_tagged_classes(["--db.class", "wave.Wave_read"], _AppConfig, config_flag="")
         assert "wave" in sys.modules
 
     @pytest.mark.parametrize(
@@ -286,37 +279,8 @@ class TestImportTaggedClasses:
     )
     def test_bad_path_is_swallowed(self, path: str) -> None:
         """An unimportable, malformed or empty path is not an error here."""
-        import_tagged_classes(["--db.class", path], _AppConfig, union_tag="class", config_flag="")
+        import_tagged_classes(["--db.class", path], _AppConfig, config_flag="")
 
     def test_no_tags_is_a_no_op(self) -> None:
         """Argv naming no class imports nothing."""
-        import_tagged_classes(["--host", "localhost"], _AppConfig, union_tag="class", config_flag="config")
-
-
-# ---------------------------------------------------------------------------
-# A field named exactly like the union tag is not a tag (BUG-102)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _KindFieldTarget:
-    Kind: str = "field"
-
-
-class TestCollectTagsShadowedField:
-    """collect_tags drops a tag-shaped flag that a real field owns.
-
-    The argv scan is lexical: a --Kind VALUE occurrence went into the tag map even
-    when a field named Kind consumed the spelling, steering the adapters' walk and
-    the pre-registration import from a field's value.
-    """
-
-    def test_shadowed_flag_not_collected(self) -> None:
-        """A --Kind occurrence on a struct that owns a Kind field is no tag."""
-        tags = collect_tags(["--Kind", "v"], _KindFieldTarget, union_tag="Kind", config_flag="")
-        assert tags == {}
-
-    def test_shadowed_config_key_not_collected(self) -> None:
-        """A config file's Kind key on a struct that owns a Kind field is no tag."""
-        tags = _tags_from_config({"Kind": "v"}, _KindFieldTarget, "", "Kind")
-        assert tags == {}
+        import_tagged_classes(["--host", "localhost"], _AppConfig, config_flag="config")

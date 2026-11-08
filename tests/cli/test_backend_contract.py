@@ -3331,7 +3331,7 @@ class TestInheritanceDispatchContract:
         A diamond subclass is reachable by two inheritance paths and must not be
         offered twice; direct subclasses come before their own descendants.
         """
-        flags = build_static_flags(_DiamondBase, union_tag="class", config_flag="")
+        flags = build_static_flags(_DiamondBase, config_flag="")
         class_spec = next(f for f in flags if f.name == "class")
         assert class_spec.completer is not None
         expected = [f"{__name__}._Diamond{name}" for name in ("Left", "Right", "Join")]
@@ -3362,7 +3362,7 @@ class TestInheritanceDispatchContract:
 
     def test_no_class_tag_raises(self, loader: ConfargLoader) -> None:
         """A base class with subclasses but no --class raises TypeCoercionError."""
-        with pytest.raises(TypeCoercionError, match="discriminator"):
+        with pytest.raises(TypeCoercionError, match="no 'class' key was provided"):
             loader.load(_BaseDB, argv=["--dbpath", "/var/db/app.sqlite"], env={}, config_flag="")
 
     def test_config_file_class_tag_keeps_cli_subclass_field(self, loader: ConfargLoader, tmp_yaml) -> None:
@@ -3584,7 +3584,7 @@ class _TagAnywhere:
 class TestTagAtAnyPathContract:
     """A tag the walk reaches by its fallback merges as vanilla's scan writes it, at any path.
 
-    Vanilla's ``union_tag`` rule answers the tag segment whatever the parent, so the
+    Vanilla's class key rule answers the tag segment whatever the parent, so the
     tag reaches the merged dict and ``build()`` judges it. The adapters write it through
     the same argv-order replay as a collection patch, so the latest writer at the path
     is argv's to answer here too (BUG-106).
@@ -4258,7 +4258,7 @@ class TestUnionRootContract:
 
     def test_union_root_flags_built(self) -> None:
         """build_static_flags generates --class and all variant fields for a union root."""
-        flags = build_static_flags(_RootDBConfig, union_tag="class", config_flag="")
+        flags = build_static_flags(_RootDBConfig, config_flag="")
         names = {f.name for f in flags}
         assert {"class", "dbpath", "host", "port", "name"} <= names
 
@@ -4304,7 +4304,7 @@ class TestUnionRootContract:
         Each variant contributes a ``type`` FlagSpec with its own single-member choices;
         these must be merged into one flag rather than first-wins-collapsed.
         """
-        flags = build_static_flags(_RootTypedDBConfig, union_tag="class", config_flag="")
+        flags = build_static_flags(_RootTypedDBConfig, config_flag="")
         type_specs = [f for f in flags if f.name == "type"]
         assert len(type_specs) == 1
         assert set(type_specs[0].choices or []) == {"mariadb", "postgres"}
@@ -6136,7 +6136,7 @@ class TestCallableBesideAnotherVariantRegistrationContract:
     """
 
     def test_openers_beside_a_struct_variant(self, populating_loader: ConfargLoader) -> None:
-        """``class`` is the union tag; ``bind``, ``call`` and ``classfn`` are listed beside it."""
+        """``class`` is the class key; ``bind``, ``call`` and ``classfn`` are listed beside it."""
         flags = populating_loader.registered_flags(_CallableOrLevelCfg, config_flag="")
         assert flags is not None
         assert {"f.bind", "f.call", "f.class", "f.classfn", "f.level"} <= flags
@@ -6507,7 +6507,7 @@ class TestCallOnTheCliContract:
         assert loader.load(_TypedCallConfig, argv=argv, env={}, files=[base]).n == 8
 
     def test_a_call_replaces_what_a_lower_layer_set(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """A call from the CLI or the environment drops the struct a file set, as a union tag does (BUG-190)."""
+        """A call from the CLI or the environment drops the struct a file set, as a class key does (BUG-190)."""
         base = tmp_yaml("p:\n  a: 9\n  b: 9\n")
         argv = ["--p.call", f"{__name__}._scaled_point", "--p.args.a", "2", "--p.args.scale", "3"]
         assert loader.load(_TypedCallConfig, argv=argv, env={}, files=[base]).p == _CallPoint(a=6, b=3)
@@ -7829,7 +7829,7 @@ class TestAnyReadsSpecsContract:
 
 
 class _TagNamedTagger:
-    """A callable class a custom union tag names, its list field taking a run of tokens (BUG-305)."""
+    """A callable class the class key names, its list field taking a run of tokens (BUG-305)."""
 
     def __init__(self, tags: list[str]) -> None:
         self.tags = tags
@@ -7840,7 +7840,7 @@ class _TagNamedTagger:
 
 @dataclass
 class _WithTagNamedSpecs:
-    """Spec readers alone and beside a scalar variant, which a custom union tag opens (BUG-305)."""
+    """Spec readers alone and beside a scalar variant, which the class key opens (BUG-305)."""
 
     data: Any = None
     x: int | Any = 0
@@ -7848,48 +7848,41 @@ class _WithTagNamedSpecs:
     c: int | Callable[[], list[str]] = 0
 
 
-class TestTheUnionTagOpensASpecContract:
-    """A custom union tag is the class opener at every spec reader, in every front-end (BUG-305).
+class TestTheClassKeyOpensASpecContract:
+    """The class key is the class opener at every spec reader, in every front-end (BUG-305).
 
-    The tag replaces ``class`` in every role, so ``class`` is an ordinary key there, and the
-    keys beside the tag are typed by the class it names, a list taking its run of tokens.
+    The keys beside it are typed by the class it names, a list taking its run of tokens.
     """
 
     _ANY = f"{__name__}._AnyBuilt"
     _CALLABLE = f"{__name__}._TagNamedTagger"
 
     @pytest.mark.parametrize("name", ["data", "x"])
-    def test_an_any_builds_the_class_the_tag_names(self, space_sep_loader: ConfargLoader, name: str) -> None:
-        """--data.Kind names the class, alone or beside int, and --data.tags takes its run."""
-        argv = [f"--{name}.Kind", self._ANY, f"--{name}.a", "2", f"--{name}.tags", "p", "q"]
-        cfg = space_sep_loader.load(_WithTagNamedSpecs, argv=argv, env={}, union_tag="Kind")
+    def test_an_any_builds_the_class_the_class_key_names(self, space_sep_loader: ConfargLoader, name: str) -> None:
+        """--data.class names the class, alone or beside int, and --data.tags takes its run."""
+        argv = [f"--{name}.class", self._ANY, f"--{name}.a", "2", f"--{name}.tags", "p", "q"]
+        cfg = space_sep_loader.load(_WithTagNamedSpecs, argv=argv, env={})
         assert getattr(cfg, name) == _AnyBuilt(a=2, tags=["p", "q"])
 
     @pytest.mark.parametrize("name", ["fn", "c"])
-    def test_a_callable_builds_the_class_the_tag_names(self, space_sep_loader: ConfargLoader, name: str) -> None:
-        """--fn.Kind names the callable class, alone or beside int, and --fn.tags takes its run."""
-        argv = [f"--{name}.Kind", self._CALLABLE, f"--{name}.tags", "p", "q"]
-        cfg = space_sep_loader.load(_WithTagNamedSpecs, argv=argv, env={}, union_tag="Kind")
+    def test_a_callable_builds_the_class_the_class_key_names(self, space_sep_loader: ConfargLoader, name: str) -> None:
+        """--fn.class names the callable class, alone or beside int, and --fn.tags takes its run."""
+        argv = [f"--{name}.class", self._CALLABLE, f"--{name}.tags", "p", "q"]
+        cfg = space_sep_loader.load(_WithTagNamedSpecs, argv=argv, env={})
         assert getattr(cfg, name)() == ["p", "q"]
 
-    def test_class_is_an_ordinary_key_of_an_any(self, loader: ConfargLoader) -> None:
-        """Under a custom tag, --data.class is a key of the dict an Any holds."""
-        cfg = loader.load(_WithTagNamedSpecs, argv=["--data.class", self._ANY], env={}, union_tag="Kind")
-        assert cfg.data == {"class": self._ANY}
-
     def test_the_environment_agrees(self, loader: ConfargLoader) -> None:
-        """MYAPP_C__KIND builds what --c.Kind builds."""
-        env = {"MYAPP_C__KIND": self._CALLABLE, "MYAPP_C__TAGS": '["p"]'}
-        cfg = loader.load(_WithTagNamedSpecs, argv=[], env=env, env_prefix="MYAPP_", union_tag="Kind")
+        """MYAPP_C__CLASS builds what --c.class builds."""
+        env = {"MYAPP_C__CLASS": self._CALLABLE, "MYAPP_C__TAGS": '["p"]'}
+        cfg = loader.load(_WithTagNamedSpecs, argv=[], env=env, env_prefix="MYAPP_")
         assert cfg.c() == ["p"]
 
-    def test_the_tag_is_the_registered_opener(self, populating_loader: ConfargLoader) -> None:
-        """A Callable's opener flags spell the tag, never class, and the named class's fields follow."""
-        argv = ["--fn.Kind", self._CALLABLE]
-        flags = populating_loader.registered_flags(_WithTagNamedSpecs, argv=argv, config_flag="", union_tag="Kind")
+    def test_the_class_key_is_the_registered_opener(self, populating_loader: ConfargLoader) -> None:
+        """A Callable's opener flags spell the class key, and the named class's fields follow."""
+        argv = ["--fn.class", self._CALLABLE]
+        flags = populating_loader.registered_flags(_WithTagNamedSpecs, argv=argv, config_flag="")
         assert flags is not None
-        assert {"fn.Kind", "fn.bind", "fn.call", "fn.classfn", "fn.tags"} <= flags
-        assert "fn.class" not in flags
+        assert {"fn.class", "fn.bind", "fn.call", "fn.classfn", "fn.tags"} <= flags
 
 
 class TestRootJsonContract:
@@ -8981,7 +8974,7 @@ def plugin_pair(
 ) -> Generator[Callable[[int], tuple[Any, str]]]:
     """Build a base module plus an *un-imported* plugin subclass module on sys.path.
 
-    Returns ``make(union_tag="class") -> (base_module, plugin_module_name)`` with only the
+    Returns ``make(n) -> (base_module, plugin_module_name)`` with only the
     base imported: the plugin is importable but absent from ``sys.modules``, so
     ``Handler.__subclasses__()`` is empty until something imports it by name.  Each call gets
     freshly named modules because ``__subclasses__()`` bleeds for the process lifetime
@@ -9018,7 +9011,7 @@ def plugin_pair(
 
 
 class TestUnimportedSubclassContract:
-    """A class named by the union tag is usable before anything imports it (BUG-6).
+    """A class named by the class key is usable before anything imports it (BUG-6).
 
     ``build()`` resolves the tag by importing it, so the same keys in a config file already
     work; the CLI channel has to reach the same answer in every front-end.
@@ -9078,18 +9071,6 @@ class TestUnimportedSubclassContract:
         cfg = tmp_path / "app.toml"
         cfg.write_text(f'[handler]\nclass = "{plug}.FileHandler"\n', newline="\n")
         result = loader.load(base.Config, argv=["--config", str(cfg), "--handler.path", "/x"], env={})
-        assert type(result.handler).__name__ == "FileHandler"
-        assert result.handler.path == "/x"
-
-    def test_custom_union_tag(self, loader: ConfargLoader, plugin_pair: Any) -> None:
-        """The scan follows *union_tag*, not the literal 'class'."""
-        base, plug = plugin_pair(2)
-        result = loader.load(
-            base.Config,
-            argv=["--handler.kind", f"{plug}.FileHandler", "--handler.path", "/x"],
-            env={},
-            union_tag="kind",
-        )
         assert type(result.handler).__name__ == "FileHandler"
         assert result.handler.path == "/x"
 
@@ -9502,7 +9483,7 @@ class TestMountParity:
     def test_class_tag_in_an_include_replaces_the_node(self, loader: ConfargLoader, tmp_path: Path) -> None:
         """Test that a class tag inside an include discards the base node, as --config does.
 
-        The include merges did not thread ``union_tag``, so the rule in
+        The include merges did not thread the class key, so the rule in
         docs-dev/architecture/design-decisions/class-tag-replaces.md#a-class-tag-replaces-not-merges held for
         ``--config.db`` and not for ``db: {__include__: …}``.
         """
@@ -9521,149 +9502,6 @@ class TestMountParity:
 
         assert "host" not in from_cli["db"]  # the tag replaced the server config outright
         assert from_file == from_cli
-
-
-# ---------------------------------------------------------------------------
-# A field named exactly like the union tag is a field on every front-end (BUG-102)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _KindFieldTarget:
-    Kind: str = "field"
-
-
-@dataclass
-class _KindDispatchBase:
-    Kind: str = "field"
-
-
-@dataclass
-class _KindDispatchSub(_KindDispatchBase):
-    extra: str = "e"
-
-
-@dataclass
-class _KindUnionVariant:
-    Kind: str
-
-
-@dataclass
-class _KindOtherVariant:
-    other: str = "o"
-
-
-@dataclass
-class _KindOnlySubBase:
-    """Base whose subclass alone owns the tag's spelling (BUG-103)."""
-
-
-@dataclass
-class _KindOnlySub(_KindOnlySubBase):
-    Kind: str
-
-
-class TestUnionTagFieldCollision:
-    """The exact tag/field collision settles on the field, identically on all front-ends.
-
-    The registration builders skipped a field named like the tag and registered the
-    tag flag on its spelling, so the adapters rejected the field outright while
-    vanilla imported its value as a class path. The field flag owns the spelling
-    now; the tag flag is registered only where no field bears its name.
-    """
-
-    def test_shadowed_field_flag_sets_field(self, loader: ConfargLoader) -> None:
-        """--Kind v builds the field on every front-end."""
-        result = loader.load(_KindFieldTarget, argv=["--Kind", "v"], env={}, union_tag="Kind")
-        assert result == _KindFieldTarget(Kind="v")
-
-    def test_shadowed_field_flag_is_typed_by_the_field(self, loader: ConfargLoader) -> None:
-        """The field's own type reads the flag's value, as a field named otherwise is read.
-
-        The locals graft beside the root answered the tag by its fallback, so the walk's
-        two branches disagreed (``int`` and the tag's ``str``) and folded to ``str``.
-        """
-        merged = loader.merge(make_target("Kind", int), argv=["--Kind", "5"], env={}, union_tag="Kind")
-        assert merged == {"Kind": 5}
-
-    def test_shadowed_field_on_dispatch_struct(self, loader: ConfargLoader) -> None:
-        """A subclassed base with the colliding field still builds from its own field."""
-        result = loader.load(_KindDispatchBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
-        assert result == _KindDispatchBase(Kind="v")
-
-    def test_shadowed_variant_field_on_union(self, loader: ConfargLoader) -> None:
-        """A union whose variant owns the colliding field builds that variant."""
-        result = loader.load(
-            _KindUnionVariant | _KindOtherVariant,
-            argv=["--Kind", "v"],
-            env={},
-            union_tag="Kind",
-        )
-        assert result == _KindUnionVariant(Kind="v")
-
-    def test_subclass_only_field_builds_owning_subclass(self, loader: ConfargLoader) -> None:
-        """A subclass-only field spelled like the tag keeps its value on every front-end.
-
-        Construction once read the tag-shaped key as a class path and stripped the
-        value, so the field the user set went missing (BUG-103); the merged dict is
-        the field's, and the subclass that owns the field is built from it.
-        """
-        result = loader.load(_KindOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
-        assert result == _KindOnlySub(Kind="v")
-
-    def test_subclass_only_field_merge_matches_vanilla(self, loader: ConfargLoader) -> None:
-        """The merged dict carries the field's value, byte-identical to vanilla's."""
-        merged = loader.merge(_KindOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
-        assert merged == {"Kind": "v"}
-
-    def test_shadowed_tag_use_warns_on_every_frontend(self, loader: ConfargLoader) -> None:
-        """Setting the colliding field warns that no class-path tag dispatches.
-
-        The warning is a build()-time one, so all five front-ends and every channel
-        inherit it from the one construction site; the assertion runs per front-end
-        to pin the parity, not to restate the behavior five times.
-        """
-        with pytest.warns(ConfargWarning, match="selected structurally"):
-            result = loader.load(_KindOnlySubBase, argv=["--Kind", "v"], env={}, union_tag="Kind")
-        assert result == _KindOnlySub(Kind="v")
-
-    def test_registration_subclass_only_field_flag_wins(self) -> None:
-        """The subclass-only field takes the spelling; no tag flag is registered on it."""
-        flags = build_static_flags(_KindOnlySubBase, union_tag="Kind", config_flag="")
-        by_name = {f.name: f for f in flags}
-        assert "Kind" in by_name
-        assert by_name["Kind"].metavar != "DOTTED.CLASS.PATH"
-
-    def test_merge_matches_vanilla(self, loader: ConfargLoader) -> None:
-        """The merged dict carries the field's value, byte-identical to vanilla's."""
-        merged = loader.merge(_KindFieldTarget, argv=["--Kind", "v"], env={}, union_tag="Kind")
-        assert merged == {"Kind": "v"}
-
-    def test_registration_field_flag_wins(
-        self,
-    ) -> None:
-        """The colliding field is registered as a field flag; no tag flag takes its spelling."""
-        flags = build_static_flags(_KindDispatchBase, union_tag="Kind", config_flag="")
-        by_name = {f.name: f for f in flags}
-        assert "Kind" in by_name
-        assert by_name["Kind"].metavar != "DOTTED.CLASS.PATH"
-
-    def test_registration_union_root_field_flag_wins(
-        self,
-    ) -> None:
-        """A union root registers the colliding variant field, not the tag flag."""
-        flags = build_static_flags(_KindUnionVariant | _KindOtherVariant, union_tag="Kind", config_flag="")
-        by_name = {f.name: f for f in flags}
-        assert "Kind" in by_name
-        assert by_name["Kind"].metavar != "DOTTED.CLASS.PATH"
-
-    def test_unshadowed_tag_flag_still_registered(
-        self,
-    ) -> None:
-        """Without the colliding field, the tag flag keeps its spelling."""
-        flags = build_static_flags(_KindOtherVariant | int, union_tag="Kind", config_flag="")
-        by_name = {f.name: f for f in flags}
-        assert by_name["Kind"].metavar == "DOTTED.CLASS.PATH"
 
 
 # ---------------------------------------------------------------------------
@@ -9689,11 +9527,6 @@ class _DemandingBesideAllDefaults:
 @dataclass
 class _DemandingBesideNeeds:
     db: _BaseDB | _NeedsDB
-
-
-@dataclass
-class _ShadowedBesideAllDefaults:
-    db: _KindOnlySubBase | _AllDefaultsDB
 
 
 @dataclass
@@ -9733,19 +9566,6 @@ class TestAVariantThatDemandsItsTagContract:
         assert message.startswith("Cannot coerce dict {} to _BaseDB | _NeedsDB at 'db':")
         assert "_BaseDB: cannot construct '_BaseDB' at 'db': it has subclasses" in message
         assert "_NeedsDB: " in message
-
-    def test_an_empty_value_skips_a_variant_whose_subclass_owns_the_tag(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """A base whose subclass owns the tag's spelling is built only through that subclass, not by its own fields."""
-        cfg = tmp_yaml("db: {}\n")
-        result = loader.load(_ShadowedBesideAllDefaults, argv=["--config", str(cfg)], env={}, union_tag="Kind")
-        assert result == _ShadowedBesideAllDefaults(db=_AllDefaultsDB())
-
-    def test_the_owned_tag_still_selects_the_subclass_that_owns_it(self, loader: ConfargLoader, tmp_yaml) -> None:
-        """The tag-shaped key is the subclass's field, so the base matches through the subclass it selects."""
-        cfg = tmp_yaml("db:\n  Kind: v\n")
-        with pytest.warns(ConfargWarning, match="is a field's value, not the tag"):
-            result = loader.load(_ShadowedBesideAllDefaults, argv=["--config", str(cfg)], env={}, union_tag="Kind")
-        assert result == _ShadowedBesideAllDefaults(db=_KindOnlySub(Kind="v"))
 
     def test_a_fields_value_tells_variants_apart_by_the_same_rule(self, loader: ConfargLoader, tmp_yaml) -> None:
         """Two variants told apart by a field's value: ``{}`` there is no value of the field that demands its tag."""

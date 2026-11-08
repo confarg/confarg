@@ -73,13 +73,12 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
     refuse_a_second_target(getattr(command, REGISTRATION_ATTR, None), target, "command")
     options, below, sources = registration_inputs(target, caller, opts)
     cli_prefix, argv = options.cli_prefix or "", options.argv
-    union_tag, config_flag = options.union_tag, options.config_flag
+    config_flag = options.config_flag
 
     static = build_static_flags(
         target,
         argv=argv,
         cli_prefix=cli_prefix,
-        union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
         below=below,
@@ -88,7 +87,6 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
         target,
         argv,
         cli_prefix=cli_prefix,
-        union_tag=union_tag,
         config_flag=config_flag,
         below=below,
     )

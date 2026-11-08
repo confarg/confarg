@@ -18,7 +18,7 @@ from confarg import _defaults
 from confarg._default_layer import drop_untouched, lay_defaults
 from confarg._merge import DICT_DELETE, ListOp
 
-_TAG = _defaults.UNION_TAG
+_TAG = _defaults.CLASS_KEY
 
 
 class _Color(enum.Enum):
@@ -136,7 +136,7 @@ class _Deletes:
 
 
 def _lay(target: Any, data: dict[Any, Any], *, for_resolution: bool = True) -> tuple[dict[Any, Any], set[Any]]:
-    laid = lay_defaults(target, data, _TAG, for_resolution=for_resolution)
+    laid = lay_defaults(target, data, for_resolution=for_resolution)
     return laid.data, set(laid.untouched)
 
 
@@ -329,7 +329,7 @@ class TestAKeyDeleteThatMetNothing:
         for_resolution: bool,  # noqa: FBT001  # a parametrized mode, not a call's flag
     ) -> None:
         """The delete goes, and a dict left empty by it goes too, before any default is laid."""
-        result = lay_defaults(_Deletes, data, _TAG, for_resolution=for_resolution)
+        result = lay_defaults(_Deletes, data, for_resolution=for_resolution)
         assert drop_untouched(result.data, result.untouched) == laid
 
     @pytest.mark.parametrize(
@@ -399,5 +399,5 @@ class TestDropUntouched:
 
     def test_the_laid_defaults_come_back_out(self) -> None:
         """Laying then dropping gives the data back, a patched default kept."""
-        laid = lay_defaults(_HoldsList, {"items": [{}], "t": {ListOp.APPEND: [2]}}, _TAG, for_resolution=True)
+        laid = lay_defaults(_HoldsList, {"items": [{}], "t": {ListOp.APPEND: [2]}}, for_resolution=True)
         assert drop_untouched(laid.data, laid.untouched) == {"items": [{}], "t": [0, 1, 2]}

@@ -34,7 +34,6 @@ from confarg._types import (
     _root_kind,
     _struct_member_type,
     _union_branches,
-    _union_tag_shadowed,
 )
 from confarg.exceptions import ConfargError
 from confarg.typedload._coerce import _type_kind, _TypeKind
@@ -44,7 +43,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-def merge_root(target: Any, union_tag: str) -> MergeAt:
+def merge_root(target: Any) -> MergeAt:
     """Return where the merge stands at the root of a configuration of type *target*.
 
     A struct-like target is the root itself; any other is held under the root key; a mixed
@@ -53,16 +52,16 @@ def merge_root(target: Any, union_tag: str) -> MergeAt:
     target = _resolve_type(target)
     match _root_kind(target):
         case RootKind.WHOLE:
-            return _RootAt(target, union_tag)
+            return _RootAt(target)
         case RootKind.MIXED:
-            return _MixedRootAt(target, union_tag)
+            return _MixedRootAt(target)
         case RootKind.STRUCT:
-            return TypedAt(target, union_tag)
+            return TypedAt(target)
 
 
-def merge_at(tp: Any, union_tag: str) -> MergeAt:
+def merge_at(tp: Any) -> MergeAt:
     """Return where the merge stands at a node of type *tp*, the shape rule when *tp* is None."""
-    return MergeAt(union_tag) if tp is None else TypedAt(tp, union_tag)
+    return MergeAt() if tp is None else TypedAt(tp)
 
 
 class TypedAt(MergeAt):
@@ -72,19 +71,16 @@ class TypedAt(MergeAt):
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
 
-    __slots__ = ("_reading", "tp", "union_tag")
+    __slots__ = ("_reading", "tp")
 
-    union_tag: str  # a slot over MergeAt's read-only property: a typed node always reads the tag
-
-    def __init__(self, tp: Any, union_tag: str) -> None:
-        super().__init__(union_tag)
-        self.union_tag = union_tag
+    def __init__(self, tp: Any) -> None:
+        super().__init__()
         self.tp = _resolve_type(tp)
         self._reading: _KeyReading | None = None
 
     def replaces(self, override: MergeDict) -> bool:
         """Return whether construction reads *override* as naming what it builds (:func:`reads_as_new_value`)."""
-        return reads_as_new_value(override, self.tp, self.union_tag)
+        return reads_as_new_value(override, self.tp)
 
     def opened(self, below: Any) -> Any:
         """Return a bare string a Callable reads as its spec in the dict form a refining dict merges into.
@@ -98,7 +94,7 @@ class TypedAt(MergeAt):
 
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:
         """Return where the merge stands at *key*, read from the spec or the tag *below* and *over* hold."""
-        return _child(self.tp, str(key), _node_view(below, over), self.union_tag)
+        return _child(self.tp, str(key), _node_view(below, over))
 
     def fixed_length(self) -> Any:
         """Return the fixed tuple or namedtuple every branch of the node is, None where they are not one such type."""
@@ -126,7 +122,7 @@ class TypedAt(MergeAt):
         reading = self._reading
         if reading.kind is _KeyKind.KEY:
             try:
-                value = read_key(reading.tp, key, (), self.union_tag)
+                value = read_key(reading.tp, key, ())
                 hash(value)
             except (ConfargError, TypeError, ValueError):
                 return _key_spelling(key)
@@ -177,13 +173,10 @@ def _branch_key_reading(tp: Any) -> _KeyReading:
 class _RootAt(MergeAt):
     """Where the merge stands at the root of a target that is no struct, which the root key holds."""
 
-    __slots__ = ("tp", "union_tag")
+    __slots__ = ("tp",)
 
-    union_tag: str  # a slot over MergeAt's read-only property: a typed node always reads the tag
-
-    def __init__(self, tp: Any, union_tag: str) -> None:
-        super().__init__(union_tag)
-        self.union_tag = union_tag
+    def __init__(self, tp: Any) -> None:
+        super().__init__()
         self.tp = tp
 
     def replaces(self, override: MergeDict) -> bool:  # noqa: ARG002  # the root key's holder is no value
@@ -192,7 +185,7 @@ class _RootAt(MergeAt):
 
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the root key only
         """Return the target's node under the root key, the shape rule elsewhere."""
-        return TypedAt(self.tp, self.union_tag) if key == _defaults.ROOT_KEY else MergeAt(self.union_tag)
+        return TypedAt(self.tp) if key == _defaults.ROOT_KEY else MergeAt()
 
 
 class _MixedRootAt(TypedAt):
@@ -211,7 +204,7 @@ class _MixedRootAt(TypedAt):
 
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:
         """Return the whole value's node under the root key, else a field's as the struct-like root types it."""
-        return TypedAt(self.tp, self.union_tag) if key == _defaults.ROOT_KEY else super().child(key, below, over)
+        return TypedAt(self.tp) if key == _defaults.ROOT_KEY else super().child(key, below, over)
 
     def left_beside(self, node: MergeDict, keys: Iterable[Any]) -> MergeDict:
         """Return *node* without its fields where *keys* holds the root key, without the root key where a field."""
@@ -231,13 +224,10 @@ class _MixedRootAt(TypedAt):
 class _ArgsAt(MergeAt):
     """Where the merge stands at the ``args`` of a target: a mapping typed by the target's parameters."""
 
-    __slots__ = ("params", "union_tag")
+    __slots__ = ("params",)
 
-    union_tag: str  # a slot over MergeAt's read-only property: a typed node always reads the tag
-
-    def __init__(self, params: dict[str, Any], union_tag: str) -> None:
-        super().__init__(union_tag)
-        self.union_tag = union_tag
+    def __init__(self, params: dict[str, Any]) -> None:
+        super().__init__()
         self.params = params
 
     def replaces(self, override: MergeDict) -> bool:  # noqa: ARG002  # its keys are parameter names
@@ -246,7 +236,7 @@ class _ArgsAt(MergeAt):
 
     def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # one parameter each
         """Return the node of the parameter *key*, the shape rule for one with no annotation."""
-        return merge_at(self.params.get(str(key)), self.union_tag)
+        return merge_at(self.params.get(str(key)))
 
 
 def _node_view(below: Any, over: Any) -> MergeDict:
@@ -257,57 +247,57 @@ def _node_view(below: Any, over: Any) -> MergeDict:
     return out
 
 
-def _child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:
+def _child(tp: Any, key: str, node: MergeDict) -> MergeAt:
     """Return where the merge stands at *key* of a node of type *tp* holding *node*.
 
     What the node names types the key (:func:`~confarg._naming.named_child`); a node naming
     nothing is typed by *tp* alone.
     """
-    answer = named_child(tp, key, node, union_tag)
+    answer = named_child(tp, key, node)
     if answer is Named.NOTHING:
-        return _unnamed_child(tp, key, node, union_tag)
+        return _unnamed_child(tp, key, node)
     if isinstance(answer, Named):
-        return MergeAt(union_tag)
+        return MergeAt()
     if is_arguments(answer):
-        return _ArgsAt({f.name: f.type for f in dataclasses.fields(answer)}, union_tag)
-    return TypedAt(answer, union_tag)
+        return _ArgsAt({f.name: f.type for f in dataclasses.fields(answer)})
+    return TypedAt(answer)
 
 
-def _unnamed_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:
+def _unnamed_child(tp: Any, key: str, node: MergeDict) -> MergeAt:
     """Return where the merge stands at *key* of a node of type *tp* whose *node* names nothing that types it."""
     match _type_kind(tp):
         case _TypeKind.CALLABLE:
-            return MergeAt(union_tag)
+            return MergeAt()
         case _TypeKind.ANY:
-            return TypedAt(Any, union_tag)
+            return TypedAt(Any)
         case _TypeKind.UNION:
-            return _union_child(tp, key, node, union_tag)
+            return _union_child(tp, key, node)
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
-            # A tag naming no subclass types nothing; no tag, the struct itself.
-            if union_tag in node and not _union_tag_shadowed(tp, union_tag):
-                return MergeAt(union_tag)
-            return _member(tp, key, union_tag)
+            # A class key naming no subclass types nothing; no class key, the struct itself.
+            if _defaults.CLASS_KEY in node:
+                return MergeAt()
+            return _member(tp, key)
         case _:
-            return merge_at(_advance_field_type(tp, key), union_tag)
+            return merge_at(_advance_field_type(tp, key))
 
 
-def _member(cls: Any, key: str, union_tag: str) -> MergeAt:
+def _member(cls: Any, key: str) -> MergeAt:
     """Return the node of the member *key* of the class *cls*, the shape rule when it names nothing."""
     try:
-        return merge_at(_struct_member_type(cls, key), union_tag)
+        return merge_at(_struct_member_type(cls, key))
     except UNREADABLE:
-        return MergeAt(union_tag)
+        return MergeAt()
 
 
-def _union_child(tp: Any, key: str, node: MergeDict, union_tag: str) -> MergeAt:
+def _union_child(tp: Any, key: str, node: MergeDict) -> MergeAt:
     """Return the node at *key* of a union: the named variant's, else what every member knowing *key* agrees on."""
     members = _union_branches(tp)
     if len(members) == 1:
-        return _child(members[0], key, node, union_tag)
-    variant = named_variant(tp, node, union_tag)
+        return _child(members[0], key, node)
+    variant = named_variant(tp, node)
     if variant is not None:
-        return _child(variant, key, node, union_tag)
-    if union_tag in node and tag_reading(tp, union_tag).is_the_tag:
-        return MergeAt(union_tag)
-    found = [at for m in members if isinstance(at := _child(m, key, node, union_tag), TypedAt)]
-    return found[0] if found and all(at.tp == found[0].tp for at in found[1:]) else MergeAt(union_tag)
+        return _child(variant, key, node)
+    if _defaults.CLASS_KEY in node and tag_reading(tp).is_the_tag:
+        return MergeAt()
+    found = [at for m in members if isinstance(at := _child(m, key, node), TypedAt)]
+    return found[0] if found and all(at.tp == found[0].tp for at in found[1:]) else MergeAt()

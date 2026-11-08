@@ -205,12 +205,11 @@ def populate_parser(
     refuse_a_second_target(parser.get_default(REGISTRATION_ATTR), target, "parser")
     options, below, sources = registration_inputs(target, "populate_parser", opts)
     cli_prefix, argv = options.cli_prefix or "", options.argv
-    union_tag, config_flag = options.union_tag, options.config_flag
+    config_flag = options.config_flag
     static = build_static_flags(
         target,
         argv=argv,
         cli_prefix=cli_prefix,
-        union_tag=union_tag,
         config_flag=config_flag,
         config_subkeys=config_subkeys,
         below=below,
@@ -219,7 +218,6 @@ def populate_parser(
         target,
         argv,
         cli_prefix=cli_prefix,
-        union_tag=union_tag,
         config_flag=config_flag,
         below=below,
     )

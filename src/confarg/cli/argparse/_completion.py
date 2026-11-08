@@ -29,8 +29,8 @@ from confarg._types import (
     _var_params,
 )
 from confarg.cli._build import (
+    _build_class_key_spec,
     _build_leaf_spec,
-    _build_union_tag_spec,
     _callable_argument_targets,
     _collect_callable_field_specs,
     _holds_a_callable,
@@ -49,7 +49,6 @@ class _WalkCtx:
     """Shared state threaded through recursive completion-walk calls."""
 
     parser: argparse.ArgumentParser
-    union_tag: str
     existing_dests: set[str] = field(default_factory=set)
 
 
@@ -70,14 +69,14 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
 
     Mirrors :func:`confarg.cli._build._specs_for_field` but produces only the
     flags completion needs for a concrete union variant: the whole-value flag,
-    the union tag (without recursing into sibling variants), callable openers,
+    the class key (without recursing into sibling variants), callable openers,
     and plain leaves.  Singleton literal fields are skipped when *concrete* is
     set — the class is already selected, so their value is determined.
     """
     specs: list[FlagSpec] = []
 
     if core is None:
-        dest = f"{flag}.{ctx.union_tag}"
+        dest = f"{flag}.{_defaults.CLASS_KEY}"
         if dest not in ctx.existing_dests:
             resolved = _resolve_type(raw_type)
             non_none = _union_args_no_none(resolved)
@@ -94,9 +93,8 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
                 )
                 ctx.existing_dests.add(flag)
             specs.append(
-                _build_union_tag_spec(
+                _build_class_key_spec(
                     flag,
-                    ctx.union_tag,
                     concrete_variants,
                     group,
                     group_description,
@@ -172,9 +170,7 @@ def _unseen_openers(
     group_description: str,
 ) -> list[FlagSpec]:
     """Return the opener flags of the node at *flag* the parser does not hold yet, now marked as held."""
-    openers = [
-        s for s in _opener_specs(flag, tp, ctx.union_tag, group, group_description) if s.name not in ctx.existing_dests
-    ]
+    openers = [s for s in _opener_specs(flag, tp, group, group_description) if s.name not in ctx.existing_dests]
     ctx.existing_dests.update(s.name for s in openers)
     return openers
 
@@ -200,7 +196,7 @@ def _extend_walk_specs(  # noqa: PLR0913
 
     specs: list[FlagSpec] = []
     for name in flds:
-        if name == ctx.union_tag or name in var_params:
+        if name == _defaults.CLASS_KEY or name in var_params:
             continue
         raw_type = hints.get(name, Any)
         flag = f"{prefix}.{name}" if prefix else name
@@ -243,7 +239,6 @@ def _extend_walk(
 def _pre_extend_parser_for_completion(
     parser: argparse.ArgumentParser,
     target: Any,
-    union_tag: str,
     config_flag: str,
     argv: list[str],
 ) -> None:
@@ -261,13 +256,13 @@ def _pre_extend_parser_for_completion(
         cli_prefix = parser.get_default(PREFIX_ATTR) or ""
         argv = strip_argv_prefix(argv, cli_prefix)
         config_dict = _partial_config_from_argv(argv, config_flag)
-        cli_tags = _tags_from_argv(argv, union_tag)
-        config_tags = _tags_from_config(config_dict, target, prefix="", union_tag=union_tag)
+        cli_tags = _tags_from_argv(argv)
+        config_tags = _tags_from_config(config_dict, target, prefix="")
 
         # CLI wins over config
         all_tags = {in_prefix(flag, cli_prefix): tag for flag, tag in {**config_tags, **cli_tags}.items()}
 
-        walk_ctx = _WalkCtx(parser=parser, union_tag=union_tag, existing_dests={a.dest for a in parser._actions})
+        walk_ctx = _WalkCtx(parser=parser, existing_dests={a.dest for a in parser._actions})
 
         for field_prefix, class_path in all_tags.items():
             try:
@@ -280,14 +275,13 @@ def _pre_extend_parser_for_completion(
                 _log.debug("dynamic union flags: skipping %r", class_path, exc_info=True)
                 continue
 
-        for field_flag, target_path, mode, grouped in _callable_argument_targets(target, argv, config_dict, union_tag):
+        for field_flag, target_path, mode, grouped in _callable_argument_targets(target, argv, config_dict):
             try:
                 argument_specs = _collect_callable_field_specs(
                     in_prefix(field_flag, cli_prefix),
                     target_path,
                     mode,
                     walk_ctx.existing_dests,
-                    union_tag,
                     grouped=grouped,
                 )
                 load_flags_into_parser(argument_specs, parser)
@@ -303,7 +297,6 @@ def setup_completion(
     parser: argparse.ArgumentParser,
     target: Any,
     *,
-    union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
     argv: list[str] | None = None,
 ) -> None:
@@ -331,7 +324,6 @@ def setup_completion(
             :func:`~confarg.cli.argparse.populate_parser`.
         target: The top-level dataclass type (same as passed to
             :func:`~confarg.cli.argparse.populate_parser`).
-        union_tag: Discriminator field name (default ``"class"``).
         config_flag: Config file flag name (default ``"config"``).
         argv: CLI argument list.  Defaults to ``sys.argv[1:]``.
 
@@ -347,5 +339,5 @@ def setup_completion(
     if argv is None:
         argv = sys.argv[1:]
 
-    _pre_extend_parser_for_completion(parser, target, union_tag, config_flag, argv)
+    _pre_extend_parser_for_completion(parser, target, config_flag, argv)
     argcomplete.autocomplete(parser)

@@ -111,7 +111,7 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options, reads: Read
     if options.config_flag:
         # A bare --config[.subpath] must be refused before cyclopts parses it, with
         # confarg's own error rather than the framework's implicit-token assertion.
-        _config_pairs_in(scanned, target, prefix, options.config_flag, options.union_tag)
+        _config_pairs_in(scanned, target, prefix, options.config_flag)
     refuse_bare_occurrences(scanned, meta["refuses_bare"] if meta else {})
     command, bound, _ = app.parse_args(
         drop_bare_occurrences(tokens, meta["stands_bare"] if meta else ()),
@@ -171,7 +171,7 @@ def from_app(target: object, app: cyclopts.App, **opts: Unpack[MergeOptions]) ->
     options = _app_options(app, "from_app", opts)
     reads = Reads()
     merged = _merge_app(target, app, options, reads)
-    return _construct_from_merged(target, merged, options.union_tag, _app_prefix(app, options), reads.copies)
+    return _construct_from_merged(target, merged, _app_prefix(app, options), reads.copies)
 
 
 __all__ = ["from_app", "merge_app"]

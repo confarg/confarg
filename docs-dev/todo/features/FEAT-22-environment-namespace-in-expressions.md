@@ -73,7 +73,7 @@ The namespace has to reach file loading, which currently takes paths and nothing
 `_merge_sources` → `_load_subpath_files` → `_load_file` → `_load_raw` → `_resolve_node` → `_resolve_dict`, where the path string is evaluated before `_load_includes`.
 `_load_cli_config` (`_pipeline.py:64`) reaches `_load_file` too.
 
-One more caller is easy to miss: `_tags.py:52` pre-loads `--config` files straight from argv to discover union tags before flag registration.
+One more caller is easy to miss: `_tags.py:52` pre-loads `--config` files straight from argv to discover class keys before flag registration.
 It suppresses every exception, so an unresolved include would degrade rather than crash — but the tag pre-scan would stop seeing an environment-selected file, and `--help` would list different flags.
 It must be given the same mapping.
 

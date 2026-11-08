@@ -183,7 +183,6 @@ class TestPreExtendParser:
             _pre_extend_parser_for_completion(
                 parser,
                 _ServerDB | _SQLiteDB,
-                union_tag="class",
                 config_flag="config",
                 argv=["--app.class", f"{_ServerDB.__module__}._ServerDB"],
             )
@@ -199,7 +198,6 @@ class TestPreExtendParser:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--db.class={module}._ServerDB"],
         )
@@ -216,7 +214,6 @@ class TestPreExtendParser:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--config={cfg}"],
         )
@@ -233,7 +230,6 @@ class TestPreExtendParser:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--config={cfg}", f"--db.class={module}._SQLiteDB"],
         )
@@ -250,7 +246,6 @@ class TestPreExtendParser:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=["--db.class=nonexistent.module.Foo"],
         )
@@ -262,7 +257,7 @@ class TestPreExtendParser:
         """Test that empty argv leaves the parser unchanged."""
         parser = self._make_parser()
         flags_before = {s for a in parser._actions for s in a.option_strings}
-        _pre_extend_parser_for_completion(parser, _AppConfig, union_tag="class", config_flag="config", argv=[])
+        _pre_extend_parser_for_completion(parser, _AppConfig, config_flag="config", argv=[])
         flags_after = {s for a in parser._actions for s in a.option_strings}
         assert flags_before == flags_after
 
@@ -274,14 +269,12 @@ class TestPreExtendParser:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--db.class={module}._ServerDB"],
         )
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--db.class={module}._ServerDB"],
         )
@@ -301,7 +294,6 @@ class TestPreExtendParser:
         _pre_extend_parser_for_completion(
             parser,
             _AppWithCache,
-            union_tag="class",
             config_flag="config",
             argv=[f"--db.class={module}._ServerWithCache"],
         )
@@ -335,7 +327,6 @@ class TestPreExtendNestedTargetSpec:
         _pre_extend_parser_for_completion(
             parser,
             _CallableApp,
-            union_tag="class",
             config_flag="config",
             argv=["--fn.call.classfn", f"{__name__}._Scaler.by"],
         )
@@ -355,7 +346,7 @@ class TestExtendWalk:
         """Test that leaf fields are registered as parser arguments."""
         parser = argparse.ArgumentParser()
         existing = {a.dest for a in parser._actions}
-        _extend_walk(_ServerDB, _WalkCtx(parser=parser, union_tag="class", existing_dests=existing), parser, "db")
+        _extend_walk(_ServerDB, _WalkCtx(parser=parser, existing_dests=existing), parser, "db")
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--db.host" in flags
         assert "--db.port" in flags
@@ -365,7 +356,7 @@ class TestExtendWalk:
         parser = argparse.ArgumentParser()
         parser.add_argument("--db.host", dest="db.host", default=argparse.SUPPRESS)
         existing = {a.dest for a in parser._actions}
-        _extend_walk(_ServerDB, _WalkCtx(parser=parser, union_tag="class", existing_dests=existing), parser, "db")
+        _extend_walk(_ServerDB, _WalkCtx(parser=parser, existing_dests=existing), parser, "db")
         # Should not raise, host registered once
         host_actions = [a for a in parser._actions if "--db.host" in a.option_strings]
         assert len(host_actions) == 1
@@ -374,7 +365,7 @@ class TestExtendWalk:
         """Test that a nested struct creates an argument group."""
         parser = argparse.ArgumentParser()
         existing = {a.dest for a in parser._actions}
-        _extend_walk(_ExtendWalkOuter, _WalkCtx(parser=parser, union_tag="class", existing_dests=existing), parser, "")
+        _extend_walk(_ExtendWalkOuter, _WalkCtx(parser=parser, existing_dests=existing), parser, "")
         group_titles = {g.title for g in parser._action_groups}
         assert "inner" in group_titles
 
@@ -395,7 +386,7 @@ class TestExtendWalkOpeners:
 
     def test_openers_match_static_registration(self) -> None:
         """A union's Callable and a lone one: the same opener flags, the same help, the tag's included."""
-        ctx = _WalkCtx(parser=argparse.ArgumentParser(), union_tag="class", existing_dests=set())
+        ctx = _WalkCtx(parser=argparse.ArgumentParser(), existing_dests=set())
         walked = {s.name: s for s in _extend_walk_specs(_CallableVariants, ctx, "")}
         static = {s.name: s for s in build_static_flags(_CallableVariants, config_flag="")}
         openers = {name for name in static if name.rsplit(".", 1)[-1] in {"bind", "call", "class", "classfn"}}
@@ -420,7 +411,6 @@ class TestFromNamespaceUnionDispatch:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--db.class={module}._ServerDB"],
         )
@@ -439,7 +429,6 @@ class TestFromNamespaceUnionDispatch:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--db.class={module}._SQLiteDB"],
         )
@@ -459,7 +448,6 @@ class TestFromNamespaceUnionDispatch:
         _pre_extend_parser_for_completion(
             parser,
             _AppConfig,
-            union_tag="class",
             config_flag="config",
             argv=[f"--config={cfg}"],
         )
@@ -591,7 +579,7 @@ class TestLiteralEnumCompletion:
     def test_extend_walk_literal_field_choices(self) -> None:
         """_extend_walk (dynamic variant extension) also sets choices= for Literal fields."""
         parser = argparse.ArgumentParser()
-        ctx = _WalkCtx(parser=parser, union_tag="class", existing_dests={a.dest for a in parser._actions})
+        ctx = _WalkCtx(parser=parser, existing_dests={a.dest for a in parser._actions})
         _extend_walk(_VariantWithLiteral, ctx, parser, "backend")
         action = self._action_for(parser, "backend.mode")
         assert action.choices is not None

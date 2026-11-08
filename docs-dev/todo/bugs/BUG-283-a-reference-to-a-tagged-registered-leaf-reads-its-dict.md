@@ -13,10 +13,10 @@ introduced_by: [BUG-16, BUG-246]  # PR-139 made the tagged spelling, PR-441 the 
 
 # BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict
 
-A registered leaf that is a struct can be written as a dict whose union tag names its class ([an explicit tag opts a leaf back in](../../architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in)), and construction builds it.
+A registered leaf that is a struct can be written as a dict whose class key names its class ([an explicit tag opts a leaf back in](../../architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in)), and construction builds it.
 An expression reading it does not: `_typed_read._read` walks every dict as a struct's fields, so `${origin}` reads the dict as written where the same leaf written as `"3"` reads `Point(x=3)`, against [a typed leaf reads as its object](../../architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object).
 An interpolation then writes the dict's text, silently, and a whole-value reference into a `str` field is refused.
-Fix direction: read a dict carrying the tag at a taggable leaf, or at a union holding one, as a leaf, through the reading of the variant construction picks; `read_as_object` then needs the configuration's union tag, the half of REF-99's direction left out while no dict reached it.
+Fix direction: read a dict carrying the tag at a taggable leaf, or at a union holding one, as a leaf, through the reading of the variant construction picks; `read_as_object` then reads the class key, the half of REF-99's direction left out while no dict reached it.
 A reference below the leaf, `${origin.x}`, reads the field the tagged dict holds today, which is the built `origin.x`, and keeps doing so.
 
 Origin: latent since BUG-16, which let an explicit class tag build a registered leaf from its fields while every reference still read the value as written, so a tagged leaf interpolated as its dict text where a scalar one interpolated as its token.

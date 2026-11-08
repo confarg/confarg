@@ -168,7 +168,7 @@ class TestStructNodeReference:
         assert config.service.database.port == 5433
         assert config.database.port == 5432
 
-    def test_union_tag_travels_with_the_referenced_node(self) -> None:
+    def test_class_key_travels_with_the_referenced_node(self) -> None:
         """Test that a referenced struct carries its class tag to the referencing site."""
         data = {
             "database": {"class": f"{__name__}._Database", "host": "localhost", "port": 5432},

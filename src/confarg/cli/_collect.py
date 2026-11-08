@@ -40,7 +40,6 @@ def _require_argv_spells(
     argv: Sequence[str],
     cli_prefix: str,
     target: object,
-    union_tag: str,
 ) -> None:
     """Raise unless *argv* spells every confarg flag the framework's parse result holds.
 
@@ -61,7 +60,7 @@ def _require_argv_spells(
     if cli_prefix and cli_prefix in spelled_flag_names(argv):
         spelled.add("")
     for key, value in strip_flat_prefix(dict(flat), cli_prefix).items():
-        if value is None or key in spelled or (key and _path_unknown(target, key.split("."), union_tag)):
+        if value is None or key in spelled or (key and _path_unknown(target, key.split("."))):
             continue
         msg = (
             f"The parse result holds '--{in_prefix(key, cli_prefix)}', which argv does not spell: pass argv= the "
@@ -114,7 +113,7 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
     Dev Notes:
         docs-dev/architecture/cli-adapters/model.md#argv-is-the-only-writer
     """
-    _require_argv_spells(flat, options.argv, cli_prefix, target, options.union_tag)
+    _require_argv_spells(flat, options.argv, cli_prefix, target)
 
     def parse_cli(below: MergeDict) -> MergeDict:
         return _parse_cli(
@@ -122,13 +121,12 @@ def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framewo
             target,
             cli_prefix,
             options.config_flag,
-            options.union_tag,
             host_parsed=True,
             host_binds_run=_host_binds_run(runs) if binds_runs else None,
             below=below,
         )[0]
 
-    configs = _config_pairs_in(options.argv, target, cli_prefix, options.config_flag, options.union_tag)
+    configs = _config_pairs_in(options.argv, target, cli_prefix, options.config_flag)
     return _merge_sources(target, parse_cli, configs, options, reads=reads)
 
 
@@ -139,10 +137,10 @@ def _host_binds_run(runs: frozenset[str] | None) -> Callable[[list[str], Any], b
     return lambda path, ft: ".".join(path) in runs or _binds_a_run(ft)
 
 
-def _construct_from_merged(target: object, merged: MergeDict, union_tag: str, cli_prefix: str, copies: Copies) -> Any:
+def _construct_from_merged(target: object, merged: MergeDict, cli_prefix: str, copies: Copies) -> Any:
     """Construct *target* from an already-merged dict; the shared tail of every ``from_*``.
 
     *cli_prefix* is the one the merge resolved, which a missing field's remedy is spelled under,
     and *copies* the budget the merge charged.
     """
-    return _build_for_cli(target, merged, union_tag, cli_prefix, copies)
+    return _build_for_cli(target, merged, cli_prefix, copies)

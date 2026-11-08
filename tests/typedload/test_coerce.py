@@ -288,14 +288,12 @@ class TestTryCoerceCustomType:
 
 
 class TestReadUnionLeafTag:
-    """Tests for the union tag read_union_leaf reads a variant's class under."""
+    """Tests for the class key read_union_leaf reads a variant's class under."""
 
-    def test_a_tagged_dict_reads_under_the_tag_handed_in(self) -> None:
-        """The reading picks the variant under the tag it is handed, as construction does, not the default (REF-99)."""
+    def test_a_tagged_dict_reads_as_the_variant_its_class_key_names(self) -> None:
+        """The reading picks the variant the class key names, as construction does (REF-99)."""
         confarg.register_leaf_type(_Mark, lambda v: _Mark(int(v)))
-        path = f"{__name__}._Mark"
-        assert read_union_leaf(_Mark | str, {"kind": path, "x": 3}, "kind") == _Mark(3)
-        assert read_union_leaf(_Mark | str, {"class": path, "x": 3}, "kind") == {"class": path, "x": 3}
+        assert read_union_leaf(_Mark | str, {"class": f"{__name__}._Mark", "x": 3}) == _Mark(3)
 
 
 # ---------------------------------------------------------------------------
@@ -474,11 +472,6 @@ class TestTaggedRegisteredLeaf:
         registered = confarg.build(_Tagged, {"id": dict(_UUID_TAG)})
         del _LEAF_COERCIONS[UUID], _LEAF_SERIALIZERS[UUID]
         assert confarg.build(_Tagged, {"id": dict(_UUID_TAG)}) == registered
-
-    def test_custom_union_tag_is_honoured(self) -> None:
-        """The opt-in follows union_tag=, not a hard-coded 'class' key."""
-        data = {"id": {"kind": "uuid.UUID", "int": 5}}
-        assert confarg.build(_Tagged, data, union_tag="kind") == _Tagged(id=_UUID_FROM_TAG)
 
     def test_untagged_dict_is_not_taken_apart(self) -> None:
         """Without a tag the leaf stays opaque — and the error says how to ask for fields."""

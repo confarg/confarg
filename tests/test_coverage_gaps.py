@@ -120,12 +120,6 @@ class _UnionRootVariantB:
 
 
 @dataclass
-class _UnionTagFieldType:
-    type: str = "a"
-    value: int = 0
-
-
-@dataclass
 class _SubClassFieldBase:
     pass
 
@@ -410,7 +404,6 @@ class TestCallableEdgeCases:
             my_func,
             Callable[[int], str],
             path=("test",),
-            union_tag="class",
             construct_fn=construct,
         )
         assert result is my_func
@@ -419,18 +412,18 @@ class TestCallableEdgeCases:
         """A bind: target that is neither a dotted path nor a spec raises TypeCoercionError."""
         spec = {"bind": 12345, "args": {"x": 1}}
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="takes a dotted path or a callable spec"):
-            _resolve_callable_spec(spec, Callable, path=("test",), union_tag="class", construct_fn=construct)
+            _resolve_callable_spec(spec, Callable, path=("test",), construct_fn=construct)
 
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
         """A non-class path in the class: dict form raises TypeCoercionError."""
         spec = {"class": "os.path.join"}
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a class path"):
-            _resolve_callable_spec(spec, Callable, path=("test",), union_tag="class", construct_fn=construct)
+            _resolve_callable_spec(spec, Callable, path=("test",), construct_fn=construct)
 
     def test_resolve_spec_invalid_type_raises(self) -> None:
         """A non-str, non-dict callable spec raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected str or dict"):
-            _resolve_callable_spec(12345, Callable, path=("test",), union_tag="class", construct_fn=construct)
+            _resolve_callable_spec(12345, Callable, path=("test",), construct_fn=construct)
 
     def test_check_signature_var_positional_skipped(self) -> None:
         """*args functions skip parameter count checking."""
@@ -464,7 +457,7 @@ class TestCallableEdgeCases:
         obj.__module__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __module__ to trigger fallback path
         obj.__qualname__ = None  # ty: ignore[unresolved-attribute]  # deliberately clobber __qualname__ to trigger fallback path
         with pytest.raises(confarg.exceptions.ConfargError, match="has no dotted path"):
-            _serialize_callable(obj, lambda _: pytest.fail("no owner to read"), "class")
+            _serialize_callable(obj, lambda _: pytest.fail("no owner to read"))
 
 
 # ---------------------------------------------------------------------------
@@ -699,24 +692,24 @@ class TestParseCliBranches:
 
     def test_resolve_field_type_tuple_variable_length(self) -> None:
         """_resolve_field_type handles variable-length tuple[int, ...] fields."""
-        result = _resolve_field_type(_WithVarTupleField, ["nums", "0"], "class")
+        result = _resolve_field_type(_WithVarTupleField, ["nums", "0"])
         assert result is not None
 
     def test_resolve_field_type_tuple_invalid_index(self) -> None:
         """_resolve_field_type returns None for out-of-range fixed tuple indices."""
         WithFixedTuple = make_target("coords", tuple[int, str])
-        result = _resolve_field_type(WithFixedTuple, ["coords", "99"], "class")
+        result = _resolve_field_type(WithFixedTuple, ["coords", "99"])
         assert result is None
 
     def test_resolve_field_type_tuple_non_int_key(self) -> None:
         """_resolve_field_type returns None for non-integer tuple path segments."""
         WithFixedTuple = make_target("coords", tuple[int, str])
-        result = _resolve_field_type(WithFixedTuple, ["coords", "notanint"], "class")
+        result = _resolve_field_type(WithFixedTuple, ["coords", "notanint"])
         assert result is None
 
     def test_resolve_field_type_subclass_fallback(self) -> None:
         """_resolve_field_type falls back to str for unknown fields via subclass scanning."""
-        result = _resolve_field_type(_SubClassBase, ["extra"], "class")
+        result = _resolve_field_type(_SubClassBase, ["extra"])
         assert result is str
 
     def test_non_struct_bool_target(self) -> None:
@@ -854,7 +847,7 @@ class TestSerializeBranches:
         result = confarg.dump(instance)
         assert result["val"]["x"] == 5
 
-    def test_serialize_union_tag_always_policy(self) -> None:
+    def test_serialize_class_key_always_policy(self) -> None:
         """tag_policy='always' includes the class tag even for unambiguous union variants."""
         instance = _WithIntOrDC(val=_StructUnionVariantA(x=5))
         result = confarg.dump(instance, tag_policy="always")
@@ -1029,15 +1022,15 @@ class TestConstructEdgeCases:
 
     def test_value_matches_type_none(self) -> None:
         """None value matches int | None."""
-        assert _value_matches_type(None, int | None, "class") is True
+        assert _value_matches_type(None, int | None) is True
 
     def test_value_matches_type_non_dict_for_struct(self) -> None:
         """A non-dict value does not match a struct type."""
-        assert _value_matches_type("not_a_dict", _StructUnionVariantA, "class") is False
+        assert _value_matches_type("not_a_dict", _StructUnionVariantA) is False
 
     def test_value_matches_type_float_from_invalid_str(self) -> None:
         """A non-numeric string token does not match float."""
-        assert _value_matches_type(_StrToken("notfloat"), float, "class") is False
+        assert _value_matches_type(_StrToken("notfloat"), float) is False
 
     def test_ambiguous_union_msg_includes_optional_fields(self) -> None:
         """AmbiguousUnionError message lists optional fields to help the user disambiguate."""
@@ -1130,7 +1123,7 @@ class TestCallableBranches:
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="is not callable"):
             _resolve_class_spec(
                 _ClassSpec(cls_path, {}),
-                _SpecContext(("test_path",), "class", construct),
+                _SpecContext(("test_path",), construct),
             )
 
     def test_check_callable_signature_non_callable_type_returns_early(self) -> None:
@@ -1181,7 +1174,7 @@ class TestParseCLIBranches:
 
     def test_union_variants_no_matching_field_returns_none(self) -> None:
         """_resolve_field_type returns None when the path matches no union variant field."""
-        result = _resolve_field_type(_AmbigVariantX | _AmbigVariantY, ["z"], "class")
+        result = _resolve_field_type(_AmbigVariantX | _AmbigVariantY, ["z"])
         assert result is None
 
     def test_dict_at_path_triggers_line_164_and_360(self) -> None:
@@ -1340,14 +1333,14 @@ class TestConstructBranches:
     def test_value_matches_type_bool_with_non_token_non_bool_value(self) -> None:
         """An int (non-bool, non-token) value does not match bool."""
         # Line 512: bool type, value is int (not bool, not _StrToken) → return False
-        assert _value_matches_type(42, bool, "class") is False
+        assert _value_matches_type(42, bool) is False
 
     def test_union_class_tag_resolves_to_non_class(self) -> None:
         """A class tag that resolves to a non-class object raises TypeCoercionError."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a class path"):
             construct(
                 _StructUnionVariantA | _StructUnionVariantB,
-                {"class": "confarg._defaults.UNION_TAG", "x": 0},
+                {"class": "confarg._defaults.CLASS_KEY", "x": 0},
             )
 
     def test_list_replace_base_key_in_construct(self) -> None:
@@ -1434,7 +1427,7 @@ class TestParseCliGaps2:
 
     def test_append_token_non_dict_node_traversal(self) -> None:
         """_handle_append_token handles non-dict intermediate node gracefully."""
-        ctx = _ParseCtx(argv=["--inner.nums+", "1"], target=_AppendOuter, union_tag="class")
+        ctx = _ParseCtx(argv=["--inner.nums+", "1"], target=_AppendOuter)
         # Set data["inner"] to a list (not a dict) to trigger the else branch at line 421
         ctx.data["inner"] = [99]
         _handle_append_token(ctx, 1, "--inner.nums+", list[int], ["inner", "nums"])
@@ -1554,7 +1547,7 @@ class TestCallableGaps:
         # _CovOptMethod has required=int, optional=str; calling it with no args raises TypeError
         # → _format_constructor_params is called → optional params loop runs
         with pytest.raises(TypeCoercionError, match=r"(?s)required: <value>.*# optional: 'default'"):
-            _resolve_bare_string(f"{_COV_MOD}._CovOptMethod.method", "test_path", "class")
+            _resolve_bare_string(f"{_COV_MOD}._CovOptMethod.method", "test_path")
 
     def test_resolve_call_kwargs_uninspectable(self, monkeypatch) -> None:
         """_resolve_call_kwargs falls back to raw dict for uninspectable callables."""
@@ -1564,7 +1557,7 @@ class TestCallableGaps:
             raise TypeError(msg)
 
         monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-        result = _resolve_call_kwargs(len, {"x": 1}, _SpecContext(("test",), "class", None))
+        result = _resolve_call_kwargs(len, {"x": 1}, _SpecContext(("test",), None))
         assert result == {"x": 1}
 
     def test_resolve_call_spec_raises_on_call_failure(self) -> None:
@@ -1573,7 +1566,7 @@ class TestCallableGaps:
             _resolve_call_spec(
                 f"{_COV_MOD}._cov_raise_fn",
                 {"x": 1},
-                _SpecContext(("test",), "class", construct),
+                _SpecContext(("test",), construct),
             )
 
     def test_resolve_bind_kwargs_string_values(self) -> None:
@@ -1585,7 +1578,7 @@ class TestCallableGaps:
         result = _resolve_bind_kwargs(
             fn,
             {"lr": _StrToken("0.01"), "steps": _StrToken("5")},
-            _SpecContext(("test",), "class", construct),
+            _SpecContext(("test",), construct),
         )
         assert result["lr"] == pytest.approx(0.01)
         assert result["steps"] == 5
@@ -1598,7 +1591,7 @@ class TestCallableGaps:
             raise ValueError(msg)
 
         monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-        assert _resolve_bind_kwargs(len, {"x": 1}, _SpecContext(("test",), "class", construct)) == {"x": 1}
+        assert _resolve_bind_kwargs(len, {"x": 1}, _SpecContext(("test",), construct)) == {"x": 1}
 
     def test_resolve_call_kwargs_unannotated_param(self) -> None:
         """_resolve_call_kwargs passes unannotated params through unchanged (line 229)."""
@@ -1606,7 +1599,7 @@ class TestCallableGaps:
         def fn(x, y=10):  # no annotations
             pass
 
-        result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, _SpecContext(("test",), "class", None))
+        result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, _SpecContext(("test",), None))
         assert result["x"] == "hello"
 
     def test_resolve_call_kwargs_get_type_hints_fails(self) -> None:
@@ -1615,7 +1608,7 @@ class TestCallableGaps:
         def _fn(x: UndefinedType777) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
-        result = _resolve_call_kwargs(_fn, {"x": 1}, _SpecContext(("test",), "class", None))
+        result = _resolve_call_kwargs(_fn, {"x": 1}, _SpecContext(("test",), None))
         assert result["x"] == 1
 
     def test_resolve_bind_kwargs_get_type_hints_fails(self) -> None:
@@ -1624,7 +1617,7 @@ class TestCallableGaps:
         def _fn(x: UndefinedHintType999) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
-        result = _resolve_bind_kwargs(_fn, {"x": _StrToken("1")}, _SpecContext(("test",), "class", construct))
+        result = _resolve_bind_kwargs(_fn, {"x": _StrToken("1")}, _SpecContext(("test",), construct))
         assert result["x"] == _StrToken("1")
 
     def test_resolve_bind_kwargs_unannotated_param(self) -> None:
@@ -1633,7 +1626,7 @@ class TestCallableGaps:
         def fn(x, y=10):  # no annotations
             pass
 
-        result = _resolve_bind_kwargs(fn, {"x": _StrToken("hello")}, _SpecContext(("test",), "class", construct))
+        result = _resolve_bind_kwargs(fn, {"x": _StrToken("hello")}, _SpecContext(("test",), construct))
         assert result["x"] == _StrToken("hello")
 
     def test_resolve_bind_kwargs_non_scalar_type_constructs(self) -> None:
@@ -1642,7 +1635,7 @@ class TestCallableGaps:
         def fn(name: str) -> None:
             pass
 
-        result = _resolve_bind_kwargs(fn, {"name": _StrToken("hello")}, _SpecContext(("test",), "class", construct))
+        result = _resolve_bind_kwargs(fn, {"name": _StrToken("hello")}, _SpecContext(("test",), construct))
         assert result["name"] == "hello"
 
     def test_resolve_bind_kwargs_bad_value_raises(self) -> None:
@@ -1652,7 +1645,7 @@ class TestCallableGaps:
             pass
 
         with pytest.raises(confarg.exceptions.TypeCoercionError):
-            _resolve_bind_kwargs(fn, {"x": _StrToken("not_an_int")}, _SpecContext(("test",), "class", construct))
+            _resolve_bind_kwargs(fn, {"x": _StrToken("not_an_int")}, _SpecContext(("test",), construct))
 
     def test_issubclass_safe_type_error(self) -> None:
         """_issubclass_safe returns False when issubclass raises TypeError."""

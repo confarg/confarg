@@ -1810,12 +1810,10 @@ def _direct_struct_subclasses(tp: Any) -> list[Any]:
 
 
 def _demands_tag(tp: Any) -> bool:
-    """Return whether struct *tp* is built only through a class its tag names, never from its own fields.
+    """Return whether struct *tp* is built only through a class its class key names, never from its own fields.
 
-    A struct with subclasses is: a value names the class it builds. Where a member owns the
-    tag's spelling (:func:`_union_tag_shadowed`), the key is that member's value, and the
-    struct is built as the class owning it, never from no key. Read afresh on every call,
-    as the subclasses are.
+    A struct with subclasses is: a value names the class it builds. Read afresh on every
+    call, as the subclasses are.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/no-implicit-subclass-inference.md#no-implicit-subclass-inference
@@ -1931,26 +1929,6 @@ def _union_branches(tp: Any) -> list[Any]:
     if not _is_union(tp):
         return [tp]
     return [_resolve_type(v) for v in _union_args_no_none(tp)]
-
-
-def _union_tag_shadowed(tp: Any, union_tag: str) -> bool:
-    """Return True if a struct-shaped ``tp`` owns a member spelled exactly like the tag.
-
-    Answers "is this tag-shaped key a field's value instead?" wherever only the type and
-    the key are at hand. A union is shadowed by any struct variant that owns the name;
-    a struct by its own fields or by a subclass-only field — the walk's member answer,
-    so a subclass-only field spelled exactly like the tag wins the tag's spelling
-    (BUG-103).
-
-    Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
-    """
-    tp = _resolve_type(tp)
-    if _is_union(tp):
-        return any(_union_tag_shadowed(v, union_tag) for v in _union_args_no_none(tp))
-    if not _is_struct(tp):
-        return False
-    return _struct_member_type(tp, union_tag) is not None
 
 
 def _struct_defaults(tp: Any) -> dict[str, Any]:

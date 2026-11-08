@@ -84,8 +84,6 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
             copied positions.
         UnknownArgumentError: If an unrecognized CLI argument is encountered.
         ConfargError: If a flag or a variable writes deeper than 64 levels.
-        ValueError: If the ``union_tag`` option spells a key another role spells
-            (:func:`~confarg._defaults.check_union_tag`).
     """
     return _merge(target, _resolve_options("merge", opts), Reads())
 
@@ -95,9 +93,9 @@ def _merge(target: type | TypeAliasType | UnionType, options: _Options, reads: R
     prefix = _cli_prefix(options)
 
     def parse_cli(below: MergeDict) -> MergeDict:
-        return _parse_cli(options.argv, target, prefix, options.config_flag, options.union_tag, below=below)[0]
+        return _parse_cli(options.argv, target, prefix, options.config_flag, below=below)[0]
 
-    configs = _config_pairs_in(options.argv, target, prefix, options.config_flag, options.union_tag)
+    configs = _config_pairs_in(options.argv, target, prefix, options.config_flag)
     return _merge_sources(target, parse_cli, configs, options, reads=reads)
 
 
@@ -106,7 +104,7 @@ def _cli_prefix(options: _Options) -> str:
     return "" if options.cli_prefix is None else options.cli_prefix
 
 
-def _strip_locals(data: MergeDict, target: Any, union_tag: str) -> MergeDict:
+def _strip_locals(data: MergeDict, target: Any) -> MergeDict:
     """Return *data* without the reserved local-variables namespaces, at every node.
 
     Never mutates *data*: nodes are copied only where a namespace is dropped, and
@@ -115,28 +113,28 @@ def _strip_locals(data: MergeDict, target: Any, union_tag: str) -> MergeDict:
     Dev Notes:
         docs-dev/architecture/locals.md#stripping
     """
-    return cast("MergeDict", _strip_locals_node(data, target, union_tag, [_walk_start(target)], 0))
+    return cast("MergeDict", _strip_locals_node(data, target, [_walk_start(target)], 0))
 
 
-def _strip_locals_node(node: Any, target: Any, union_tag: str, states: list[_WalkState], depth: int) -> Any:
+def _strip_locals_node(node: Any, target: Any, states: list[_WalkState], depth: int) -> Any:
     """Strip every namespace at or below *node*, which the walk reaches in *states*, returning *node* itself if none.
 
     Each child is stepped to from *node*, by the class *node* names, as construction builds it.
     """
     if isinstance(node, list):
         stripped = [
-            _strip_locals_node(v, target, union_tag, _step_states(states, str(i), depth, None, union_tag), depth + 1)
+            _strip_locals_node(v, target, _step_states(states, str(i), depth, None), depth + 1)
             for i, v in enumerate(node)
         ]
         return node if all(a is b for a, b in zip(stripped, node, strict=True)) else stripped
     if not isinstance(node, dict):
         return node
-    drop = {key for key in _locals_keys_reached(states, target, union_tag, depth=depth) if key in node}
+    drop = {key for key in _locals_keys_reached(states, target, depth=depth) if key in node}
     kept = {
         # An op build() applied no list for is no field: what it holds is not walked.
         k: v
         if isinstance(k, ListOp)
-        else _strip_locals_node(v, target, union_tag, _step_states(states, k, depth, node, union_tag), depth + 1)
+        else _strip_locals_node(v, target, _step_states(states, k, depth, node), depth + 1)
         for k, v in node.items()
         if k not in drop
     }
@@ -146,14 +144,12 @@ def _strip_locals_node(node: Any, target: Any, union_tag: str, states: list[_Wal
 
 
 @overload
-def build[T](target: type[T], data: dict[Any, Any], *, union_tag: str = ...) -> T: ...
+def build[T](target: type[T], data: dict[Any, Any]) -> T: ...
 @overload
-def build(target: object, data: dict[Any, Any], *, union_tag: str = ...) -> Any: ...
+def build(target: object, data: dict[Any, Any]) -> Any: ...
 def build[T](
     target: type[T] | TypeAliasType | UnionType,
     data: dict[Any, Any],
-    *,
-    union_tag: str = _defaults.UNION_TAG,
 ) -> T:
     """Resolve ``${...}`` expressions and construct the target type from a merged config dict.
 
@@ -163,7 +159,6 @@ def build[T](
     Args:
         target: The dataclass type (or scalar type) to construct.
         data: The raw config dict (e.g. the output of ``merge()``).
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         An instance of the target type.
@@ -179,14 +174,11 @@ def build[T](
         ExpressionEvalError: If an expression fails at runtime.
         ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
             copying more than 100 000 positions, or what its expressions resolve to nests deeper.
-        ValueError: If *union_tag* spells a key another role spells
-            (:func:`~confarg._defaults.check_union_tag`).
     """
-    _defaults.check_union_tag(union_tag)
-    return _build(target, data, union_tag, Copies())
+    return _build(target, data, Copies())
 
 
-def _build(target: Any, data: dict[Any, Any], union_tag: str, copies: Copies) -> Any:
+def _build(target: Any, data: dict[Any, Any], copies: Copies) -> Any:
     """Resolve and construct *target* from *data*; :func:`build`, charging *copies*.
 
     Dev Notes:
@@ -194,11 +186,11 @@ def _build(target: Any, data: dict[Any, Any], union_tag: str, copies: Copies) ->
     """
     target_r = _resolve_type(target)
     refuse_overflow(data, f"build {_spell_type(target)}", copies=copies)
-    resolved = _strip_locals(_resolve_over_defaults(target_r, data, union_tag, copies), target_r, union_tag)
-    return _construct_resolved(target_r, resolved, union_tag)
+    resolved = _strip_locals(_resolve_over_defaults(target_r, data, copies), target_r)
+    return _construct_resolved(target_r, resolved)
 
 
-def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str, copies: Copies) -> MergeDict:
+def _resolve_over_defaults(target_r: Any, data: MergeDict, copies: Copies) -> MergeDict:
     """Resolve *data*'s expressions over *target_r*'s field defaults, the defaults nobody touched taken out again.
 
     An expression reads an Enum or registered leaf as its object, and what it resolves to is
@@ -209,10 +201,10 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str, copie
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
-    laid = lay_defaults(target_r, data, union_tag, for_resolution=True)
-    settle = settle_pending(target_r, union_tag)
+    laid = lay_defaults(target_r, data, for_resolution=True)
+    settle = settle_pending(target_r)
     resolved = resolve_expressions(
-        laid.data, read=TypedReading(target_r, union_tag), write=written_form, settle=settle, copies=copies
+        laid.data, read=TypedReading(target_r), write=written_form, settle=settle, copies=copies
     )
     resolved = drop_untouched(resolved, laid.untouched)
     # An expression standing for a value copies it where it is written, so the tree can be deeper
@@ -221,7 +213,7 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str, copie
     return resolved
 
 
-def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> Any:
+def _construct_resolved(target_r: Any, resolved: MergeDict) -> Any:
     """Construct *target_r* from a resolved dict: a root set whole from ``__root__``, a struct from the whole.
 
     Raises:
@@ -239,7 +231,7 @@ def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> A
         if raw is _MISSING:
             raise MissingFieldError(path=(), field_type=_spell_type(target_r))
         try:
-            return _tc(target_r, raw, union_tag=union_tag)
+            return _tc(target_r, raw)
         except MissingFieldError as e:
             # Its remedy names the whole root's flag: no flag addresses a path below it.
             e._in_root_value = True
@@ -247,11 +239,11 @@ def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> A
     if not resolved:
         # No channel supplied anything, so the root is built from {}: a guess a defaulted
         # field takes too, its refusal the missing root (BUG-184).
-        return build_from_nothing(lambda: _tc(target_r, resolved, union_tag=union_tag), target_r, ())
-    return _tc(target_r, resolved, union_tag=union_tag)
+        return build_from_nothing(lambda: _tc(target_r, resolved), target_r, ())
+    return _tc(target_r, resolved)
 
 
-def _build_for_cli(target: Any, data: MergeDict, union_tag: str, cli_prefix: str, copies: Copies) -> Any:
+def _build_for_cli(target: Any, data: MergeDict, cli_prefix: str, copies: Copies) -> Any:
     """Return :func:`build`'s result, a ``MissingFieldError`` naming its flag under *cli_prefix*.
 
     The front-ends that parsed the command line build through it -- :func:`load` and the
@@ -262,7 +254,7 @@ def _build_for_cli(target: Any, data: MergeDict, union_tag: str, cli_prefix: str
         docs-dev/architecture/types/construction.md#a-missing-fields-remedy-is-spelled-as-the-cli-spells-it
     """
     try:
-        return _build(target, data, union_tag, copies)
+        return _build(target, data, copies)
     except MissingFieldError as e:
         e._cli_prefix = cli_prefix
         raise
@@ -271,8 +263,6 @@ def _build_for_cli(target: Any, data: MergeDict, union_tag: str, cli_prefix: str
 def resolve(
     target: type | TypeAliasType | UnionType,
     data: dict[Any, Any],
-    *,
-    union_tag: str = _defaults.UNION_TAG,
 ) -> dict[str | ListOp, Any]:
     """Resolve ``${...}`` expressions in a merged config dict, over the target's field defaults.
 
@@ -292,7 +282,6 @@ def resolve(
     Args:
         target: The type *data* is for, whose field defaults lie below it; ``dict`` for none.
         data: A plain config dict, e.g. the output of ``merge()``.
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         A dict with all ``${...}`` expression strings replaced by their values, which shares
@@ -309,27 +298,22 @@ def resolve(
         ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
             copying more than 100 000 positions, or what its expressions resolve to nests deeper.
 
-        ValueError: If *union_tag* spells a key another role spells
-            (:func:`~confarg._defaults.check_union_tag`).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
     """
-    _defaults.check_union_tag(union_tag)
     copies = Copies()
     refuse_overflow(data, f"resolve {_spell_type(target)}", copies=copies)
-    return _resolve_over_defaults(_resolve_type(target), data, union_tag, copies)
+    return _resolve_over_defaults(_resolve_type(target), data, copies)
 
 
 @overload
-def from_dict[T](target: type[T], data: dict[Any, Any], *, union_tag: str = ...) -> T: ...
+def from_dict[T](target: type[T], data: dict[Any, Any]) -> T: ...
 @overload
-def from_dict(target: object, data: dict[Any, Any], *, union_tag: str = ...) -> Any: ...
+def from_dict(target: object, data: dict[Any, Any]) -> Any: ...
 def from_dict[T](
     target: type[T] | TypeAliasType | UnionType,
     data: dict[Any, Any],
-    *,
-    union_tag: str = _defaults.UNION_TAG,
 ) -> T:
     """Construct a typed object from an already-resolved config dict.
 
@@ -339,7 +323,6 @@ def from_dict[T](
     Args:
         target: The dataclass or plain-class type to construct.
         data: A resolved config dict (output of resolve() or merge()).
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         An instance of the target type.
@@ -350,14 +333,11 @@ def from_dict[T](
         AmbiguousUnionError: If a Union cannot be disambiguated.
         ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
             copying more than 100 000 positions.
-        ValueError: If *union_tag* spells a key another role spells
-            (:func:`~confarg._defaults.check_union_tag`).
     """
-    _defaults.check_union_tag(union_tag)
     target_r = _resolve_type(target)
     refuse_overflow(data, f"construct {_spell_type(target)}", copies=Copies())
-    laid = lay_defaults(target_r, data, union_tag, for_resolution=False).data
-    return _construct_resolved(target_r, _strip_locals(laid, target_r, union_tag), union_tag)
+    laid = lay_defaults(target_r, data, for_resolution=False).data
+    return _construct_resolved(target_r, _strip_locals(laid, target_r))
 
 
 @overload
@@ -393,19 +373,16 @@ def load[T](target: type[T] | TypeAliasType | UnionType, **opts: Unpack[MergeOpt
             configuration past 100 000 copied positions.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
-        ValueError: If the ``union_tag`` option spells a key another role spells
-            (:func:`~confarg._defaults.check_union_tag`).
     """
     options = _resolve_options("load", opts)
     reads = Reads()  # one configuration: its merge and its build share the budget
     merged = _merge(target, options, reads)
-    return _build_for_cli(target, merged, options.union_tag, _cli_prefix(options), reads.copies)
+    return _build_for_cli(target, merged, _cli_prefix(options), reads.copies)
 
 
 def dump(
     value: Any,
     *,
-    union_tag: str = _defaults.UNION_TAG,
     tag_policy: TagPolicy = "auto",
     native_types: Iterable[type] = (),
 ) -> dict[str, Any]:
@@ -435,7 +412,6 @@ def dump(
 
     Args:
         value: A dataclass or plain-class instance.
-        union_tag: The field name used as a discriminator tag in unions.
         tag_policy: ``"auto"`` (tag only when needed) or ``"always"`` (tag every union member).
         native_types: Registered leaf types written as the objects they are, not as text.
 
@@ -447,10 +423,7 @@ def dump(
             names a type that is no registered leaf type.
         ConfargError: If the instance does not hold a field or a parameter it is dumped from,
             nests deeper than 64 levels, or holds itself.
-        ValueError: If *union_tag* spells a key another role spells
-            (:func:`~confarg._defaults.check_union_tag`).
     """
-    _defaults.check_union_tag(union_tag)
     if isinstance(value, dict):
         msg = (
             "dump() takes a dataclass or plain-class instance, not a dict."
@@ -460,7 +433,7 @@ def dump(
     if isinstance(value, type) or _type_kind(type(value)) is not _TypeKind.STRUCT:
         msg = f"Expected a dataclass or plain-class instance, got {type(value).__name__}"
         raise TypeError(msg)
-    options = _DumpOptions(union_tag, tag_policy, _check_native_types(native_types), f"dump {type(value).__name__}")
+    options = _DumpOptions(tag_policy, _check_native_types(native_types), f"dump {type(value).__name__}")
     return _serialize(type(value), value, (), options)
 
 
@@ -468,7 +441,6 @@ def dump_file(
     value: Any,
     path: str | Path,
     *,
-    union_tag: str = _defaults.UNION_TAG,
     tag_policy: TagPolicy = "auto",
     native_types: Iterable[type] | None = None,
 ) -> None:
@@ -494,7 +466,6 @@ def dump_file(
     Args:
         value: A dataclass or plain-class instance, or a raw config dict.
         path: Path to the output file.
-        union_tag: The field name used as a discriminator tag in unions.
         tag_policy: ``"auto"`` or ``"always"``.
         native_types: Registered leaf types written as the objects they are; None for the
             set the format holds natively.
@@ -505,13 +476,10 @@ def dump_file(
         InvalidConfigFileError: If the format is unsupported or the required library is not installed.
         ConfargError: If *value* holds a value or a key the format does not hold, nests deeper
             than 64 levels or holds itself, or :func:`dump` refuses it.
-        ValueError: If *union_tag* spells a key another role spells
-            (:func:`~confarg._defaults.check_union_tag`).
     """
-    _defaults.check_union_tag(union_tag)
     native = _native_types_of(Path(path)) if native_types is None else _check_native_types(native_types)
     if isinstance(value, dict):
         refuse_overflow(value, f"write {path}")
         _dump_file(_serialize_untyped(value, native), Path(path))
     else:
-        _dump_file(dump(value, union_tag=union_tag, tag_policy=tag_policy, native_types=native), Path(path))
+        _dump_file(dump(value, tag_policy=tag_policy, native_types=native), Path(path))

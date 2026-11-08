@@ -12,7 +12,7 @@ The flat grammar paid for that in three places:
 - a lower layer's keys merged beside a higher layer's `call` read as its arguments, so `p: {a: 5}` under `p: {call: square}` built `square(a=5)` without a word (BUG-190).
   Nested, they are keys no computation takes, and the call refuses them.
 
-An object, though, is its fields: `{class: Sub, x: 1}` is how a union tag selects a struct on every typed field, and a `class:` spec under a Callable builds exactly the same way.
+An object, though, is its fields: `{class: Sub, x: 1}` is how a class key selects a struct on every typed field, and a `class:` spec under a Callable builds exactly the same way.
 Nesting its fields would make `class:` read one way on a Callable field and another on a struct field.
 So the kind of opener decides: an object opener reads every other key as a field, a `bind` or `call` word beside it included, and a computation opener takes `args` and nothing else.
 `class` can name no Python parameter, so no constructor argument collides with it.

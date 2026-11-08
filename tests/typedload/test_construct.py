@@ -10,7 +10,6 @@ import random
 import re
 import sys
 import threading
-import warnings
 from collections.abc import Callable
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime
@@ -58,34 +57,33 @@ class _BaseNoSubs:
 
 
 class TestConstructStructDispatch:
-    """_construct_struct_dispatch raises when subclasses exist but no union_tag is given."""
+    """_construct_struct_dispatch raises when subclasses exist but no class key is given."""
 
     def test_subclasses_without_tag_raises(self) -> None:
-        """When a struct has subclasses and no union_tag is present, raise TypeCoercionError."""
-        with pytest.raises(TypeCoercionError, match="discriminator"):
-            _construct_struct_dispatch(_BaseWithSubs, {"x": _StrToken("hello")}, (), "class")
+        """When a struct has subclasses and no class key is present, raise TypeCoercionError."""
+        with pytest.raises(TypeCoercionError, match="no 'class' key was provided"):
+            _construct_struct_dispatch(_BaseWithSubs, {"x": _StrToken("hello")}, ())
 
     def test_subclasses_with_tag_constructs(self) -> None:
-        """When the union_tag is present, the named subclass is constructed."""
+        """When the class key is present, the named subclass is constructed."""
         result = _construct_struct_dispatch(
             _BaseWithSubs,
             {"class": f"{__name__}._Sub1", "x": _StrToken("hello")},
             (),
-            "class",
         )
         assert isinstance(result, _Sub1)
         assert result.x == "hello"
 
     def test_no_subclasses_constructs_directly(self) -> None:
         """When the struct has no subclasses, it is constructed directly without a tag."""
-        result = _construct_struct_dispatch(_BaseNoSubs, {}, (), "class")
+        result = _construct_struct_dispatch(_BaseNoSubs, {}, ())
         assert result == _BaseNoSubs()
 
 
-def _no_class_refusal(tp: str, why: str, tag: str, *, union_tag: str = "class", path: str = "x") -> str:
-    """Return the refusal of a *union_tag* key naming *tag* at *path* on *tp*, as written, which *why* explains."""
+def _no_class_refusal(tp: str, why: str, tag: str, *, path: str = "x") -> str:
+    """Return the refusal of a class key naming *tag* at *path* on *tp*, as written, which *why* explains."""
     return (
-        f"Cannot coerce dict {{{union_tag!r}: {tag!r}}} to {tp} at '{path}'. The {union_tag!r} key picks the class"
+        f"Cannot coerce dict {{'class': {tag!r}}} to {tp} at '{path}'. The 'class' key picks the class"
         f" to build from the keys beside it, and {why}. A 'call:' spec computes a value the field's type accepts."
     )
 
@@ -116,13 +114,6 @@ class TestATagNoVariantTakes:
         with pytest.raises(TypeCoercionError) as exc_info:
             construct(tp, {"class": "pathlib.Path"}, path=("x",))
         assert str(exc_info.value) == _no_class_refusal(spelled, why, "pathlib.Path")
-
-    def test_a_union_names_the_tag_it_was_given(self) -> None:
-        """A custom tag spelling is the key a union's refusal names, as a leaf's does."""
-        with pytest.raises(TypeCoercionError) as exc_info:
-            construct(int | str, {"Kind": "pathlib.Path"}, path=("x",), union_tag="Kind")
-        why = "no variant of int | str is built from keys"
-        assert str(exc_info.value) == _no_class_refusal("int | str", why, "pathlib.Path", union_tag="Kind")
 
     def test_the_tag_is_not_imported(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
@@ -175,10 +166,6 @@ class TestATagSpelledKeyIsDataWhereNoTagSelects:
     def test_a_dict_variant_holds_the_key(self, tp: Any) -> None:
         """The dict variant takes ``class`` as an entry, as a lone dict does."""
         assert construct(tp, {"class": "confidential"}, path=("x",)) == {"class": "confidential"}
-
-    def test_a_configured_tag_spelling_is_data_too(self) -> None:
-        """The rule reads the configured tag, not the word ``class``."""
-        assert construct(int | dict[str, str], {"kind": "x"}, path=("x",), union_tag="kind") == {"kind": "x"}
 
     def test_the_key_is_not_imported(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
@@ -600,74 +587,9 @@ class TestFloatHoldsANativeInt:
         assert repr(construct(tp, data)) == repr(expected)  # the repr tells 1 from 1.0
 
 
-# ---------------------------------------------------------------------------
-# A field named like the tag one level below a union variant is a field (BUG-107)
-# ---------------------------------------------------------------------------
-
-
 @dataclass
-class _OwnsKind:
-    kind: int
-
-
-@dataclass
-class _OwnsOther:
-    other: int
-
-
-@dataclass
-class _HoldsOwnsKind:
-    v: _OwnsKind
-
-
-@dataclass
-class _HoldsOwnsOther:
-    v: _OwnsOther
-
-
-class TestANestedFieldNamedLikeTheTag:
-    """The union's type check reads a nested struct's tag-shaped key as the tag only where no member owns it (BUG-107).
-
-    It dropped the key unconditionally, so the variant whose nested struct needs that field
-    failed to match, and the union reported an ambiguity it should have resolved.
-    """
-
-    @pytest.mark.parametrize("tag", ["zz", "kind"])
-    def test_the_variant_whose_nested_struct_owns_the_key_is_chosen(self, tag: str) -> None:
-        """Whatever the tag is spelled, ``kind`` is ``_OwnsKind``'s field."""
-        tp = _HoldsOwnsKind | _HoldsOwnsOther
-        assert construct(tp, {"v": {"kind": _StrToken("1")}}, union_tag=tag) == _HoldsOwnsKind(_OwnsKind(1))
-
-    def test_a_key_no_member_owns_is_still_the_tag(self) -> None:
-        """Where no nested member owns the spelling, the key is the tag, and the structure still decides."""
-        tp = _HoldsOwnsKind | _HoldsOwnsOther
-        data = {"v": {"kind": f"{__name__}._OwnsOther", "other": _StrToken("2")}}
-        assert construct(tp, data, union_tag="kind") == _HoldsOwnsOther(_OwnsOther(2))
-
-
-# ---------------------------------------------------------------------------
-# A field named exactly like the union tag is a field (BUG-102)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _KindPlain:
-    Kind: str = "field"
-
-
-@dataclass
-class _KindBase:
-    Kind: str = "field"
-
-
-@dataclass
-class _KindSub(_KindBase):
-    extra: str = "e"
-
-
-@dataclass
-class _KindVariant:
-    Kind: str
+class _NamedVariant:
+    name: str = "field"
 
 
 @dataclass
@@ -675,247 +597,8 @@ class _OtherVariant:
     other: str = "o"
 
 
-@dataclass
-class _KindOnlyBase:
-    """Base whose subclass alone owns the tag's spelling (BUG-103)."""
-
-
-@dataclass
-class _KindOnlySub(_KindOnlyBase):
-    Kind: str
-
-
-@dataclass
-class _KindOnlyRichBase:
-    """Base with its own field beside the subclass-only tag-shaped one."""
-
-
-@dataclass
-class _KindOnlyRichSub(_KindOnlyRichBase):
-    host: str
-
-    Kind: str
-
-
-@dataclass
-class _KindOnlyAmbBase:
-    """Base whose two subclasses both own the tag's spelling."""
-
-
-@dataclass
-class _KindOnlyAmbA(_KindOnlyAmbBase):
-    Kind: str
-
-
-@dataclass
-class _KindOnlyAmbB(_KindOnlyAmbBase):
-    Kind: str
-
-
-@dataclass
-class _KindOnlyNeedyBase:
-    """Base whose subclass owns the spelling plus a further required field."""
-
-
-@dataclass
-class _KindOnlyNeedySub(_KindOnlyNeedyBase):
-    Kind: str
-    other: str
-
-
-@dataclass
-class _KindOrPlainBase:
-    """Base with one subclass owning the tag's spelling and one that does not."""
-
-
-@dataclass
-class _KindOrPlainKinded(_KindOrPlainBase):
-    Kind: str = "x"
-
-
-@dataclass
-class _KindOrPlainPlain(_KindOrPlainBase):
-    p: int = 0
-
-
-@dataclass
-class _TagReaderVariant:
-    """Union variant owning no member spelled like the tag, so alone it reads the key as its tag."""
-
-    q: int = 0
-
-
-@dataclass
-class _TagReaderSub(_TagReaderVariant):
-    p: int = 0
-
-
-@dataclass
-class _KindOnlyUnionVariant:
-    """Union variant whose subclass alone owns the tag's spelling."""
-
-
-@dataclass
-class _KindOnlyUnionSub(_KindOnlyUnionVariant):
-    Kind: str
-
-
-@dataclass
-class _KindOnlyUnionOther:
-    other: str = "o"
-
-
-@dataclass
-class _KindLeaf:
-    Kind: str = "k"
-
-
-@dataclass
-class _PlainLeaf:
-    a: int = 0
-
-
-@dataclass
-class _LeafHolder:
-    lf: _KindLeaf
-
-
-@dataclass
-class _PlainLeafHolder:
-    lf: _PlainLeaf | None = None
-
-
-class TestTagFieldCollision:
-    """The tag key in data is a real field's value whenever the struct owns the name.
-
-    Construction read the tag before the fields, so a struct with a field named
-    exactly like union_tag tried to import the field's value as a class path. The
-    field wins instead; the tag is read only where no field bears its name.
-    """
-
-    def test_plain_struct_field_wins(self) -> None:
-        """A subclass-less struct builds the colliding field from the tag-shaped key."""
-        result = _construct_struct_dispatch(_KindPlain, {"Kind": "v"}, (), "Kind")
-        assert result == _KindPlain(Kind="v")
-
-    def test_dispatch_struct_field_wins(self) -> None:
-        """A base with subclasses still builds from its own colliding field."""
-        result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, (), "Kind")
-        assert result == _KindBase(Kind="v")
-
-    def test_subclass_only_field_wins(self) -> None:
-        """A subclass-only field spelled like the tag is the field, not a class path.
-
-        The shadowing predicate once asked the base's own fields only, so construction
-        read the key as the tag and imported the field's value as a class path, stripping
-        it from the data — the very field the user had set then went missing (BUG-103).
-        """
-        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, (), "Kind")
-        assert result == _KindOnlySub(Kind="v")
-
-    def test_subclass_only_field_value_is_never_a_class_path(self) -> None:
-        """A class-path-looking value stays the field's value; nothing is imported."""
-        path = f"{__name__}._KindOnlySub"
-        result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken(path)}, (), "Kind")
-        assert result == _KindOnlySub(Kind=path)
-
-    def test_subclass_only_field_with_base_fields(self) -> None:
-        """The owning subclass builds from the tag-shaped key beside the base's fields."""
-        result = _construct_struct_dispatch(
-            _KindOnlyRichBase,
-            {"host": "h", "Kind": _StrToken("v")},
-            (),
-            "Kind",
-        )
-        assert result == _KindOnlyRichSub(host="h", Kind="v")
-
-    def test_ambiguous_subclass_only_field_raises(self) -> None:
-        """Two structurally matching subclasses are a loud ambiguity, not a silent pick."""
-        with pytest.raises(TypeCoercionError, match="Ambiguous subclasses"):
-            _construct_struct_dispatch(_KindOnlyAmbBase, {"Kind": _StrToken("v")}, (), "Kind")
-
-    def test_subclass_only_field_no_match_raises(self) -> None:
-        """A subclass needing more than the tag-shaped key refuses the data loudly."""
-        with pytest.raises(TypeCoercionError, match="no subclass accepts"):
-            _construct_struct_dispatch(_KindOnlyNeedyBase, {"Kind": _StrToken("v")}, (), "Kind")
-
-    def test_union_variants_subclass_only_field_wins(self) -> None:
-        """A union whose variant's subclass owns the colliding field builds that subclass.
-
-        The union's structural fallback tries the variant, and the variant's own
-        dispatch selects the subclass structurally — the same fix reached through
-        the union route, so no second special case exists to drift.
-        """
-        result = construct(
-            _KindOnlyUnionVariant | _KindOnlyUnionOther,
-            {"Kind": _StrToken("v")},
-            union_tag="Kind",
-        )
-        assert result == _KindOnlyUnionSub(Kind="v")
-
-    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
-    def test_subclass_fallback_refuses_the_key_to_a_subclass_not_owning_it(self) -> None:
-        """No subclass covering the keys, a subclass owning no such field refuses the key, never drops it.
-
-        The fallback tried each subclass through a constructor that dropped the tag-shaped
-        key as the tag, so ``Plain(p=1)`` was built and the member's value lost (BUG-303).
-        """
-        with pytest.raises(TypeCoercionError, match="no subclass accepts"):
-            _construct_struct_dispatch(_KindOrPlainBase, {"p": 1, "Kind": "anything"}, (), "Kind")
-
-    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
-    def test_union_fallback_never_reads_an_owned_key_as_a_variants_tag(self) -> None:
-        """A variant owning no member spelled like the tag refuses it as an unknown field.
-
-        The union reads the key as ``_KindVariant``'s value; its fallback constructed each
-        variant through its own dispatch, so ``_TagReaderVariant`` imported the key as its
-        subclass tag and built ``_TagReaderSub`` (BUG-303).
-        """
-        data = {"p": 1, "Kind": f"{__name__}._TagReaderSub"}
-        with pytest.raises(TypeCoercionError) as exc_info:
-            construct(_KindVariant | _TagReaderVariant, data, union_tag="Kind")
-        lines = str(exc_info.value).splitlines()
-        assert "  _KindVariant: unknown field(s) ['p']. Valid fields: ['Kind']" in lines
-        assert "  _TagReaderVariant: unknown field(s) ['Kind', 'p']. Valid fields: ['q']" in lines
-
-    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
-    def test_union_fallback_never_builds_the_class_an_owned_key_names(self) -> None:
-        """An owned key naming a variant's own class selects nothing: the variant refuses the key."""
-        data = {"Kind": f"{__name__}._OtherVariant", "other": "x"}
-        with pytest.raises(TypeCoercionError, match=r"_OtherVariant: unknown field\(s\) \['Kind'\]"):
-            construct(_KindVariant | _OtherVariant, data, union_tag="Kind")
-
-    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
-    def test_union_fallback_never_opens_a_leaf_by_an_owned_key(self, leaf_registry: None) -> None:
-        """A registered leaf a tag opens is not opened by a key a member owns."""
-        confarg.register_leaf_type(_PlainLeaf, lambda v: _PlainLeaf(int(v)))
-        data = {"Kind": f"{__name__}._PlainLeaf", "a": 5}
-        with pytest.raises(TypeCoercionError, match=r"to _KindVariant \| _PlainLeaf"):
-            construct(_KindVariant | _PlainLeaf, data, union_tag="Kind")
-
-    def test_unshadowed_tag_still_dispatches(self) -> None:
-        """A struct without the colliding field keeps importing the tag's class path."""
-        result = _construct_struct_dispatch(
-            _KindBase,
-            {"class": f"{__name__}._KindSub", "extra": "e"},
-            (),
-            "class",
-        )
-        assert result == _KindSub(Kind="field", extra="e")
-
-    def test_union_variant_field_wins(self) -> None:
-        """A union whose variant owns the colliding field builds that variant structurally."""
-        result = construct(_KindVariant | _OtherVariant, {"Kind": "v"}, union_tag="Kind")
-        assert result == _KindVariant(Kind="v")
-
-    def test_unshadowed_union_tag_still_dispatches(self) -> None:
-        """A union without the colliding field keeps building the named class."""
-        result = construct(
-            _KindVariant | _OtherVariant,
-            {"class": f"{__name__}._KindVariant", "Kind": "v"},
-            union_tag="class",
-        )
-        assert result == _KindVariant(Kind="v")
+class TestAClassKeyNamingAClassThatRefusesNoArguments:
+    """A class key naming an all-default class that refuses ``{}`` is refused as a coercion (BUG-213)."""
 
     def test_tag_alone_on_a_refusing_class_is_a_coercion(self) -> None:
         """A tag naming an all-default class that refuses {} is refused as a coercion (BUG-213).
@@ -932,103 +615,6 @@ class TestTagFieldCollision:
     def test_tag_beside_the_refusing_classs_fields_builds(self) -> None:
         """The refusal's advice is real: the class's fields beside the tag build it."""
         assert construct(UUID | int, {"class": "uuid.UUID", "int": 5}) == UUID(int=5)
-
-    def test_taggable_leaf_param_shadows_tag(
-        self,
-        leaf_registry: None,
-    ) -> None:
-        """A registered leaf whose parameter shadows the tag stays closed.
-
-        The tag is the only thing that opts a leaf back into field construction, so
-        a parameter consuming its spelling leaves nothing that can open the leaf.
-        """
-        confarg.register_leaf_type(_KindLeaf, lambda v: _KindLeaf(str(v)))
-        with pytest.raises(TypeCoercionError, match="consumes the tag's spelling"):
-            construct(_LeafHolder, {"lf": {"Kind": "v"}}, union_tag="Kind")
-
-    def test_taggable_leaf_without_shadow_still_opens(
-        self,
-        leaf_registry: None,
-    ) -> None:
-        """A registered leaf without the colliding parameter keeps opening by tag."""
-        confarg.register_leaf_type(_PlainLeaf, lambda v: _PlainLeaf(int(v)))
-        result = construct(
-            _PlainLeafHolder,
-            {"lf": {"Kind": f"{__name__}._PlainLeaf", "a": 5}},
-            union_tag="Kind",
-        )
-        assert result == _PlainLeafHolder(lf=_PlainLeaf(a=5))
-
-
-class TestShadowedTagWarning:
-    """A shadowed tag-shaped key warns on use, at positions where the tag could have dispatched.
-
-    The collision is accepted silently in the architecture note's trade-off only for
-    positions that never could dispatch; where a class-path tag was a real alternative,
-    ``build()`` emits a ``ConfargWarning`` naming the field path and the remedy, so the
-    structural selection the member's value forces is never a surprise.
-    """
-
-    def test_subclass_only_field_use_warns(self) -> None:
-        """The BUG-103 shape: setting the field warns that no class-path tag dispatches."""
-        with pytest.warns(ConfargWarning, match="selected structurally"):
-            result = _construct_struct_dispatch(_KindOnlyBase, {"Kind": _StrToken("v")}, (), "Kind")
-        assert result == _KindOnlySub(Kind="v")
-
-    def test_base_field_use_on_dispatch_struct_warns(self) -> None:
-        """The BUG-102 shape: the base's own field warns where subclasses could dispatch."""
-        with pytest.warns(ConfargWarning, match="Rename the field"):
-            result = _construct_struct_dispatch(_KindBase, {"Kind": _StrToken("v")}, (), "Kind")
-        assert result == _KindBase(Kind="v")
-
-    def test_plain_struct_use_does_not_warn(self) -> None:
-        """A struct without subclasses never dispatches, so its own field needs no apology."""
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            result = _construct_struct_dispatch(_KindPlain, {"Kind": _StrToken("v")}, (), "Kind")
-        assert result == _KindPlain(Kind="v")
-        assert not any(issubclass(w.category, ConfargWarning) for w in caught)
-
-    def test_unshadowed_tag_dispatch_does_not_warn(self) -> None:
-        """A tag that still dispatches by class path is the intended route, not a collision."""
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            result = _construct_struct_dispatch(
-                _KindBase,
-                {"class": f"{__name__}._KindSub", "extra": "e"},
-                (),
-                "class",
-            )
-        assert result == _KindSub(Kind="field", extra="e")
-        assert not any(issubclass(w.category, ConfargWarning) for w in caught)
-
-    def test_union_variant_field_use_warns(self) -> None:
-        """A union whose variant owns the spelling warns: the variant is chosen structurally."""
-        with pytest.warns(ConfargWarning, match="no class-path tag can dispatch"):
-            result = construct(_KindVariant | _OtherVariant, {"Kind": _StrToken("v")}, union_tag="Kind")
-        assert result == _KindVariant(Kind="v")
-
-    def test_union_unshadowed_tag_dispatch_does_not_warn(self) -> None:
-        """A union tag that still names its class is the intended route."""
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            result = construct(
-                _KindVariant | _OtherVariant,
-                {"class": f"{__name__}._KindVariant", "Kind": _StrToken("v")},
-                union_tag="class",
-            )
-        assert result == _KindVariant(Kind="v")
-        assert not any(issubclass(w.category, ConfargWarning) for w in caught)
-
-    def test_union_variants_subclass_only_field_use_warns(self) -> None:
-        """The union route through a variant's subclass warns at the union position."""
-        with pytest.warns(ConfargWarning, match="selected structurally"):
-            result = construct(
-                _KindOnlyUnionVariant | _KindOnlyUnionOther,
-                {"Kind": _StrToken("v")},
-                union_tag="Kind",
-            )
-        assert result == _KindOnlyUnionSub(Kind="v")
 
 
 class _BasePt(NamedTuple):
@@ -1241,11 +827,6 @@ class TestClassKeyOnAScalarField:
             confarg.build(_ScalarFieldConfig, {"n": data})
         assert "'call:' spec computes a value the field's type accepts" in str(ei.value)
 
-    def test_the_refusal_spells_the_union_tag_it_was_given(self) -> None:
-        """A custom tag spelling is named as the key, not the default 'class'."""
-        with pytest.raises(TypeCoercionError, match="'Kind' key picks the class to build"):
-            construct(int, {"Kind": f"{__name__}._OtherStruct"}, path=("n",), union_tag="Kind")
-
     def test_an_optional_scalar_fails_as_its_variant(self) -> None:
         """Optional[int] fails as an int field does: the same refusal, naming int, at the same path."""
         tag = f"{__name__}._OtherStruct"
@@ -1335,7 +916,7 @@ class TestAUnionWithoutNoneTakesNoNone:
         ("tp", "spelled"),
         [
             pytest.param(int | str, "int | str", id="scalars"),
-            pytest.param(_KindPlain | _OtherVariant, "_KindPlain | _OtherVariant", id="structs"),
+            pytest.param(_NamedVariant | _OtherVariant, "_NamedVariant | _OtherVariant", id="structs"),
             pytest.param(list[int] | dict[str, int], "list[int] | dict[str, int]", id="collections"),
             pytest.param(Callable[[], Any] | int, "Callable[[], Any] | int", id="callable"),
         ],
@@ -1681,7 +1262,7 @@ class TestATagThatIsNoStringIsRefused:
     )
     def test_refused_naming_the_tag_and_the_path(self, where: str, tag: Any, src: str) -> None:
         """A union's, a struct field's, an ``Any`` node's and a Callable's tag are refused alike."""
-        with pytest.raises(TypeCoercionError, match=rf"^'class' tag at '{where}' takes a dotted path, got {src}\."):
+        with pytest.raises(TypeCoercionError, match=rf"^The 'class' key at '{where}' takes a dotted path, got {src}\."):
             construct(_TagHolder, {where: {"class": tag}})
 
     @pytest.mark.parametrize("where", ["union", "field", "anything", "fn"])
@@ -1696,7 +1277,9 @@ class TestATagThatIsNoStringIsRefused:
         (tmp_path / "bug235_broken.py").write_text("import bug235_missing_dependency\n")
         monkeypatch.syspath_prepend(str(tmp_path))
         request.addfinalizer(lambda: sys.modules.pop("bug235_broken", None))
-        with pytest.raises(SymbolImportError, match=rf"from 'class' tag at '{where}'.*bug235_missing_dependency") as e:
+        with pytest.raises(
+            SymbolImportError, match=rf"from the 'class' key at '{where}'.*bug235_missing_dependency"
+        ) as e:
             construct(_TagHolder, {where: {"class": "bug235_broken.Thing"}})
         assert not isinstance(e.value, TypeCoercionError)
 
@@ -1761,7 +1344,7 @@ class TestABuiltInstanceIsTakenAsItIs:
         """A class with subclasses demands a tag of a dict; an instance's class is the tag's answer."""
         sub = _SubModel(4)
         assert confarg.build(_Instances, {"model": sub}).model is sub
-        with pytest.raises(TypeCoercionError, match="no 'class' discriminator"):
+        with pytest.raises(TypeCoercionError, match="no 'class' key was provided"):
             confarg.build(_Instances, {"model": {"x": 4}})
 
     def test_instances_and_dicts_mix_in_a_list(self) -> None:

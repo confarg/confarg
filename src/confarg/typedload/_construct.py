@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import (
+    OPENERS,
     _import_class_by_path,
     _resolve_callable_spec,
     holds_an_opener,
-    openers,
     resolve_held_spec,
     resolve_typed_call,
 )
@@ -80,20 +80,17 @@ from confarg._types import (
     _struct_fields,
     _struct_member_names,
     _struct_required,
-    _struct_subclasses,
     _tagged_struct,
     _tuple_types,
     _union_args,
     _union_args_no_none,
     _union_branches,
-    _union_tag_shadowed,
     _UnionSeqToken,
     _var_params,
 )
 from confarg.exceptions import (
     AmbiguousUnionError,
     ConfargError,
-    ConfargWarning,
     FieldPath,
     FloatOverflowWarning,
     MissingFieldError,
@@ -160,14 +157,14 @@ def _check_namedtuple_length(tp: Any, positions: Sequence[Any], path: FieldPath)
 _LENGTH_OPS = (ListOp.APPEND, ListOp.DELETE, ListOp.DELETE_AFTER)
 
 
-def _merge_at(tp: Any, union_tag: str) -> MergeAt:
+def _merge_at(tp: Any) -> MergeAt:
     """Return where the merge stands at a node of type *tp*, for a patch construction applies in its place."""
     from confarg._typed_merge import merge_at  # noqa: PLC0415  # import cycle: the typed merge asks this module
 
-    return merge_at(tp, union_tag)
+    return merge_at(tp)
 
 
-def _apply_carried_ops(data: MergeDict, tp: Any, what: str, path: FieldPath, union_tag: str) -> MergeDict | list[Any]:
+def _apply_carried_ops(data: MergeDict, tp: Any, what: str, path: FieldPath) -> MergeDict | list[Any]:
     """Apply the list ops *data* carries over the ``ListOp.BASE`` beside them, for a fixed-arity sequence.
 
     A fixed tuple or a namedtuple (*what* names it for the message) has no length an op
@@ -187,10 +184,10 @@ def _apply_carried_ops(data: MergeDict, tp: Any, what: str, path: FieldPath, uni
         raise TypeCoercionError.position_list_delete(str(deleted), _defaults.UNSET_KEY, what, spelled)
     if ListOp.BASE not in data:
         raise TypeCoercionError.list_op_on(str(op), what, spelled)
-    return _apply_list_ops(_replace_base(data, spelled), data, spelled, _merge_at(tp, union_tag))
+    return _apply_list_ops(_replace_base(data, spelled), data, spelled, _merge_at(tp))
 
 
-def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, union_tag: str) -> dict[Any, Any]:
+def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath) -> dict[Any, Any]:
     """Key a namedtuple's ``ListOp.BASE`` base list by field name and lay the patch beside it over it.
 
     The merge carries a positional list under ``ListOp.BASE`` beside a patch it
@@ -207,7 +204,7 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
     base = _replace_base(data, _spell_field_path(path))
     _check_namedtuple_length(tp, base, path)
     laid: dict[Any, Any] = dict(zip(field_names, base, strict=False))
-    at = _merge_at(tp, union_tag)
+    at = _merge_at(tp)
     for spelled, v in data.items():
         if spelled is ListOp.BASE:
             continue
@@ -222,7 +219,7 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath, un
     return laid
 
 
-def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_namedtuple(tp: Any, data: Any, path: FieldPath) -> Any:
     """Construct a namedtuple from a list (positional) or dict (by name or index).
 
     An index key counts from the end when negative, exactly as a fixed tuple's
@@ -238,9 +235,9 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     field_types = list(flds.values())
 
     if isinstance(data, dict):
-        data = _apply_carried_ops(data, tp, f"namedtuple {tp.__name__}", path, union_tag)
+        data = _apply_carried_ops(data, tp, f"namedtuple {tp.__name__}", path)
     if isinstance(data, dict) and ListOp.BASE in data:
-        data = _lay_patch_over_positions(tp, data, path, union_tag)
+        data = _lay_patch_over_positions(tp, data, path)
 
     if isinstance(data, list | tuple):
         _check_namedtuple_length(tp, data, path)
@@ -253,7 +250,7 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
             if isinstance(v, _DeleteSentinel):
                 continue  # the position is unset (BUG-243)
             fname = field_names[idx]
-            kwargs[fname] = construct(field_types[idx], v, path=(*path, fname), union_tag=union_tag)
+            kwargs[fname] = construct(field_types[idx], v, path=(*path, fname))
 
         # Fill in each unset field as construction fills it, or raise MissingFieldError
         for i, (fname, ft) in enumerate(flds.items()):
@@ -273,69 +270,29 @@ def _construct_namedtuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     )
 
 
-def _warn_shadowed_tag_key(path: FieldPath, union_tag: str, what: str) -> None:
-    """Emit the on-use warning for a tag-shaped key a member owns at a dispatch position.
-
-    *what* names what the fields select at this position, "variant" or "subclass", so
-    a key consumed at two positions (a union into a variant that itself dispatches)
-    says two true things instead of one twice.
-
-    Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
-    """
-    warnings.warn(
-        ConfargWarning.tag_shadowed_by_member(_spell_field_path(path) or _defaults.ROOT_KEY, union_tag, what),
-        stacklevel=2,
-    )
-
-
-def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
-    """Dispatch struct construction, handling the union_tag class-path variant.
-
-    A tag-shaped key is the class path only when no member of ``tp`` bears the tag's
-    spelling; a member that does owns the key. The struct's own field builds from its
-    fields, and a subclass-only field constructs through the subclass that owns it,
-    the union's structural answer (BUG-103).
+def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath) -> Any:
+    """Dispatch struct construction: by the class key's class where the dict holds it, else from the fields.
 
     A value that is no dict is taken as it is when it is an instance of ``tp`` (:func:`_holds`),
-    a subclass's included, before any tag or subclass is asked: its class answers what a tag
-    would. Any other is refused, naming the member of a generic struct that does not hold.
+    a subclass's included, before any class key or subclass is asked: its class answers what a
+    class key would. Any other is refused, naming the member of a generic struct that does not hold.
 
     Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
         docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
     """
     if not isinstance(data, dict):
         return _take_instance(tp, data, path)
-    demands_tag = _demands_tag(tp)
-    if union_tag in data:
-        if not _union_tag_shadowed(tp, union_tag):
-            return _construct_by_class_path(tp, data, path, union_tag)
-        if demands_tag:
-            # The tag could have dispatched here; the member's value forces the
-            # structural route instead, so say so once, on use.
-            _warn_shadowed_tag_key(path, union_tag, "subclass")
-        if union_tag in _struct_fields(tp):
-            return _construct_struct(tp, data, path, union_tag)
-        return _construct_shadowed_subclass(tp, data, path, union_tag)
-    if demands_tag:
+    if _defaults.CLASS_KEY in data:
+        return _construct_by_class_path(tp, data, path)
+    if _demands_tag(tp):
         sub_names = ", ".join(dotted_name(_class_of(s)) for s in _direct_struct_subclasses(tp))
-        if _union_tag_shadowed(tp, union_tag):
-            msg = (
-                f"Cannot construct '{tp.__name__}' at '{_spell_field_path(path)}': it has subclasses ({sub_names})"
-                f" and a member spelled {union_tag!r} owns the tag's spelling, so no"
-                " class-path tag can select one. Provide the fields of the subclass you"
-                f" want, its {union_tag!r} field included, or rename the field or pass a"
-                " different union_tag."
-            )
-            raise TypeCoercionError(msg)
         msg = (
             f"Cannot construct '{tp.__name__}' at '{_spell_field_path(path)}': it has subclasses ({sub_names})"
-            f" but no {union_tag!r} discriminator was provided."
-            f" Add a {union_tag!r} field with the fully-qualified class name."
+            f" but no {_defaults.CLASS_KEY!r} key was provided."
+            f" Add a {_defaults.CLASS_KEY!r} key with the fully-qualified class name."
         )
         raise TypeCoercionError(msg)
-    return _construct_struct(tp, data, path, union_tag)
+    return _construct_struct(tp, data, path)
 
 
 def _take_instance(tp: Any, data: Any, path: FieldPath) -> Any:
@@ -355,38 +312,6 @@ def _take_instance(tp: Any, data: Any, path: FieldPath) -> Any:
             spelled, where, _spell_field_path((*path, name)), value, _spell_type(member_type)
         )
     raise TypeCoercionError.no_instance_of(spelled, _src_type(data), data, _spell_field_path(path))
-
-
-def _construct_shadowed_subclass(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
-    """Construct through the subclass that owns the tag-shaped subclass-only field.
-
-    The key is field data, so the subclass is selected the way the union's structural
-    fallback selects a variant: the subclass whose fields cover the keys. Several
-    matches are a loud ambiguity and none a loud refusal — never a silent pick, and
-    never a strip of the value the tag-shaped key holds.
-
-    Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
-    """
-    subs = _struct_subclasses(tp)
-    matches = _covering_subclasses(subs, data, union_tag)
-    if len(matches) == 1:
-        return _construct_struct(matches[0], data, path, union_tag)
-    if len(matches) > 1:
-        raise TypeCoercionError(_ambiguous_subclass_msg(matches, data, path, union_tag))
-    for sub in subs:
-        try:
-            return _construct_struct(sub, data, path, union_tag)
-        except (ConfargError, TypeError):
-            continue
-    sub_names = ", ".join(dotted_name(_class_of(s)) for s in subs)
-    msg = (
-        f"Cannot construct '{tp.__name__}' at '{_spell_field_path(path)}': the {union_tag!r} key is a field's"
-        f" value, and no subclass accepts the provided fields (subclasses: {sub_names})."
-        " Provide the fields of the subclass you want, or rename the field or pass a"
-        " different union_tag."
-    )
-    raise TypeCoercionError(msg)
 
 
 def _ambiguous_structs_msg(
@@ -417,53 +342,26 @@ def _ambiguous_structs_msg(
     return "\n".join(lines)
 
 
-def _ambiguous_subclass_msg(matches: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> str:
-    """Build a diagnostic message for subclasses the provided fields cannot tell apart."""
-    return _ambiguous_structs_msg(
-        matches,
-        set(data),
-        path,
-        "Ambiguous subclasses",
-        _owned_tag_remedy(union_tag),
-    )
-
-
-def _owned_tag_remedy(union_tag: str) -> str:
-    """Return the remedy an ambiguity refusal offers where a member owns the tag's spelling: no tag selects."""
-    return (
-        f"A member spelled {union_tag!r} owns the tag's spelling, so no class-path tag"
-        " can select between them. Rename the field or pass a different union_tag."
-    )
-
-
-def _construct_taggable_leaf(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
+def _construct_taggable_leaf(tp: Any, data: MergeDict, path: FieldPath) -> Any:
     """Construct a struct-shaped registered leaf from the dict that tags it.
 
     Raises:
-        TypeCoercionError: If the dict carries no ``union_tag`` naming the class.
+        TypeCoercionError: If the dict carries no class key naming the class.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in
     """
-    if union_tag in data and not _union_tag_shadowed(tp, union_tag):
-        return _construct_struct_dispatch(tp, data, path, union_tag)
-    if _union_tag_shadowed(tp, union_tag):
-        msg = (
-            f"Cannot coerce dict {data!r} to {tp.__name__} at '{_spell_field_path(path)}'."
-            f" {tp.__name__} is a registered leaf type and a member spelled {union_tag!r}"
-            f" consumes the tag's spelling, so no tag can open it:"
-            f" rename the field or pass a different union_tag."
-        )
-        raise TypeCoercionError(msg)
+    if _defaults.CLASS_KEY in data:
+        return _construct_struct_dispatch(tp, data, path)
     msg = (
         f"Cannot coerce dict {data!r} to {tp.__name__} at '{_spell_field_path(path)}'."
         f" {tp.__name__} is a registered leaf type: pass a value it coerces from, or add a"
-        f" {union_tag!r} field naming {dotted_name(tp)} to build it from its fields."
+        f" {_defaults.CLASS_KEY!r} key naming {dotted_name(tp)} to build it from its fields."
     )
     raise TypeCoercionError(msg)
 
 
-def _construct_collection(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_collection(tp: Any, data: Any, path: FieldPath) -> Any:
     """Construct a list, set, or frozenset from raw data.
 
     Lists accept a list, a tuple or an index-keyed dict, the shapes that spell positions; sets
@@ -482,7 +380,7 @@ def _construct_collection(tp: Any, data: Any, path: FieldPath, union_tag: str) -
             "list, tuple, or dict with integer keys",
             _spell_field_path(path),
         )
-    items = _build_items(_elem_type(tp), data, path, union_tag)
+    items = _build_items(_elem_type(tp), data, path)
     if _is_frozenset(tp):
         return frozenset(items)
     if _is_set(tp):
@@ -490,11 +388,11 @@ def _construct_collection(tp: Any, data: Any, path: FieldPath, union_tag: str) -
     return items
 
 
-def _construct_scalar(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_scalar(tp: Any, data: Any, path: FieldPath) -> Any:
     """Construct a type reference or leaf value.
 
     Raises:
-        TypeCoercionError: If *data* is a dict carrying the union tag on a leaf, which is
+        TypeCoercionError: If *data* is a dict carrying the class key on a leaf, which is
             built from one value, not from keys: the tag picks no class there, so the refusal
             names the key and the ``call:`` spec that computes a value the field accepts.
 
@@ -505,40 +403,40 @@ def _construct_scalar(tp: Any, data: Any, path: FieldPath, union_tag: str) -> An
         return _coerce_type_ref(tp, data, _spell_field_path(path))
     resolved = _resolve_type(tp)
     if _is_taggable_leaf(resolved) and isinstance(data, dict):
-        return _construct_taggable_leaf(resolved, data, path, union_tag)
-    if isinstance(data, dict) and union_tag in data:
+        return _construct_taggable_leaf(resolved, data, path)
+    if isinstance(data, dict) and _defaults.CLASS_KEY in data:
         spelled = _spell_type(resolved)
-        raise TypeCoercionError.leaf_takes_no_tag(data, spelled, _spell_field_path(path), union_tag, _defaults.CALL_KEY)
+        raise TypeCoercionError.leaf_takes_no_tag(data, spelled, _spell_field_path(path), _defaults.CALL_KEY)
     return _coerce_leaf(tp, data, _spell_field_path(path))
 
 
-def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:  # noqa: PLR0911  # one return per kind
+def _construct_typed(tp: Any, data: Any, path: FieldPath) -> Any:  # noqa: PLR0911  # one return per kind
     """Dispatch construction on the shape :func:`_type_kind` names, after a pin and None are handled."""
     match _type_kind(tp):
         case _TypeKind.ANY:
-            return _construct_any(data, path, union_tag)
+            return _construct_any(data, path)
         case _TypeKind.UNION:
-            return _construct_union(tp, data, path, union_tag)
+            return _construct_union(tp, data, path)
         case _TypeKind.NAMEDTUPLE:
-            return _construct_namedtuple(tp, data, path, union_tag)
+            return _construct_namedtuple(tp, data, path)
         case _TypeKind.STRUCT:
-            return _construct_struct_dispatch(tp, data, path, union_tag)
+            return _construct_struct_dispatch(tp, data, path)
         case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
-            return as_subclass(tp, _construct_collection(tp, data, path, union_tag), _spell_field_path(path))
+            return as_subclass(tp, _construct_collection(tp, data, path), _spell_field_path(path))
         case _TypeKind.TUPLE:
-            return as_subclass(tp, _construct_tuple(tp, data, path, union_tag), _spell_field_path(path))
+            return as_subclass(tp, _construct_tuple(tp, data, path), _spell_field_path(path))
         case _TypeKind.DICT:
-            return as_subclass(tp, _construct_dict(tp, data, path, union_tag), _spell_field_path(path))
+            return as_subclass(tp, _construct_dict(tp, data, path), _spell_field_path(path))
         case _TypeKind.CALLABLE:
-            return _resolve_callable_spec(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
+            return _resolve_callable_spec(data, tp, path=path, construct_fn=construct)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
-            return _construct_scalar(tp, data, path, union_tag)
+            return _construct_scalar(tp, data, path)
 
 
-def _construct_any(data: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_any(data: Any, path: FieldPath) -> Any:
     """Construct what an ``Any`` node holds of *data*: a spec's value, a container of ``Any`` nodes, or a leaf.
 
-    A dict holding an opener, the union tag among them, is a spec, read with every opener
+    A dict holding an opener, the class key among them, is a spec, read with every opener
     (:func:`resolve_held_spec`);
     any other dict is a ``dict[Any, Any]`` and a list a ``list[Any]``, so a spec at any depth
     is read too. A leaf is held as it is, a token as its text (:func:`_held_by_any`). A
@@ -548,26 +446,26 @@ def _construct_any(data: Any, path: FieldPath, union_tag: str) -> Any:
         docs-dev/architecture/callables.md#an-any-node-reads-every-opener
     """
     if isinstance(data, dict):
-        if holds_an_opener(data, union_tag):
-            return resolve_held_spec(data, path, union_tag, construct)
-        held = _construct_dict(dict[Any, Any], data, path, union_tag)
+        if holds_an_opener(data):
+            return resolve_held_spec(data, path, construct)
+        held = _construct_dict(dict[Any, Any], data, path)
         unchanged = all(
             type(hk) is type(k) and hk == k and hv is v
             for (hk, hv), (k, v) in zip(held.items(), data.items(), strict=True)
         )
         return data if unchanged else held
     if isinstance(data, list):
-        items = [construct(Any, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(data)]
+        items = [construct(Any, v, path=(*path, i)) for i, v in enumerate(data)]
         return data if all(h is v for h, v in zip(items, data, strict=True)) else items
     return _held_by_any(data)
 
 
-def _is_typed_call(data: Any, tp: Any, union_tag: str) -> bool:
+def _is_typed_call(data: Any, tp: Any) -> bool:
     """True if *data* is a ``call:`` spec for a field of type *tp*, and that field is not a Callable.
 
     A ``call:`` key is a spec only where no member of the annotation could hold that key as data: a
     dict type and a Callable keep their own meaning, and a struct member named ``call``
-    keeps the field's data. The *union_tag* already selects a struct, its other keys the
+    keeps the field's data. The class key already selects a struct, its other keys the
     struct's fields; a ``bind:`` beside ``call:`` is a second opener, which the call refuses.
 
     Dev Notes:
@@ -575,7 +473,7 @@ def _is_typed_call(data: Any, tp: Any, union_tag: str) -> bool:
     """
     if not isinstance(data, dict):
         return False
-    if _defaults.CALL_KEY not in data or union_tag in data:
+    if _defaults.CALL_KEY not in data or _defaults.CLASS_KEY in data:
         return False
     return _takes_typed_call(tp)
 
@@ -609,13 +507,13 @@ def _reads_specs(tp: Any) -> bool:
     return _type_kind(_resolve_type(tp)) in (_TypeKind.CALLABLE, _TypeKind.ANY)
 
 
-def spec_reading_variant(tp: Any, data: Any, union_tag: str) -> Any:
+def spec_reading_variant(tp: Any, data: Any) -> Any:
     """Return the variant of the union *tp* that reads the dict *data* as a callable spec, None when none does.
 
     The one answer for construction and the merge. A union reads a dict holding an opener as
     its Callable variant's spec, or its ``Any`` variant's when it has no Callable, before any
     struct or dict variant tries it as data, unless a struct variant owns the key of an opener
-    *data* holds, as a member owns the union tag's spelling. The union tag is not an opener
+    *data* holds. The class key is not an opener
     here: it selects a struct variant first, and only a class no struct variant holds is the
     spec (:func:`_construct_union_by_tag`). A ``call:`` is no variant's: the union takes its
     value (:func:`_takes_typed_call`).
@@ -625,7 +523,7 @@ def spec_reading_variant(tp: Any, data: Any, union_tag: str) -> Any:
     """
     if not isinstance(data, dict):
         return None
-    present = {k for k in openers(union_tag) if k in data} - {union_tag, _defaults.CALL_KEY}
+    present = {k for k in OPENERS if k in data} - {_defaults.CLASS_KEY, _defaults.CALL_KEY}
     return _opener_keys_reader(_union_args_no_none(tp), present) if present else None
 
 
@@ -633,7 +531,7 @@ def _opener_keys_reader(members: Sequence[Any], keys: set[str]) -> Any:
     """Return the variant among the union *members* that reads a spec holding the opener *keys*, None for none.
 
     The Callable, else the ``Any`` (:func:`_first_spec_reader`), unless a struct variant owns
-    one of *keys*, which is then its data, as a member owns the union tag's spelling. The keys
+    one of *keys*, which is then its data. The keys
     alone decide, so :func:`spec_reading_variant` asks it of a dict and :func:`opener_reader`
     of a key no value comes with.
     """
@@ -642,13 +540,13 @@ def _opener_keys_reader(members: Sequence[Any], keys: set[str]) -> Any:
     return _first_spec_reader(members)
 
 
-def opener_reader(tp: Any, opener: str, union_tag: str) -> Any:
+def opener_reader(tp: Any, opener: str) -> Any:
     """Return the type that reads the key *opener* at a node of type *tp* as a spec's, None when none does.
 
     The key's half of :func:`spec_reading_variant`, for registration, which has no value to
     read: a ``call:`` a field takes as a typed call is *tp*'s, which takes its value
     (:func:`_takes_typed_call`); any other opener is read by a Callable or an ``Any`` *tp* is,
-    or in a union by the variant :func:`_opener_keys_reader` names; the union tag selects a
+    or in a union by the variant :func:`_opener_keys_reader` names; the class key selects a
     struct variant first (:func:`_construct_union_by_tag`), so it is the spec's only in a union
     holding none.
 
@@ -660,9 +558,9 @@ def opener_reader(tp: Any, opener: str, union_tag: str) -> Any:
     members = _union_branches(tp)
     if len(members) == 1:
         return members[0] if _reads_specs(members[0]) else None
-    if opener != union_tag:
+    if opener != _defaults.CLASS_KEY:
         return _opener_keys_reader(members, {opener})
-    if _union_tag_shadowed(tp, union_tag) or _holds_a_struct(members):
+    if _holds_a_struct(members):
         return None
     return _first_spec_reader(members)
 
@@ -679,7 +577,7 @@ def _holds_a_struct(members: Sequence[Any]) -> bool:
 
 
 def tag_selects_a_variant(members: Sequence[Any]) -> bool:
-    """True if the union tag can select one of the union's *members*: a struct, a registered leaf, or a spec reader.
+    """True if the class key can select one of the union's *members*: a struct, a registered leaf, or a spec reader.
 
     A tag names a class to build from the keys beside it, which a struct variant, registered
     leaves included, is built from; a class no such variant holds is the spec of the Callable
@@ -694,8 +592,6 @@ def tag_selects_a_variant(members: Sequence[Any]) -> bool:
 class TagReading(enum.Enum):
     """What a union reads a dict's key spelled as its tag as (:func:`tag_reading`)."""
 
-    OWNED = enum.auto()
-    """A member owns the spelling as a field, whose value it is."""
     DATA = enum.auto()
     """A variant that reads a dict holds it as data, where the tag can select no variant."""
     REFUSED = enum.auto()
@@ -709,8 +605,8 @@ class TagReading(enum.Enum):
         return self in {TagReading.REFUSED, TagReading.SELECTS}
 
 
-def tag_reading(tp: Any, union_tag: str) -> TagReading:
-    """Return what the union *tp* reads a dict's *union_tag* key as: a member's, a variant's data, or the tag.
+def tag_reading(tp: Any) -> TagReading:
+    """Return what the union *tp* reads a dict's class key as: a member's, a variant's data, or the tag.
 
     The key is the tag where it can select a variant (:func:`tag_selects_a_variant`), unless a
     member owns its spelling. Where it can select none, a variant that reads a dict, a ``dict``,
@@ -723,8 +619,6 @@ def tag_reading(tp: Any, union_tag: str) -> TagReading:
         docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
     """
     members = _union_args_no_none(tp)
-    if _union_tag_shadowed(tp, union_tag):
-        return TagReading.OWNED
     if tag_selects_a_variant(members):
         return TagReading.SELECTS
     # No Any variant is left: it reads specs, so the tag would have selected it.
@@ -732,55 +626,54 @@ def tag_reading(tp: Any, union_tag: str) -> TagReading:
     return TagReading.DATA if leaves.fixed or leaves.collections else TagReading.REFUSED
 
 
-def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noqa: PLR0911  # one return per kind
+def reads_as_new_value(data: MergeDict, tp: Any) -> bool:  # noqa: PLR0911  # one return per kind
     """True if construction reads the dict *data*, at a field of type *tp*, as naming what it builds.
 
     So a key a lower layer set beside it cannot belong to it, and the merge lets *data* replace
     what lies below rather than refine it. It does where construction dispatches on a key
     rather than reading it as data: a typed call (:func:`_is_typed_call`), an opener on a
-    Callable or an ``Any`` node, the union tag on a struct or a leaf, unless a member owns its
-    spelling (``_union_tag_shadowed``), and on a union of several members that reads it as the
-    tag (:func:`tag_reading`). A union of several members reads an opener as its Callable or
-    ``Any`` member would. An opener whose target is a dict holding no opener of its own
-    (``{call: {k: 3}}``) refines the target below; a dict, a sequence, a struct owning the key
-    and a union whose dict variant holds it hold it as data.
+    Callable or an ``Any`` node, the class key on a struct or a leaf, and on a union of several
+    members that reads it as the class key (:func:`tag_reading`). A union of several members
+    reads an opener as its Callable or ``Any`` member would. An opener whose target is a dict
+    holding no opener of its own (``{call: {k: 3}}``) refines the target below; a dict, a
+    sequence, a struct owning the key and a union whose dict variant holds it hold it as data.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
     tp = _resolve_type(tp)
-    if _is_typed_call(data, tp, union_tag):
-        return _names_a_target(data, (_defaults.CALL_KEY,), union_tag)
+    if _is_typed_call(data, tp):
+        return _names_a_target(data, (_defaults.CALL_KEY,))
     match _type_kind(tp):
         case _TypeKind.CALLABLE | _TypeKind.ANY:
-            return _names_a_target(data, openers(union_tag), union_tag)
+            return _names_a_target(data, OPENERS)
         case _TypeKind.UNION:
             members = _union_branches(tp)
             if len(members) == 1:
-                return reads_as_new_value(data, members[0], union_tag)
-            if union_tag in data and tag_reading(tp, union_tag).is_the_tag:
+                return reads_as_new_value(data, members[0])
+            if _defaults.CLASS_KEY in data and tag_reading(tp).is_the_tag:
                 return True
-            reader = spec_reading_variant(tp, data, union_tag)
-            return reader is not None and reads_as_new_value(data, reader, union_tag)
+            reader = spec_reading_variant(tp, data)
+            return reader is not None and reads_as_new_value(data, reader)
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
-            return union_tag in data and not _union_tag_shadowed(tp, union_tag)
+            return _defaults.CLASS_KEY in data
         case _TypeKind.LEAF:
-            return union_tag in data
+            return _defaults.CLASS_KEY in data
         case _:
             return False
 
 
-def _names_a_target(data: MergeDict, keys: Sequence[str], union_tag: str) -> bool:
+def _names_a_target(data: MergeDict, keys: Sequence[str]) -> bool:
     """True if *data* names a target under an opener of *keys*: anything but a delete or a dict holding no opener."""
     return any(
         k in data
         and not isinstance(data[k], _DeleteSentinel)
-        and not (isinstance(data[k], dict) and not holds_an_opener(data[k], union_tag))
+        and not (isinstance(data[k], dict) and not holds_an_opener(data[k]))
         for k in keys
     )
 
 
-def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _defaults.UNION_TAG) -> Any:
+def construct(tp: Any, data: Any, *, path: FieldPath = ()) -> Any:
     """Construct a typed value from raw data.
 
     Dispatches to specialized constructors based on the target type.
@@ -791,7 +684,6 @@ def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _def
         path: Where *data* sits below the target, one segment per step (a field or dict
             key by name, a sequence element by its integer index), which error messages
             name; ``()`` is the target itself.
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         The constructed value matching the target type.
@@ -814,9 +706,9 @@ def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _def
         _refuse_a_forbidden_literal(tp, _spell_field_path(path))
     if data is None and _allows_none(tp):
         return None
-    if _is_typed_call(data, tp, union_tag):
-        return resolve_typed_call(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
-    return _construct_typed(tp, data, path, union_tag)
+    if _is_typed_call(data, tp):
+        return resolve_typed_call(data, tp, path=path, construct_fn=construct)
+    return _construct_typed(tp, data, path)
 
 
 def _refuse_an_index_delete(data: dict[Any, Any], path: FieldPath) -> None:
@@ -951,7 +843,7 @@ def build_from_nothing(build: Callable[[], Any], tp: Any, path: FieldPath, namin
         raise TypeCoercionError.refused_empty_call(naming.name, _spell_field_path(path), str(e), naming.beside) from e
 
 
-def _construct_named(cls: Any, data: MergeDict, path: FieldPath, union_tag: str, naming: _Naming) -> Any:
+def _construct_named(cls: Any, data: MergeDict, path: FieldPath, naming: _Naming) -> Any:
     """Build exactly the class *cls* a tag or an opener named, from the keys *data* holds beside it.
 
     The one constructor of a named class. A Protocol class is refused before anything is called,
@@ -968,16 +860,18 @@ def _construct_named(cls: Any, data: MergeDict, path: FieldPath, union_tag: str,
     if is_protocol(_class_of(cls)):
         raise TypeCoercionError.names_a_protocol(naming.name, _spell_field_path(path))
     if not _is_struct(cls):
-        return construct(cls, data, path=path, union_tag=union_tag)
+        return construct(cls, data, path=path)
     flds = _struct_fields(cls)
-    if union_tag in data and union_tag not in flds:
-        raise TypeCoercionError.unknown_fields([union_tag], cls.__name__, _spell_field_path(path), sorted(flds))
+    if _defaults.CLASS_KEY in data and _defaults.CLASS_KEY not in flds:
+        raise TypeCoercionError.unknown_fields(
+            [_defaults.CLASS_KEY], cls.__name__, _spell_field_path(path), sorted(flds)
+        )
     if data:
-        return _construct_struct(cls, data, path, union_tag)
-    return build_from_nothing(lambda: _construct_struct(cls, {}, path, union_tag), cls, path, naming)
+        return _construct_struct(cls, data, path)
+    return build_from_nothing(lambda: _construct_struct(cls, {}, path), cls, path, naming)
 
 
-def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
+def _construct_struct(tp: Any, data: MergeDict, path: FieldPath) -> Any:
     """Construct a dataclass or plain-class instance from a dict of raw data.
 
     Every key of *data* is a field: a tag-shaped key *tp* declares no field for is refused as
@@ -994,11 +888,11 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str)
     for name, ft in flds.items():
         fp = (*path, name)
         if name in data:
-            kwargs[name] = construct(ft, data[name], path=fp, union_tag=union_tag)
+            kwargs[name] = construct(ft, data[name], path=fp)
         elif name in defs:
             kwargs[name] = defs[name]
         elif _is_struct_variant(ft) and _all_have_defaults(ft):
-            kwargs[name] = build_from_nothing(lambda ft=ft, fp=fp: _construct_struct(ft, {}, fp, union_tag), ft, fp)
+            kwargs[name] = build_from_nothing(lambda ft=ft, fp=fp: _construct_struct(ft, {}, fp), ft, fp)
         else:
             raise MissingFieldError(fp, _spell_type(ft), descriptor=_self_defaulting_descriptor(tp, name))
 
@@ -1007,14 +901,13 @@ def _construct_struct(tp: Any, data: MergeDict, path: FieldPath, union_tag: str)
     return _call_struct(tp, kwargs, var.positional, var_kw)
 
 
-def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[Any]:
+def _build_items(et: Any, data: Any, path: FieldPath) -> list[Any]:
     """Build a list of constructed items from sequence-like raw data.
 
     Args:
         et: The element type to construct each item as.
         data: The raw data (list, set, frozenset, tuple, or dict with integer keys).
         path: The construction path, which error messages name.
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         A list of constructed items.
@@ -1023,17 +916,17 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
         TypeCoercionError: If data is not a sequence or dict with integer keys.
     """
     if isinstance(data, list | set | frozenset | tuple):
-        return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(data)]
+        return [construct(et, v, path=(*path, i)) for i, v in enumerate(data)]
     if isinstance(data, dict):
         if ListOp.BASE in data:
             # CLI-produced dict with an explicit base list; apply ops in order.
-            at = _merge_at(list[et], union_tag)
+            at = _merge_at(list[et])
             working = _apply_list_ops(_replace_base(data, _spell_field_path(path)), data, _spell_field_path(path), at)
-            return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
+            return [construct(et, v, path=(*path, i)) for i, v in enumerate(working)]
         if ListOp.APPEND in data:
             # Append-only dict: apply all list ops (appends, deletions, index patches) against an empty base.
-            working = _apply_list_ops([], data, _spell_field_path(path), _merge_at(list[et], union_tag))
-            return [construct(et, v, path=(*path, i), union_tag=union_tag) for i, v in enumerate(working)]
+            working = _apply_list_ops([], data, _spell_field_path(path), _merge_at(list[et]))
+            return [construct(et, v, path=(*path, i)) for i, v in enumerate(working)]
         if ListOp.DELETE in data or ListOp.DELETE_AFTER in data:
             msg = (
                 f"List deletion (the '-' operator) at '{_spell_field_path(path)}' requires a base list to delete from,"
@@ -1066,7 +959,7 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
                 f" or the element type must be Optional."
             )
             raise TypeCoercionError(msg)
-        return [construct(et, positions.get(i), path=(*path, i), union_tag=union_tag) for i in range(max_idx + 1)]
+        return [construct(et, positions.get(i), path=(*path, i)) for i in range(max_idx + 1)]
     raise TypeCoercionError.wrong_shape(
         _src_type(data),
         data,
@@ -1076,7 +969,7 @@ def _build_items(et: Any, data: Any, path: FieldPath, union_tag: str) -> list[An
     )
 
 
-def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tuple[Any, ...]:
+def _construct_tuple(tp: Any, data: Any, path: FieldPath) -> tuple[Any, ...]:
     """Construct a tuple from raw data.
 
     Handles both fixed-length and variable-length (tuple[X, ...]) tuples.
@@ -1085,7 +978,6 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
         tp: The tuple type.
         data: The raw data (list, tuple, or dict with integer keys).
         path: The construction path, which error messages name.
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         The constructed tuple.
@@ -1097,7 +989,7 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
     if tt is None:
         # variable length
         et = _elem_type(tp)
-        return tuple(_build_items(et, data, path, union_tag))
+        return tuple(_build_items(et, data, path))
 
     if not isinstance(data, list | tuple | dict):
         raise TypeCoercionError.wrong_shape(
@@ -1108,20 +1000,18 @@ def _construct_tuple(tp: Any, data: Any, path: FieldPath, union_tag: str) -> tup
             _spell_field_path(path),
         )
     if isinstance(data, dict):
-        data = _apply_carried_ops(data, tp, f"{tp}", path, union_tag)
+        data = _apply_carried_ops(data, tp, f"{tp}", path)
     if isinstance(data, list | tuple):
         # Too many positions, or too few where one left out holds no None.
         if len(data) > len(tt) or any(not _allows_none(t) for t in tt[len(data) :]):
             raise TypeCoercionError.wrong_length(_spell_type(tp), _spell_field_path(path), len(tt), data)
         seq = list(data)
     else:
-        seq = _patched_positions(tp, tt, data, path, union_tag)
-    return tuple(
-        _construct_position(tp, i, seq[i] if i < len(seq) else None, (*path, i), union_tag) for i in range(len(tt))
-    )
+        seq = _patched_positions(tp, tt, data, path)
+    return tuple(_construct_position(tp, i, seq[i] if i < len(seq) else None, (*path, i)) for i in range(len(tt)))
 
 
-def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldPath, union_tag: str) -> list[Any]:
+def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldPath) -> list[Any]:
     """Lay a fixed tuple's index patch over the base it carries, ``_UNSET`` where neither fills a position."""
     base_seq: list[Any] = []
     patches = data
@@ -1133,7 +1023,7 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
         patches = {k: v for k, v in data.items() if k != ListOp.BASE}
     seq = [base_seq[i] if i < len(base_seq) else _UNSET for i in range(len(tt))]
     # A patch refines what the base holds at its position, as the merge would have.
-    at = _merge_at(tp, union_tag)
+    at = _merge_at(tp)
     for i, v in _indexed_dict_to_positions(tp, patches, path, _spell_type(tp)).items():
         if isinstance(v, _DeleteSentinel):
             seq[i] = _UNSET  # the position is unset (BUG-243)
@@ -1148,12 +1038,12 @@ def _patched_positions(tp: Any, tt: Sequence[Any], data: MergeDict, path: FieldP
 _UNSET: Any = object()
 
 
-def _construct_position(tp: Any, i: int, value: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_position(tp: Any, i: int, value: Any, path: FieldPath) -> Any:
     """Construct the position *i* of the fixed tuple *tp*, an unset one as :func:`unset_position` fills it."""
     et = (_tuple_types(tp) or [])[i]
     if value is _UNSET and (value := unset_position(tp, i)) is _UNSET:
         raise MissingFieldError(path, _spell_type(et))
-    return construct(et, value, path=path, union_tag=union_tag)
+    return construct(et, value, path=path)
 
 
 def unset_position(tp: Any, i: int) -> Any:
@@ -1173,14 +1063,13 @@ def unset_position(tp: Any, i: int) -> Any:
     return None if i < len(positions) and _allows_none(positions[i]) else _UNSET
 
 
-def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict[Any, Any]:
+def _construct_dict(tp: Any, data: Any, path: FieldPath) -> dict[Any, Any]:
     """Construct a typed dict from raw data.
 
     Args:
         tp: The dict type (e.g. dict[str, int]).
         data: The raw data dict.
         path: The construction path, which error messages name.
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         The constructed dict with coerced keys and constructed values.
@@ -1193,13 +1082,10 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath, union_tag: str) -> dict
         raise TypeCoercionError.wrong_shape(_src_type(data), data, "dict", "dict", _spell_field_path(path))
     if op := next((k for k in data if isinstance(k, ListOp)), None):
         raise TypeCoercionError.list_op_on(str(op), "dict", _spell_field_path(path))
-    return {
-        read_key(kt, k, path, union_tag): construct(vt, v, path=(*path, str(k)), union_tag=union_tag)
-        for k, v in data.items()
-    }
+    return {read_key(kt, k, path): construct(vt, v, path=(*path, str(k))) for k, v in data.items()}
 
 
-def read_key(kt: Any, key: Any, path: FieldPath, union_tag: str) -> Any:
+def read_key(kt: Any, key: Any, path: FieldPath) -> Any:
     """Return the key *key* of a dict at *path* as its key type *kt* reads it.
 
     Every channel spells a key as text, a file's included, so a string key is read as a token:
@@ -1218,7 +1104,7 @@ def read_key(kt: Any, key: Any, path: FieldPath, union_tag: str) -> Any:
     if not all(_is_coercible_leaf(v) for v in _union_args(rkt)):
         raise TypeCoercionError.unsupported_leaf(_spell_type(kt), _spell_field_path(path))
     try:
-        return construct(kt, token, path=path, union_tag=union_tag)
+        return construct(kt, token, path=path)
     except TypeCoercionError as e:
         # A key is no field: the none word reads as None there too, but "set this field" misleads.
         raise e._without_none_remedy() from None
@@ -1234,7 +1120,7 @@ type _Refusals = list[tuple[Any, BaseException]]
 _READ_FROM_ONE_VALUE = frozenset({_TypeKind.LEAF, _TypeKind.TAGGABLE_LEAF})
 
 
-def _first_constructible(variants: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals) -> Any:
+def _first_constructible(variants: list[Any], data: Any, path: FieldPath, refusals: _Refusals) -> Any:
     """Construct *data* as the first of *variants* that accepts it, or return _UNION_NO_MATCH.
 
     Each variant that refuses it is kept in *refusals* with its refusal, which the union's own
@@ -1242,7 +1128,7 @@ def _first_constructible(variants: list[Any], data: Any, path: FieldPath, union_
     """
     for var in variants:
         try:
-            return construct(var, data, path=path, union_tag=union_tag)
+            return construct(var, data, path=path)
         except (ConfargError, TypeError) as e:
             refusals.append((var, e))
     return _UNION_NO_MATCH
@@ -1278,7 +1164,6 @@ def _construct_single_variant_union(
     non_none: list[Any],
     data: Any,
     path: FieldPath,
-    union_tag: str,
 ) -> Any:
     """Construct a union that has exactly one non-None variant.
 
@@ -1292,14 +1177,14 @@ def _construct_single_variant_union(
         return None
     reads_none_word = _reads_none_word(all_args, data)
     try:
-        return construct(non_none[0], data, path=path, union_tag=union_tag)
+        return construct(non_none[0], data, path=path)
     except (TypeCoercionError, MissingFieldError) as e:
         if reads_none_word:
             raise e._with_none_remedy() from None
         raise
 
 
-def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path: FieldPath, union_tag: str) -> Any:
+def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path: FieldPath) -> Any:
     """Construct a value of the union *tp*, whose variants other than None are *non_none*, using its class tag field.
 
     The candidates are every ``_is_struct`` variant, registered leaves included: a tag names a
@@ -1320,11 +1205,9 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
     structs = [rv for v in non_none if _is_struct(rv := _resolve_type(v))]
     if reader is None and not structs:
         spelled = _spell_type(tp)
-        raise TypeCoercionError.union_takes_no_tag(
-            data, spelled, _spell_field_path(path), union_tag, _defaults.CALL_KEY
-        )
-    tag = data[union_tag]
-    cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
+        raise TypeCoercionError.union_takes_no_tag(data, spelled, _spell_field_path(path), _defaults.CALL_KEY)
+    tag = data[_defaults.CLASS_KEY]
+    cls = _import_class_by_path(tag, _spell_field_path(path))
     # Each variant the tagged class is a subclass of, by its class, with the class bound as it binds it.
     matching = [(_class_of(rv), b) for rv in structs if (b := _tagged_struct(cls, rv)) is not None]
     variant_classes = list(dict.fromkeys(c for c, _ in matching))
@@ -1334,11 +1217,11 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
             + ", ".join(dotted_name(c) for c in variant_classes),
         )
     if matching:
-        cleaned = {k: v2 for k, v2 in data.items() if k != union_tag}
-        return _construct_bound_tag([b for _, b in matching], cleaned, path, union_tag, _Naming(tag, "tag"))
+        cleaned = {k: v2 for k, v2 in data.items() if k != _defaults.CLASS_KEY}
+        return _construct_bound_tag([b for _, b in matching], cleaned, path, _Naming(tag, "class key"))
     if reader is not None:
         # A class no variant holds is the spec of the variant that reads one, which builds the class it names.
-        return construct(reader, data, path=path, union_tag=union_tag)
+        return construct(reader, data, path=path)
     valid_variants = sorted(dotted_name(rv) for rv in structs)
     msg = (
         f"Class {tag!r} at '{_spell_field_path(path)}' is not compatible with any union variant."
@@ -1347,24 +1230,20 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
     raise TypeCoercionError(msg)
 
 
-def _try_construct_union_struct(
-    dc_vars: list[Any], data: MergeDict, path: FieldPath, union_tag: str, refusals: _Refusals
-) -> Any:
+def _try_construct_union_struct(dc_vars: list[Any], data: MergeDict, path: FieldPath, refusals: _Refusals) -> Any:
     """Try structural disambiguation then fallback for struct variants.
 
     Returns _UNION_NO_MATCH if no struct variant accepts the data, each refusal kept in *refusals*.
     """
-    matches = _disambiguate_struct(dc_vars, data, union_tag)
+    matches = _disambiguate_struct(dc_vars, data)
     if len(matches) == 1:
-        return construct(matches[0], data, path=path, union_tag=union_tag)
+        return construct(matches[0], data, path=path)
     if len(matches) > 1:
-        raise AmbiguousUnionError(_ambiguous_union_msg(matches, dc_vars, data, path, union_tag))
-    return _first_constructible(dc_vars, data, path, union_tag, refusals)
+        raise AmbiguousUnionError(_ambiguous_union_msg(matches, data, path))
+    return _first_constructible(dc_vars, data, path, refusals)
 
 
-def _try_fixed_seq_variants(
-    fixed_vars: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals
-) -> Any:
+def _try_fixed_seq_variants(fixed_vars: list[Any], data: Any, path: FieldPath, refusals: _Refusals) -> Any:
     """Try the fixed-arity sequence variants; returns _UNION_NO_MATCH if none accept data.
 
     A namedtuple variant belongs here beside ``tuple[X, Y]``: both take exactly their arity
@@ -1385,14 +1264,14 @@ def _try_fixed_seq_variants(
     candidates = (
         [v for v in fixed_vars if len(_fixed_seq_types(_resolve_type(v)) or ()) == data_len] if data_len >= 0 else []
     ) or fixed_vars
-    return _first_constructible(candidates, data, path, union_tag, refusals)
+    return _first_constructible(candidates, data, path, refusals)
 
 
-def _try_coll_variants(coll_vars: list[Any], data: Any, path: FieldPath, union_tag: str, refusals: _Refusals) -> Any:
+def _try_coll_variants(coll_vars: list[Any], data: Any, path: FieldPath, refusals: _Refusals) -> Any:
     """Try constructing from collection variants; returns _UNION_NO_MATCH if none accept data."""
     if not (coll_vars and isinstance(data, dict | list | tuple | set | frozenset)):
         return _UNION_NO_MATCH
-    return _first_constructible(coll_vars, data, path, union_tag, refusals)
+    return _first_constructible(coll_vars, data, path, refusals)
 
 
 class _LeafVariants(NamedTuple):
@@ -1432,12 +1311,11 @@ def _ranked_scalar_variants(all_args: list[Any], scalar_leaf_vars: list[Any], da
     return _steal_order(with_none, key=_resolve_type)
 
 
-def _first_scalar_variant_taking(  # noqa: PLR0913  # the walk, its value and where, and what keeps the refusals
+def _first_scalar_variant_taking(
     ordered: list[Any],
     all_args: list[Any],
     data: Any,
     path: FieldPath,
-    union_tag: str,
     *,
     refusals: _Refusals | None = None,
 ) -> tuple[Any, Any] | None:
@@ -1459,14 +1337,14 @@ def _first_scalar_variant_taking(  # noqa: PLR0913  # the walk, its value and wh
                 return var, None
             continue
         try:
-            return var, _construct_scalar_variant(var, data, path, union_tag)
+            return var, _construct_scalar_variant(var, data, path)
         except (TypeCoercionError, SymbolNotFoundError, ValueError, TypeError) as e:
             if refusals is not None:
                 refusals.append((var, e))
     return None
 
 
-def _construct_scalar_variant(var: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_scalar_variant(var: Any, data: Any, path: FieldPath) -> Any:
     """Build *data* as the scalar variant *var*: a Callable from the spec it names, any other leaf as one.
 
     Raises:
@@ -1474,18 +1352,17 @@ def _construct_scalar_variant(var: Any, data: Any, path: FieldPath, union_tag: s
         SymbolImportError: If a module on a path exists but fails while it is imported.
     """
     if _type_kind(_resolve_type(var)) is _TypeKind.CALLABLE:
-        return _resolve_callable_spec(data, var, path=path, union_tag=union_tag, construct_fn=construct)
+        return _resolve_callable_spec(data, var, path=path, construct_fn=construct)
     # Not _coerce_leaf: it cannot build type refs (`type`, `type[X]`).
     # See docs-dev/architecture/types/stealing-rule.md#stealing-rule.
-    return _construct_scalar(var, data, path, union_tag)
+    return _construct_scalar(var, data, path)
 
 
-def _coerce_scalar_variants(  # noqa: PLR0913  # the walk's arguments, and what keeps the refusals
+def _coerce_scalar_variants(
     all_args: list[Any],
     scalar_leaf_vars: list[Any],
     data: Any,
     path: FieldPath,
-    union_tag: str,
     *,
     refusals: _Refusals,
 ) -> Any:
@@ -1495,14 +1372,14 @@ def _coerce_scalar_variants(  # noqa: PLR0913  # the walk's arguments, and what 
         docs-dev/architecture/types/stealing-rule.md#stealing-rule
     """
     ordered = _ranked_scalar_variants(all_args, scalar_leaf_vars, data)
-    taken = _first_scalar_variant_taking(ordered, all_args, data, path, union_tag, refusals=refusals)
+    taken = _first_scalar_variant_taking(ordered, all_args, data, path, refusals=refusals)
     return _UNION_NO_MATCH if taken is None else taken[1]
 
 
-def read_union_leaf(tp: Any, value: Any, union_tag: str) -> Any:
+def read_union_leaf(tp: Any, value: Any) -> Any:
     """Return what an expression reads of the leaf *value* at the union *tp*: the value a variant builds, or *value*.
 
-    The variant is the one construction picks, through the same walk under *union_tag*: *value*
+    The variant is the one construction picks, through the same walk: *value*
     reads as the object, the number or the bool that variant builds, so a token ``5`` at
     ``int | str`` reads ``5`` and a file's ``1`` at ``float | str`` reads ``1.0``. Text, which
     the ``str`` variant takes, reads as written, and so does a value no variant takes, for
@@ -1518,26 +1395,22 @@ def read_union_leaf(tp: Any, value: Any, union_tag: str) -> Any:
     ordered = [v for v in _ranked_scalar_variants(all_args, scalars, value) if not _is_callable(_resolve_type(v))]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FloatOverflowWarning)
-        taken = _first_scalar_variant_taking(ordered, all_args, value, (), union_tag)
+        taken = _first_scalar_variant_taking(ordered, all_args, value, ())
     if taken is None or _resolve_type(taken[0]) is str:
         return value
     return taken[1]
 
 
-def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, the refusals so far, what is tried
+def _construct_union_leaf(
     all_args: list[Any],
     non_none: list[Any],
     data: Any,
     path: FieldPath,
-    union_tag: str,
     *,
     refusals: _Refusals,
-    offered: list[Any],
 ) -> Any:
     """Construct a union value by trying leaf variants in priority order.
 
-    Only the variants of *offered* are tried, those of *non_none* a key a member owns has not
-    refused already (:func:`_refuse_an_owned_key_to_tag_readers`).
     A built instance of a struct or an unsupported-leaf variant is first taken by that variant
     (:func:`_instance_variant`).
     An ``Any`` variant is the last rung: it takes what every other variant refused. A value no
@@ -1550,33 +1423,33 @@ def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, t
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
         docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
     """
-    instance_of = _instance_variant(offered, data)
+    instance_of = _instance_variant(non_none, data)
     if instance_of is not None:
-        return construct(instance_of, data, path=path, union_tag=union_tag)
+        return construct(instance_of, data, path=path)
 
-    fixed_vars, coll_vars, scalar_leaf_vars, any_vars = _leaf_variants(offered)
+    fixed_vars, coll_vars, scalar_leaf_vars, any_vars = _leaf_variants(non_none)
 
-    result = _try_fixed_seq_variants(fixed_vars, data, path, union_tag, refusals)
+    result = _try_fixed_seq_variants(fixed_vars, data, path, refusals)
     if result is not _UNION_NO_MATCH:
         return result
 
-    result = _try_coll_variants(coll_vars, data, path, union_tag, refusals)
+    result = _try_coll_variants(coll_vars, data, path, refusals)
     if result is not _UNION_NO_MATCH:
         return result
 
-    result = _coerce_scalar_variants(all_args, scalar_leaf_vars, data, path, union_tag, refusals=refusals)
+    result = _coerce_scalar_variants(all_args, scalar_leaf_vars, data, path, refusals=refusals)
     if result is not _UNION_NO_MATCH:
         return result
 
     # A lone CLI token (e.g. `--input hello` for `bool | list[str]`) that no scalar
     # variant accepts becomes a one-element list. Only _UnionSeqToken gets this fallback.
     if isinstance(data, _UnionSeqToken):
-        result = _try_coll_variants(coll_vars, [_StrToken(data)], path, union_tag, refusals)
+        result = _try_coll_variants(coll_vars, [_StrToken(data)], path, refusals)
         if result is not _UNION_NO_MATCH:
             return result
 
     if any_vars:
-        return construct(any_vars[0], data, path=path, union_tag=union_tag)
+        return construct(any_vars[0], data, path=path)
 
     variant_names = " | ".join(_spell_type(v) for v in all_args)
     if isinstance(data, dict) and ListOp.BASE in data:
@@ -1586,7 +1459,7 @@ def _construct_union_leaf(  # noqa: PLR0913  # the union, its value and where, t
         # merge's internal base key (BUG-200).
         seq_var = next((v for v in (*fixed_vars, *coll_vars) if _is_seq_variant(v)), None)
         if seq_var is not None:
-            construct(seq_var, data, path=path, union_tag=union_tag)
+            construct(seq_var, data, path=path)
     raise TypeCoercionError.cannot_coerce_to_union(
         _src_type(data),
         data,
@@ -1621,7 +1494,7 @@ def _variant_reasons(non_none: list[Any], refusals: _Refusals, data: Any, path: 
     return reasons
 
 
-def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any:
+def _construct_union(tp: Any, data: Any, path: FieldPath) -> Any:
     """Construct a value for a Union type.
 
     Tries tag-based disambiguation, structural disambiguation for struct
@@ -1636,7 +1509,6 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
         tp: The Union type.
         data: The raw data.
         path: The construction path, which error messages name.
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         The constructed value matching one of the Union variants.
@@ -1652,58 +1524,23 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     non_none = _union_args_no_none(tp)
 
     if len(non_none) == 1:
-        return _construct_single_variant_union(all_args, non_none, data, path, union_tag)
+        return _construct_single_variant_union(all_args, non_none, data, path)
 
     refusals: _Refusals = []
-    offered = non_none
-    if isinstance(data, dict) and union_tag in data:
-        reading = tag_reading(tp, union_tag)
-        if reading is TagReading.OWNED:
-            # The tag route was a real alternative; the member's value forces the
-            # structural route instead, so say so once, on use.
-            _warn_shadowed_tag_key(path, union_tag, "variant")
-            offered = _refuse_an_owned_key_to_tag_readers(non_none, data, path, union_tag, refusals)
-        elif reading.is_the_tag:
-            return _construct_union_by_tag(tp, non_none, data, path, union_tag)
+    if isinstance(data, dict) and _defaults.CLASS_KEY in data and tag_reading(tp).is_the_tag:
+        return _construct_union_by_tag(tp, non_none, data, path)
 
-    reader = spec_reading_variant(tp, data, union_tag)
+    reader = spec_reading_variant(tp, data)
     if reader is not None:
-        return construct(reader, data, path=path, union_tag=union_tag)
+        return construct(reader, data, path=path)
 
-    dc_vars = [v for v in offered if _is_struct_variant(_resolve_type(v))]
+    dc_vars = [v for v in non_none if _is_struct_variant(_resolve_type(v))]
     if isinstance(data, dict) and dc_vars:
-        result = _try_construct_union_struct(dc_vars, data, path, union_tag, refusals)
+        result = _try_construct_union_struct(dc_vars, data, path, refusals)
         if result is not _UNION_NO_MATCH:
             return result
 
-    return _construct_union_leaf(all_args, non_none, data, path, union_tag, refusals=refusals, offered=offered)
-
-
-def _refuse_an_owned_key_to_tag_readers(
-    non_none: list[Any], data: MergeDict, path: FieldPath, union_tag: str, refusals: _Refusals
-) -> list[Any]:
-    """Return the variants of *non_none* offered *data*, whose tag-shaped key a member owns; refuse the others.
-
-    The key is that member's value at the union's position, so no variant reads it as a tag
-    there: a variant that would, a struct or a registered leaf a tag opens owning no member of
-    its spelling, refuses it as a field it does not declare, kept in *refusals*. The others read
-    it as theirs, a member's or a dict's data (BUG-303).
-
-    Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
-    """
-    offered = []
-    for var in non_none:
-        rv = _resolve_type(var)
-        if _is_struct(rv) and not _union_tag_shadowed(rv, union_tag):
-            flds = _struct_fields(rv)
-            unknown = [k for k in data if k not in flds]
-            refusals.append(
-                (var, TypeCoercionError.unknown_fields(unknown, rv.__name__, _spell_field_path(path), sorted(flds)))
-            )
-        else:
-            offered.append(var)
-    return offered
+    return _construct_union_leaf(all_args, non_none, data, path, refusals=refusals)
 
 
 def _instance_variant(non_none: list[Any], data: Any) -> Any:
@@ -1728,9 +1565,9 @@ def _instance_variant(non_none: list[Any], data: Any) -> Any:
             return None
 
 
-def _struct_matches_value(tp: Any, value: Any, union_tag: str) -> bool:
+def _struct_matches_value(tp: Any, value: Any) -> bool:
     """Check if value could be a valid dict for struct tp."""
-    return isinstance(value, dict) and _builds_by_fields(tp, value, _field_keys([tp], value, union_tag), union_tag)
+    return isinstance(value, dict) and _builds_by_fields(tp, value, _field_keys(value))
 
 
 def _bool_matches_value(value: Any) -> bool:
@@ -1787,7 +1624,7 @@ _SCALAR_MATCHES: dict[type, Any] = {
 }
 
 
-def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
+def _value_matches_type(value: Any, tp: Any) -> bool:
     """Check if a raw value could match the target type structurally.
 
     Used during union disambiguation to test whether a value is compatible
@@ -1796,7 +1633,6 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
     Args:
         value: The raw value to check.
         tp: The candidate type.
-        union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
         True if the value could plausibly be coerced to the target type.
@@ -1805,7 +1641,7 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
     if value is None:
         return _allows_none(tp)
     if _is_struct_variant(tp):
-        return _struct_matches_value(tp, value, union_tag)
+        return _struct_matches_value(tp, value)
     if (scalar := _scalar_read_as(tp) or tp) in _SCALAR_MATCHES:
         return _SCALAR_MATCHES[scalar](value)
     if _is_literal(tp):
@@ -1813,26 +1649,14 @@ def _value_matches_type(value: Any, tp: Any, union_tag: str) -> bool:
     return True
 
 
-def _ambiguous_union_msg(
-    matches: list[Any], variants: list[Any], data: MergeDict, path: FieldPath, union_tag: str
-) -> str:
+def _ambiguous_union_msg(matches: list[Any], data: MergeDict, path: FieldPath) -> str:
     """Build a diagnostic AmbiguousUnionError message with per-variant field breakdowns.
 
-    Where one of the union's struct *variants* owns the tag's spelling, the key is a provided
-    field, as the match read it (:func:`_field_keys`), and adding it selects no variant, so no
-    tag is offered.
-
-    Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    The remedy offers the class key, naming the first match by the dotted path it imports by.
     """
-    if any(_union_tag_shadowed(var, union_tag) for var in variants):
-        remedy = _owned_tag_remedy(union_tag)
-    else:
-        remedy = (
-            f"To select a variant add a {union_tag!r} field, e.g. {union_tag!r}: {matches[0].__name__!r}."
-            " The field name can be changed via the union_tag= parameter."
-        )
-    return _ambiguous_structs_msg(matches, _field_keys(variants, data, union_tag), path, "Ambiguous union", remedy)
+    example = dotted_name(_class_of(matches[0]))
+    remedy = f"To select a variant add a {_defaults.CLASS_KEY!r} key, e.g. {_defaults.CLASS_KEY!r}: {example!r}."
+    return _ambiguous_structs_msg(matches, _field_keys(data), path, "Ambiguous union", remedy)
 
 
 def _structurally_matches(var: Any, keys: set[str | ListOp]) -> bool:
@@ -1840,96 +1664,66 @@ def _structurally_matches(var: Any, keys: set[str | ListOp]) -> bool:
     return _struct_required(var).issubset(keys) and keys.issubset(_struct_fields(var))
 
 
-def _type_compatible(var: Any, data: MergeDict, keys: set[str | ListOp], union_tag: str) -> bool:
+def _type_compatible(var: Any, data: MergeDict, keys: set[str | ListOp]) -> bool:
     """Return True if data values are compatible with var's field types."""
     flds = _struct_fields(var)
-    return all(_value_matches_type(data[k], flds[k], union_tag) for k in keys if isinstance(k, str) and k in flds)
+    return all(_value_matches_type(data[k], flds[k]) for k in keys if isinstance(k, str) and k in flds)
 
 
-def _field_keys(variants: list[Any], data: MergeDict, union_tag: str) -> set[str | ListOp]:
-    """Return the keys of *data* the struct *variants* would read as fields.
-
-    A tag-shaped key no variant owns as a field is the tag, not data (BUG-102); one a
-    variant owns is a field, at every depth the structural check reaches (BUG-107).
-
-    Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
-    """
-    keys = set(data)
-    if not any(_union_tag_shadowed(var, union_tag) for var in variants):
-        keys.discard(union_tag)
-    return keys
+def _field_keys(data: MergeDict) -> set[str | ListOp]:
+    """Return the keys of *data* a struct would read as fields: all but the class key, which no member spells."""
+    return set(data) - {_defaults.CLASS_KEY}
 
 
-def _disambiguate_struct(variants: list[Any], data: MergeDict, union_tag: str) -> list[Any]:
+def _disambiguate_struct(variants: list[Any], data: MergeDict) -> list[Any]:
     """Filter struct union variants to those construction builds *data* as by its fields (:func:`_builds_by_fields`).
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-variant-that-demands-its-tag-takes-no-untagged-value
     """
-    keys = _field_keys(variants, data, union_tag)
-    candidates = [rv for var in variants if _builds_by_fields(rv := _resolve_type(var), data, keys, union_tag)]
-    return _refined(candidates, data, keys, union_tag)
+    keys = _field_keys(data)
+    candidates = [rv for var in variants if _builds_by_fields(rv := _resolve_type(var), data, keys)]
+    return _refined(candidates, data, keys)
 
 
-def _covering_subclasses(subs: list[Any], data: MergeDict, union_tag: str) -> list[Any]:
-    """Filter the subclasses *subs* to those whose own fields cover *data*, each built from them.
-
-    How a struct whose subclass owns the tag's spelling selects the subclass that builds it
-    (:func:`_construct_shadowed_subclass`): a subclass is built from its own fields there,
-    whatever subclasses it has in turn.
-
-    Dev Notes:
-        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
-    """
-    keys = _field_keys(subs, data, union_tag)
-    candidates = [rs for sub in subs if _structurally_matches(rs := _resolve_type(sub), keys)]
-    return _refined(candidates, data, keys, union_tag)
-
-
-def _refined(candidates: list[Any], data: MergeDict, keys: set[str | ListOp], union_tag: str) -> list[Any]:
+def _refined(candidates: list[Any], data: MergeDict, keys: set[str | ListOp]) -> list[Any]:
     """Keep the struct *candidates* whose field types take *data*'s values, all of them where none does."""
     if len(candidates) <= 1:
         return candidates
-    refined = [var for var in candidates if _type_compatible(var, data, keys, union_tag)]
+    refined = [var for var in candidates if _type_compatible(var, data, keys)]
     return refined or candidates
 
 
-def _builds_by_fields(var: Any, data: MergeDict, keys: set[str | ListOp], union_tag: str) -> bool:
+def _builds_by_fields(var: Any, data: MergeDict, keys: set[str | ListOp]) -> bool:
     """Return whether construction builds struct *var* from *data*, whose fields are *keys*, by those fields.
 
-    As :func:`_construct_struct_dispatch` builds it: a struct that demands its tag
-    (:func:`_demands_tag`) builds nothing from a value carrying no tag-shaped key, and from
-    one whose spelling its subclass owns only through the subclass that key selects
-    (:func:`_covering_subclasses`); any other struct by its fields covering *keys*.
+    As :func:`_construct_struct_dispatch` builds it: a struct that demands its class key
+    (:func:`_demands_tag`) builds nothing from a value carrying none; any struct by its fields
+    covering *keys*.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-variant-that-demands-its-tag-takes-no-untagged-value
     """
-    if not _demands_tag(var):
-        return _structurally_matches(var, keys)
-    if union_tag not in data:
+    if _demands_tag(var) and _defaults.CLASS_KEY not in data:
         return False
-    if _union_tag_shadowed(var, union_tag) and union_tag not in _struct_fields(var):
-        return bool(_covering_subclasses(_struct_subclasses(var), data, union_tag))
     return _structurally_matches(var, keys)
 
 
-def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath, union_tag: str) -> Any:
-    """Import the class named by union_tag, validate it is a subclass of tp, and construct it."""
-    tag = data[union_tag]
-    cls = _import_class_by_path(tag, _spell_field_path(path), union_tag)
+def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath) -> Any:
+    """Import the class the class key names, validate it is a subclass of tp, and construct it."""
+    tag = data[_defaults.CLASS_KEY]
+    cls = _import_class_by_path(tag, _spell_field_path(path))
     bound = _tagged_struct(cls, tp)
     if bound is None:
         call = _defaults.CALL_KEY
         # A parameterized field names its arguments: the class may subclass its class, but never be one bound so.
         parent = repr(tp) if _generic_origin(tp) is not None else dotted_name(tp)
         raise TypeCoercionError.tag_not_a_subclass(tag, parent, _spell_field_path(path), call)
-    cleaned = {k: v for k, v in data.items() if k != union_tag}
-    return _construct_named(bound, cleaned, path, union_tag, _Naming(tag, "tag"))
+    cleaned = {k: v for k, v in data.items() if k != _defaults.CLASS_KEY}
+    return _construct_named(bound, cleaned, path, _Naming(tag, "class key"))
 
 
-def _construct_bound_tag(bound: list[Any], data: MergeDict, path: FieldPath, union_tag: str, naming: _Naming) -> Any:
+def _construct_bound_tag(bound: list[Any], data: MergeDict, path: FieldPath, naming: _Naming) -> Any:
     """Build the class a union's tag names, bound as each variant of its class binds it, the first that builds.
 
     Several variants share the class only when they are one generic parameterized apiece
@@ -1941,30 +1735,29 @@ def _construct_bound_tag(bound: list[Any], data: MergeDict, path: FieldPath, uni
     """
     for candidate in bound[:-1]:
         try:
-            return _construct_named(candidate, data, path, union_tag, naming)
+            return _construct_named(candidate, data, path, naming)
         except (ConfargError, TypeError):
             continue
-    return _construct_named(bound[-1], data, path, union_tag, naming)
+    return _construct_named(bound[-1], data, path, naming)
 
 
-def construct_named_class(  # noqa: PLR0913  # the class, its keys, and how the spec named it
+def construct_named_class(
     cls: type,
     data: MergeDict,
     *,
     path: FieldPath,
-    union_tag: str,
     name: str,
     opener: str,
 ) -> Any:
     """Build exactly *cls* from *data*, whatever subclasses it has.
 
-    *cls* is the class a callable spec names: the one the union tag names, or the owner a
-    ``classfn:`` path names. Subclass dispatch has nothing left to choose, as after a union
-    tag selected the class, and both are built by one constructor, :func:`_construct_named`.
+    *cls* is the class a callable spec names: the one the class key names, or the owner a
+    ``classfn:`` path names. Subclass dispatch has nothing left to choose, as after a class
+    key selected the class, and both are built by one constructor, :func:`_construct_named`.
     *name* is the class as the spec wrote it and *opener* the key that named it, which a
     refusal quotes.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds
     """
-    return _construct_named(cls, data, path, union_tag, _Naming(name, f"{opener!r} opener"))
+    return _construct_named(cls, data, path, _Naming(name, f"{opener!r} opener"))

@@ -12,7 +12,7 @@ severity: trivial
 # REF-58 — The config-parallel struct walk has two owners
 
 Both functions walk a struct type in lockstep with a config dict, and it is the skeleton that is spelled twice: the `_resolve_type` / `_is_struct` guard, `_struct_fields` inside the same `except (ValueError, TypeError, NameError, AttributeError)`, the `f"{prefix}.{name}" if prefix else name` join, and the recursion into struct-typed fields through `merged.get(name, {})` behind an `isinstance(sub, dict)` guard.
-One collects union tags, the other callable openers; what each adds on top is a per-field predicate.
+One collects class keys, the other callable openers; what each adds on top is a per-field predicate.
 
 Both answer the same question — *what does this config name?*
 — and both feed `build_dynamic_flags` and shell completion ([cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags](../../architecture/cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)), so a node one walk visits and the other does not registers bind flags for a class whose tag the other half cannot see.

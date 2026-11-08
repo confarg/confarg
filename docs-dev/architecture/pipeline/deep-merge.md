@@ -6,7 +6,7 @@
 
 - **A value of its own in the override discards the base entirely.**
   Whether a dict is one is the type's to say, as construction will read it there (`_merge.MergeAt`, typed by `_typed_merge.TypedAt`; [design decisions](../design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines)).
-  A union tag naming a class says "this is a new object", so fields of the previous variant must not leak in (the README's `--class myapp.SQLiteConfig --dbpath …` over a server config).
+  A class key naming a class says "this is a new object", so fields of the previous variant must not leak in (the README's `--class myapp.SQLiteConfig --dbpath …` over a server config).
   A `call:` is a finished value, so no key a lower layer set beside it can belong to it, whatever lay below: a dict, a list or another call (BUG-190, [design decisions](../design-decisions/a-call-replaces-what-lies-below.md#a-call-replaces-what-lies-below)).
   An opener on a Callable or an `Any` names a new target, so the old target's arguments do not follow it (BUG-231).
   A layer holding only `args`, or an opener holding a dict with no opener of its own, refines the spec below it as any dict-on-dict does.
@@ -178,7 +178,7 @@ The parts read as one flat document would:
   Where the override writes a value there, the value wins, as a later key does in one file; a dict written there keeps the delete as its `__base__`, cutting the layers below off (`_written_over`, [above](#an-op-after-a-whole-field-delete-has-nothing-below-it)).
   So `__include__: [delsec.yaml, secb.yaml]` builds what `{sec: {__unset__: true, b: 3}}` builds.
   A part that is itself a delete, a fragment holding `__unset__: true` alone, is written over the same way, by siblings and by later entries (`_merge._written_within_source`).
-- A delete below a node the merge turned into a list, or that a union tag, a call or a cast pin replaced, is not put back, since that value replaces the layers below whole; nor is a list op's own `__base__` delete, which `_deep_merge` already keeps.
+- A delete below a node the merge turned into a list, or that a class key, a call or a cast pin replaced, is not put back, since that value replaces the layers below whole; nor is a list op's own `__base__` delete, which `_deep_merge` already keeps.
   A data entry (CSV/TSV) of an `__include__` list replaces the entries before it, deletes included.
 - A list item has no layer below it at all, so `_files._resolve_node` drops whatever delete an include inside one kept for the layers below (`_merge._without_key_deletes`): `- {__include__: row.yaml, zz: {__unset__: true}}` builds the row, as it did before BUG-227, and as the same item written inline does ([above](#deep-merge-semantics)).
 

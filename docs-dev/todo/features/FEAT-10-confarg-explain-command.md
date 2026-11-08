@@ -17,5 +17,5 @@ It depends on FEAT-8: the plain-dict IR remembers no source today, so provenance
 Passing `env_prefix` is the open problem, and it is not specific to this command.
 The prefix is a `load()` keyword the calling program sets in code, so a standalone tool cannot know it, yet without it the environment channel is either off or guessed.
 Options: an explicit tool flag (`--env-prefix APP_`, which needs a `--` separator so it cannot collide with a user field of the same name), a `[tool.confarg]` table in `pyproject.toml`, declaring it on the target type, or pointing the tool at the program's own `load()` call site instead of at the target.
-The same choice governs every other keyword the tool would otherwise have to guess (`union_tag`, `config_files`, `TagPolicy`), so settle it once for both commands.
+The same choice governs every other keyword the tool would otherwise have to guess (`config_files`, `TagPolicy`), so settle it once for both commands.
 See [environment-parsing.md#environment-parsing](../../architecture/environment-parsing.md#environment-parsing).

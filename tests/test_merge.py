@@ -984,7 +984,7 @@ class _CallLayers:
 
 
 class TestACallReplacesWhatLiesBelow:
-    """A ``call:`` is a finished value, so it replaces what a lower layer set, as a union tag does (BUG-190).
+    """A ``call:`` is a finished value, so it replaces what a lower layer set, as a class key does (BUG-190).
 
     No key beside it but ``args`` belongs to it, so a lower layer's keys merged beside it were
     read as nothing a call takes, or, before ``args``, silently as its arguments.
@@ -1005,7 +1005,7 @@ class TestACallReplacesWhatLiesBelow:
         assert merged == {"p": {"call": "m.g"}}
 
     def test_a_call_at_the_root_replaces_the_root_below(self) -> None:
-        """The root follows the same rule as every node, as the union tag does there."""
+        """The root follows the same rule as every node, as the class key does there."""
         assert _deep_merge({"a": 5}, {"call": "m.f"}) == {"call": "m.f"}
 
     def test_args_without_a_call_refine_the_call_below(self) -> None:
@@ -1109,15 +1109,10 @@ def _layered(tmp_path, *layers: str, **opts: Any) -> _TypeLayers:
 class TestTheTypeDecidesWhetherAKeyReplaces:
     """A key replaces what lower layers set only where construction reads it as a new value (BUG-232).
 
-    The merge decided by the key alone, so a union tag or a ``call`` key the type holds as
+    The merge decided by the key alone, so a class key or a ``call`` key the type holds as
     data dropped the lower layers' keys, and the openers a Callable reads other than ``call``
     merged key by key with the spec below them (BUG-231).
     """
-
-    def test_a_tag_a_field_owns_refines(self, tmp_path) -> None:
-        """A struct field spelled like a custom tag is a field: the lower layers' keys stay."""
-        cfg = _layered(tmp_path, "job: {kind: batch, retries: 3}\n", "job: {kind: stream}\n", union_tag="kind")
-        assert cfg.job == _Job(kind="stream", retries=3)
 
     def test_a_tag_key_in_a_dict_field_refines(self, tmp_path) -> None:
         """A ``dict`` field holds ``class`` as data."""

@@ -18,4 +18,4 @@ Rejected:
 
 Cost: a struct member named `call` and a dict-typed field can never be a call spec.
 They keep the data they hold, and a user who wants a call on such a field has to use a field name other than `call`.
-`class:` is not affected: it is the union tag, which already selects a struct ([union tag](union-tag-defaults-to-class.md)).
+`class:` is not affected: it is the class key, which already selects a struct ([the class key is `class`](the-class-key-is-class.md#the-class-key-is-class)).

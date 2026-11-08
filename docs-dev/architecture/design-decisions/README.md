@@ -34,8 +34,8 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [Every mount point has a help entry](every-mount-point-has-a-help-entry.md) | `--config.<path>` is listed at every depth the walk reaches, read off the walk that checks a mount |
 | [A node already on the path is not entered](a-node-already-on-the-path-is-not-entered.md) | a type that holds itself lists its node once; the deeper flags are registered when argv types them |
 | [The `+` suffix is a merge operator, not a list spelling](plus-is-a-merge-operator.md) | appending is confarg's axis, spelled by the same suffix on every channel's path, the environment's variable names included, and in a file's value; how many tokens a value takes is the framework's |
-| [union_tag defaults to "class"](union-tag-defaults-to-class.md) | a Python keyword can never collide with a field name |
-| [The union tag is the class key in every role](the-union-tag-is-the-class-key-in-every-role.md) | a custom `union_tag` renames the class opener of every Callable and `Any` spec too, and may spell no key another role spells |
+| [The class key is `class`](the-class-key-is-class.md) | a Python keyword can never collide with a field name, so the key is fixed like every other reserved word |
+| [One class key in every role](one-class-key-in-every-role.md) | the key selecting a variant or a subclass is the class opener of every Callable and `Any` spec too |
 | [Environment variables off by default](environment-variables-off-by-default.md) | `env_prefix=None`, because the environment is shared with every other process |
 | [Double underscore separator](double-underscore-separator.md) | `__` splits nesting so single underscores stay usable in names |
 | [Explicit boolean values](explicit-boolean-values.md) | `--verbose true`, not `--verbose`/`--no-verbose` |
@@ -48,7 +48,6 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 | [An argv delete is shaped by the type](an-argv-delete-is-shaped-by-the-type.md) | `--xs.1-` and `--d.1-` share a suffix but not a shape: the walk's type picks an index delete (`__delete__`) or a key delete, so a list keeps its delete-then-patch chains |
 | [A field default is the base layer](a-field-default-is-the-base-layer.md) | `build()`, `resolve()` and `from_dict()` lay the declared defaults under the data, so a patch applies over a default and an expression reads one; `merge()` is untouched |
 | [A cast names a type the field holds](a-cast-names-a-type-the-field-holds.md) | no channel's cast places a value the field's annotation does not accept, so an unheld cast is refused everywhere alike |
-| [A shadowed tag warns on use](a-shadowed-tag-warns-on-use.md) | the structural selection is named where the tag could have dispatched, and nowhere else |
 | [Strict CLI, lenient environment](strict-cli-lenient-environment.md) | an unknown flag is an error, an unknown variable a warning |
 | [The broader environment variable applies first](the-broader-environment-variable-applies-first.md) | nested variables merge as their flags typed broader first, whatever the mapping's order |
 

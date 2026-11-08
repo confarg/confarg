@@ -367,8 +367,8 @@ def _is_pin_dict(data: Any) -> bool:
 class MergeAt:
     """What the merge knows of the type where it stands, which decides whether a value replaces or refines.
 
-    This one knows no type, so it reads the shape alone: a dict naming the union tag or
-    holding a ``call`` key is a new value, which replaces what lies below. It is the rule
+    This one knows no type, so it reads the shape alone: a dict holding the class key or
+    a ``call`` key is a new value, which replaces what lies below. It is the rule
     for a merge given no target, and the fallback of the typed reading
     (:class:`confarg._typed_merge.TypedAt`) where the type cannot tell.
 
@@ -376,22 +376,11 @@ class MergeAt:
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
 
-    __slots__ = ("_union_tag",)
-
-    def __init__(self, union_tag: str | None = None) -> None:
-        self._union_tag = union_tag
-
-    @property
-    def union_tag(self) -> str | None:
-        """The key naming a union's class, None where the merge reads none.
-
-        Read-only, so a typed reading narrows it to the ``str`` it always holds.
-        """
-        return self._union_tag
+    __slots__ = ()
 
     def replaces(self, override: MergeDict) -> bool:
         """Return whether the dict *override* is a value of its own, which replaces what lies below."""
-        return (self.union_tag is not None and self.union_tag in override) or _defaults.CALL_KEY in override
+        return _defaults.CLASS_KEY in override or _defaults.CALL_KEY in override
 
     def opened(self, below: Any) -> Any:
         """Return what *below* is to a dict that refines it: here, itself."""
@@ -440,7 +429,7 @@ class MergeAt:
 def _replaces_what_lies_below(bv: Any, val: Any, at: MergeAt) -> bool:
     """Whether the override *val* replaces *bv* outright rather than patching it.
 
-    A cast pin is a value, and so is a dict *at* reads as one (a union tag, an opener), so
+    A cast pin is a value, and so is a dict *at* reads as one (a class key, an opener), so
     they replace a list or a dict below them as a scalar would. A pin below is a value too,
     so a dict over it replaces it as a dict over a scalar does, rather than merging into the
     pin's two keys (BUG-239). An override carrying its own base (``ListOp.BASE``) replaces a
@@ -557,7 +546,7 @@ def _merge_list_base(bv: list[Any], val: MergeDict, key: str, at: MergeAt) -> An
     return _apply_list_ops(list(bv), val, key, at)
 
 
-#: The merge with no type to read: the shape rule, with no union tag.
+#: The merge with no type to read: the shape rule.
 _SHAPE = MergeAt()
 
 
@@ -663,8 +652,8 @@ def _deep_merge(
     Args:
         base: The base dict to merge into.
         override: The dict whose values take precedence.
-        at: Where the two dicts stand, which reads the type there; the shape rule with no
-            union tag by default.
+        at: Where the two dicts stand, which reads the type there; the shape rule by
+            default.
 
     Returns:
         A new dict containing the merged result.
@@ -724,7 +713,7 @@ def _merge_within_source(base: MergeDict, override: MergeDict, *, at: MergeAt) -
     need hold the key. One of *base* gives way to a value *override* writes at its key, and a
     dict written there keeps it as its base, cutting the layers below off as within one file
     (:func:`_written_over`). A delete below a node the merge made a list, or that a call, a
-    union tag or a pin replaced, is not kept: that value replaces the layers below whole.
+    class key or a pin replaced, is not kept: that value replaces the layers below whole.
 
     Dev Notes:
         docs-dev/architecture/pipeline/deep-merge.md#a-delete-within-one-source-deletes-below-it-too

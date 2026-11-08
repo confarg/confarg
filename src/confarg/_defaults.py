@@ -22,14 +22,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
-UNION_TAG: Final[str] = "class"
-"""Default key naming the class to build from the keys beside it: a union's variant, a subclass, a spec's class.
-
-Dev Notes:
-    docs-dev/architecture/design-decisions/union-tag-defaults-to-class.md#union_tag-defaults-to-class
-    docs-dev/architecture/design-decisions/the-union-tag-is-the-class-key-in-every-role.md#the-union-tag-is-the-class-key-in-every-role
-"""
-
 ENV_PREFIX: Final[str | None] = None
 """Default of :attr:`MergeOptions.env_prefix`: environment variables are not read.
 
@@ -111,6 +103,16 @@ Dev Notes:
     docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
 """
 
+
+CLASS_KEY: Final[str] = "class"
+"""Key naming the class to build from the keys beside it: a union's variant, a subclass, a spec's class.
+
+A Python keyword, so no member of a struct confarg reads can be spelled like it.
+
+Dev Notes:
+    docs-dev/architecture/design-decisions/the-class-key-is-class.md#the-class-key-is-class
+    docs-dev/architecture/design-decisions/one-class-key-in-every-role.md#one-class-key-in-every-role
+"""
 
 BIND_KEY: Final[str] = "bind"
 """Opener of a callable spec yielding a partial of its target, ``{bind: T, args: {…}}``.
@@ -216,9 +218,6 @@ class MergeOptions(TypedDict, total=False):
     The file is loaded after ``files`` but before CLI ``--config`` files.
     """
 
-    union_tag: str
-    """Field name used as a discriminator tag in union types. Defaults to ``"class"``."""
-
 
 @dataclasses.dataclass(frozen=True, kw_only=True, slots=True)
 class _Options:
@@ -235,43 +234,6 @@ class _Options:
     config_flag: str = CONFIG_FLAG
     files: Sequence[str | Path] = ()
     env_config: str | None = None
-    union_tag: str = UNION_TAG
-
-    def __post_init__(self) -> None:
-        check_union_tag(self.union_tag)
-
-
-def check_union_tag(union_tag: str) -> None:
-    """Refuse a *union_tag* spelling a key that has another role, or one no flag can spell.
-
-    The tag names the class to build from the keys beside it, as a union's selector and as the
-    class opener of a callable spec (``confarg._callable.openers``), so it may spell no other
-    opener nor ``args``, which a spec reads; no key the merge or ``build()`` reads as its own,
-    nor a name of the local-variables namespace, stripped before construction; and neither the
-    empty key nor one holding the ``.`` a flag's path is split on.
-
-    Raises:
-        ValueError: If *union_tag* spells such a key.
-
-    Dev Notes:
-        docs-dev/architecture/design-decisions/the-union-tag-is-the-class-key-in-every-role.md#a-tag-spelling-another-role-is-refused
-    """
-    if union_tag in (BIND_KEY, CALL_KEY, CLASSFN_KEY):
-        why = f"the {union_tag!r} opener of a callable spec"
-    elif union_tag == ARGS_KEY:
-        why = "the key holding the arguments of a 'bind:' or 'call:' spec"
-    elif union_tag in RESERVED_KEYS:
-        why = "a key the merge or build() reads as its own"
-    elif union_tag in LOCALS_KEYS:
-        why = "a name of the local-variables namespace"
-    elif not union_tag:
-        why = "no key at all"
-    elif "." in union_tag:
-        why = "the '.' a flag's path is split on"
-    else:
-        return
-    msg = f"union_tag {union_tag!r} spells {why}; pass a key no other role spells, such as 'kind'"
-    raise ValueError(msg)
 
 
 def _resolve_options(caller: str, opts: Mapping[str, Any]) -> _Options:

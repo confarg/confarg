@@ -862,53 +862,6 @@ class TestUnionClassTag:
 
     # --- Custom tag name ---
 
-    def test_custom_tag_name_cli(self) -> None:
-        """Custom union_tag='type' used in CLI."""
-        result = confarg.load(
-            WithUnionAmbiguous,
-            argv=[
-                "--shape.type",
-                "tests.conftest.CircleShape",
-                "--shape.x",
-                "1",
-                "--shape.y",
-                "2",
-                "--shape.radius",
-                "5",
-            ],
-            env={},
-            union_tag="type",
-        )
-        assert isinstance(result.shape, CircleShape)
-
-    def test_custom_tag_name_env(self) -> None:
-        """Custom union_tag='kind' used in env."""
-        result = confarg.load(
-            WithUnionAmbiguous,
-            argv=[],
-            env={
-                "MYAPP_SHAPE__KIND": "tests.conftest.SquareShape",
-                "MYAPP_SHAPE__X": "0",
-                "MYAPP_SHAPE__Y": "0",
-                "MYAPP_SHAPE__RADIUS": "3",
-            },
-            env_prefix="MYAPP_",
-            union_tag="kind",
-        )
-        assert isinstance(result.shape, SquareShape)
-
-    def test_custom_tag_name_toml(self, tmp_toml) -> None:
-        """Custom union_tag='type' used in TOML."""
-        path = tmp_toml("""\
-            [shape]
-            type = "tests.conftest.SquareShape"
-            x = 0.0
-            y = 0.0
-            radius = 3.0
-        """)
-        result = confarg.load(WithUnionAmbiguous, argv=[], env={}, files=[path], union_tag="type")
-        assert isinstance(result.shape, SquareShape)
-
     # --- Tag not needed when structural disambiguation works ---
 
     def test_tag_not_needed_when_fields_differ(self) -> None:
@@ -964,7 +917,6 @@ class TestUnionClassTag:
         assert "SquareShape" in msg
         assert "required:" in msg
         assert "'class'" in msg
-        assert "union_tag=" in msg
 
     # --- Invalid tag value -> error ---
 

@@ -203,7 +203,6 @@ def _lookup_path(data: Any, path: list[str]) -> Any:
 def _iter_namespace_nodes(
     sources: list[Any],
     target: Any,
-    union_tag: str,
     path: list[str] | None = None,
     states: list[_WalkState] | None = None,
 ) -> Iterator[tuple[list[str], tuple[str, ...]]]:
@@ -221,24 +220,24 @@ def _iter_namespace_nodes(
     states = [_walk_start(target)] if states is None else states
     dicts = [s for s in sources if isinstance(s, dict)]
     lists = [s for s in sources if isinstance(s, list)]
-    keys = _locals_keys_reached(states, target, union_tag, depth=len(path)) if dicts else ()
+    keys = _locals_keys_reached(states, target, depth=len(path)) if dicts else ()
     if keys:
         yield path, keys
     if dicts:
         names: dict[str, None] = dict.fromkeys(chain.from_iterable(dicts))
-        naming = next((d for d in reversed(dicts) if names_something(d, union_tag)), None)
+        naming = next((d for d in reversed(dicts) if names_something(d)), None)
         for name in names:
             if name in keys:
                 continue  # inside a namespace everything is free-form data
             if isinstance(name, ListOp):
                 continue  # an op no layer below gave a list to make: no position to walk at
-            below = _step_states(states, name, len(path), naming, union_tag)
-            yield from _iter_namespace_nodes([d.get(name) for d in dicts], target, union_tag, [*path, name], below)
+            below = _step_states(states, name, len(path), naming)
+            yield from _iter_namespace_nodes([d.get(name) for d in dicts], target, [*path, name], below)
     if lists:
         for i in range(max(len(x) for x in lists)):
             items = [x[i] for x in lists if i < len(x)]
-            below = _step_states(states, str(i), len(path), None, union_tag)
-            yield from _iter_namespace_nodes(items, target, union_tag, [*path, str(i)], below)
+            below = _step_states(states, str(i), len(path), None)
+            yield from _iter_namespace_nodes(items, target, [*path, str(i)], below)
 
 
 #: A position the layers below a layer hold, of which that layer says nothing.
@@ -258,9 +257,8 @@ class _LayerReading:
         docs-dev/architecture/locals.md#a-namespace-in-an-item-a-list-op-holds
     """
 
-    def __init__(self, target: Any, union_tag: str, *, declaring: bool) -> None:
+    def __init__(self, target: Any, *, declaring: bool) -> None:
         self.target = target
-        self.union_tag = union_tag
         self.declaring = declaring
 
     def read(self, node: Any, below: Any, path: list[str], states: list[_WalkState] | None = None) -> Any:
@@ -278,8 +276,8 @@ class _LayerReading:
             return node
         if _holds_list_ops(node) and (listed := self._listed(node, below, path, states)) is not None:
             return listed
-        keys = () if self.declaring else _locals_keys_reached(states, self.target, self.union_tag, depth=len(path))
-        naming = next((n for n in (node, below) if names_something(n, self.union_tag)), None)
+        keys = () if self.declaring else _locals_keys_reached(states, self.target, depth=len(path))
+        naming = next((n for n in (node, below) if names_something(n)), None)
         out = {
             k: v
             if isinstance(k, ListOp) or k in keys
@@ -290,7 +288,7 @@ class _LayerReading:
 
     def _step(self, states: list[_WalkState], path: list[str], part: str, naming: Any = None) -> list[_WalkState]:
         """Return the ways the walk reaches *part* below *path*: none in a declaring layer, which seeks no namespace."""
-        return [] if self.declaring else _step_states(states, part, len(path), naming, self.union_tag)
+        return [] if self.declaring else _step_states(states, part, len(path), naming)
 
     def _listed(self, node: MergeDict, below: Any, path: list[str], states: list[_WalkState]) -> list[Any] | None:
         """Return the list the ops *node* holds make over *below*, None where its positions are unknown.
@@ -361,7 +359,6 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
     env_data: MergeDict,
     cli_data: MergeDict,
     *,
-    union_tag: str,
     config_flag: str,
     below_cli: MergeDict,
 ) -> None:
@@ -376,12 +373,12 @@ def _apply_locals_layer(  # noqa: PLR0913  # three source layers plus the two na
         docs-dev/architecture/locals.md
         docs-dev/architecture/locals.md#a-namespace-in-an-item-a-list-op-holds
     """
-    declaring = _LayerReading(target, union_tag, declaring=True)
-    overriding = _LayerReading(target, union_tag, declaring=False)
+    declaring = _LayerReading(target, declaring=True)
+    overriding = _LayerReading(target, declaring=False)
     config_read = declaring.read(config_data, None, [])
     env_read = overriding.read(env_data, config_read, [])
     cli_read = overriding.read(cli_data, declaring.read(below_cli, None, []), [])
-    for path, keys in _iter_namespace_nodes([config_read, env_read, cli_read], target, union_tag):
+    for path, keys in _iter_namespace_nodes([config_read, env_read, cli_read], target):
         node = _lookup_path(config_read, path)
         node = node if isinstance(node, dict) else {}
         declaring = [key for key in keys if key in node]
@@ -438,8 +435,8 @@ def _merge_sources(
            subpath depth (shallower paths first).
         4. ``cli_configs`` — in left-to-right CLI order.
     """
-    config_flag, union_tag = options.config_flag, options.union_tag
-    locals_keys = _locals_keys(target, union_tag)
+    config_flag = options.config_flag
+    locals_keys = _locals_keys(target)
     if config_flag in locals_keys:
         msg = (
             f"config_flag is {config_flag!r}, which is also a name of the local-variables"
@@ -451,7 +448,7 @@ def _merge_sources(
 
     # 1. The config level, then the environment over it
     config_data, env_data = _lower_layers(target, cli_configs, options, reads=reads)
-    root = merge_root(target, union_tag)
+    root = merge_root(target)
     # 2. argv over both
     below_cli = _deep_merge(config_data, env_data, at=root)
     cli_data = parse_cli(below_cli)
@@ -461,7 +458,6 @@ def _merge_sources(
         config_data,
         env_data,
         cli_data,
-        union_tag=union_tag,
         config_flag=config_flag,
         below_cli=below_cli,
     )
@@ -502,7 +498,7 @@ def _lower_layers(
     the environment is parsed over them, so a node a file names types the variables below it.
     """
     env, env_config = options.env, options.env_config
-    config_flag, union_tag = options.config_flag, options.union_tag
+    config_flag = options.config_flag
     # Exclude the env_config key so it is not mistakenly treated as a field.
     env_for_fields = {k: v for k, v in env.items() if k != env_config} if env_config else env
     env_prefix = options.env_prefix
@@ -511,12 +507,12 @@ def _lower_layers(
     if env_config and (env_config_path := env.get(env_config)):
         file_entries.append(("", env_config_path))
     env_configs = (
-        _env_config_pointers(env_for_fields, env_prefix, options.env_separator, target, config_flag, union_tag)
+        _env_config_pointers(env_for_fields, env_prefix, options.env_separator, target, config_flag)
         if reads_variables(env_prefix)
         else []
     )
     env_configs.sort(key=operator.itemgetter(0))
-    root = merge_root(target, union_tag)
+    root = merge_root(target)
     config_data = _load_subpath_files(file_entries + env_configs, root, reads=reads)
     for subpath, value in cli_configs:
         fdata = _load_cli_config(value, subpath, config_flag, root, reads=reads)
@@ -530,7 +526,6 @@ def _lower_layers(
             options.env_separator,
             target,
             config_flag,
-            union_tag,
             below=config_data,
         )
     return config_data, env_data
@@ -551,6 +546,6 @@ def below_argv(target: Any, cli_configs: Sequence[tuple[str, str]], options: _Op
             # confarg's own, which the merge warns again: a module first imported here warns once in its life.
             warnings.simplefilter("ignore", ConfargWarning)
             config_data, env_data = _lower_layers(target, cli_configs, options, reads=Reads())
-        return _deep_merge(config_data, env_data, at=merge_root(target, options.union_tag))
+        return _deep_merge(config_data, env_data, at=merge_root(target))
     except Exception:  # noqa: BLE001  # a failing layer is the merge's to report
         return {}

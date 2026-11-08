@@ -55,4 +55,4 @@ JSON Merge Patch (RFC 7396) is the cautionary precedent for an op spelled in ban
   A pin cannot be: construction reads `{__cast__, __value__}` wherever it stands, and cannot tell where a dict came from, so some reserved keys would have been data and one a value.
   A data key `__append__` would also be written by `dump_file` as the op.
 - **The pin keeps working in a decoded value, the merge's and the file channel's keys being refused.**
-  Principled, as the pin is read by construction like the union tag and `call`, but it kept one exception for a spelling the scalar casts already cover.
+  Principled, as the pin is read by construction like the class key and `call`, but it kept one exception for a spelling the scalar casts already cover.

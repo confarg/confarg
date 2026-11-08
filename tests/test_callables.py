@@ -98,16 +98,6 @@ class _CallableWithClassfn:
         return x + self.classfn
 
 
-class _CallableWithKind:
-    """A callable instance whose constructor parameter is spelled like the custom union tag ``Kind`` (BUG-305)."""
-
-    def __init__(self, Kind: int) -> None:  # spelled like the tag on purpose
-        self.Kind = Kind
-
-    def __call__(self, x: int) -> int:
-        return x + self.Kind
-
-
 class _Processor:
     """Class with an instance method used as a callable."""
 
@@ -1054,12 +1044,6 @@ class TestClassDictForm:
         assert type(cfg.fn) is _Shifter
         assert cfg.fn(1) == 3
 
-    def test_class_beside_a_custom_tag_is_a_field(self) -> None:
-        """With a union tag other than class, the tag opens the spec and class beside it is an unknown argument."""
-        spec = {"class": f"{_MOD}._Shifter", "type": f"{_MOD}._NegShifter", "by": 2}
-        with pytest.raises(TypeCoercionError, match=r"Unknown field\(s\) \['class'\] for _NegShifter at 'fn'"):
-            confarg.build(WithCallable, {"fn": spec}, union_tag="type")
-
     def test_class_no_args(self, tmp_json: Any) -> None:
         """Test class: dict with a no-arg class instantiates correctly."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._NoArgCallable"}}))
@@ -1100,7 +1084,7 @@ class TestClassDictForm:
 
 @dataclass
 class _WithTagReaders:
-    """Spec readers alone and beside a scalar variant, which a custom union tag opens (BUG-305)."""
+    """Spec readers alone and beside a scalar variant, which the class key opens (BUG-305)."""
 
     fn: Callable[[int], int] = _double
     c: int | Callable[[int], int] = 0
@@ -1108,90 +1092,46 @@ class _WithTagReaders:
     x: int | Any = 0
 
 
-class TestTheUnionTagIsTheClassOpener:
-    """A custom union tag replaces ``class`` as the opener of every spec reader (BUG-305).
-
-    The tag opens a Callable's or an ``Any``'s spec, alone or as a union's variant, and
-    ``class`` is an ordinary key there; ``classfn``, ``bind`` and ``call`` keep their spelling.
-    """
+class TestTheClassKeyIsTheClassOpener:
+    """The class key opens a Callable's or an ``Any``'s spec, alone or as a union's variant (BUG-305)."""
 
     @pytest.mark.parametrize("name", ["fn", "c", "data", "x"])
-    def test_the_tag_builds_the_class_it_names(self, name: str) -> None:
-        """{Kind: _Multiplier, factor: 3} builds the instance, at a lone reader and at a union's."""
-        spec = {"Kind": f"{_MOD}._Multiplier", "factor": 3}
-        built = getattr(confarg.build(_WithTagReaders, {name: spec}, union_tag="Kind"), name)
+    def test_the_class_key_builds_the_class_it_names(self, name: str) -> None:
+        """{class: _Multiplier, factor: 3} builds the instance, at a lone reader and at a union's."""
+        spec = {"class": f"{_MOD}._Multiplier", "factor": 3}
+        built = getattr(confarg.build(_WithTagReaders, {name: spec}), name)
         assert type(built) is _Multiplier
         assert built.factor == 3
 
     @pytest.mark.parametrize("name", ["data", "x"])
     def test_an_any_builds_a_class_no_variant_holds(self, name: str) -> None:
-        """The ticket's case: the tag's class is built, not held as the dict that named it."""
-        data = {name: {"Kind": "collections.OrderedDict"}}
-        built = getattr(confarg.build(_WithTagReaders, data, union_tag="Kind"), name)
+        """The class is built, not held as the dict that named it."""
+        data = {name: {"class": "collections.OrderedDict"}}
+        built = getattr(confarg.build(_WithTagReaders, data), name)
         assert type(built) is collections.OrderedDict
 
-    @pytest.mark.parametrize("name", ["fn", "c"])
-    def test_class_is_no_opener_of_a_callable(self, name: str) -> None:
-        """Under a custom tag, a Callable's spec spelled with class holds no opener, and the refusal names the tag."""
-        spec = {"class": f"{_MOD}._Multiplier", "factor": 3}
-        with pytest.raises(TypeCoercionError, match="must specify one of 'bind', 'Kind', 'call' or 'classfn'"):
-            confarg.build(_WithTagReaders, {name: spec}, union_tag="Kind")
+    def test_the_not_callable_advice_names_the_class_key(self) -> None:
+        """A class whose instance is not callable is refused with the opener spelled ``class``."""
+        with pytest.raises(TypeCoercionError, match=r"via 'class:'"):
+            confarg.build(_WithTagReaders, {"fn": {"class": "collections.OrderedDict"}})
 
-    def test_class_is_an_ordinary_key_of_an_any(self) -> None:
-        """Under a custom tag, an Any holds a dict spelling class as that dict."""
-        spec = {"class": f"{_MOD}._Multiplier", "factor": 3}
-        assert confarg.build(_WithTagReaders, {"data": spec}, union_tag="Kind").data == spec
-
-    def test_the_not_callable_advice_names_the_tag(self) -> None:
-        """A class whose instance is not callable is refused with the opener spelled as the tag."""
-        with pytest.raises(TypeCoercionError, match=r"via 'Kind:'"):
-            confarg.build(_WithTagReaders, {"fn": {"Kind": "collections.OrderedDict"}}, union_tag="Kind")
-
-    def test_the_factory_refusal_advises_the_tag(self) -> None:
-        """A class a Callable would call as a factory is refused with its instance spelled under the tag."""
-        with pytest.raises(TypeCoercionError, match=rf"use the dict form: 'Kind: {_MOD}._Multiplier'"):
-            confarg.build(WithNoneCallable, {"fn": f"{_MOD}._Multiplier"}, union_tag="Kind")
-
-    def test_classfn_keeps_its_spelling(self) -> None:
-        """Classfn opens a spec under any tag."""
-        spec = {"classfn": f"{_MOD}._Processor.process", "offset": 1}
-        assert confarg.build(_WithTagReaders, {"fn": spec}, union_tag="Kind").fn(2) == 3
-
-    def test_dump_writes_the_tag(self) -> None:
-        """A callable instance, at a Callable or an Any, dumps under the tag and reads back."""
+    def test_dump_writes_the_class_key(self) -> None:
+        """A callable instance, at a Callable or an Any, dumps under the class key and reads back."""
         cfg = _WithTagReaders(fn=_Multiplier(3), c=_Multiplier(4), data=_Multiplier(5))
-        dumped = confarg.dump(cfg, union_tag="Kind")
-        assert dumped["fn"] == {"Kind": f"{_MOD}._Multiplier", "factor": 3}
-        assert dumped["c"] == {"Kind": f"{_MOD}._Multiplier", "factor": 4}
-        assert dumped["data"] == {"Kind": f"{_MOD}._Multiplier", "factor": 5}
-        back = confarg.build(_WithTagReaders, dumped, union_tag="Kind")
+        dumped = confarg.dump(cfg)
+        assert dumped["fn"] == {"class": f"{_MOD}._Multiplier", "factor": 3}
+        assert dumped["c"] == {"class": f"{_MOD}._Multiplier", "factor": 4}
+        assert dumped["data"] == {"class": f"{_MOD}._Multiplier", "factor": 5}
+        back = confarg.build(_WithTagReaders, dumped)
         assert back.fn(1) == 3
         assert callable(back.c)
         assert back.c(1) == 4
         assert back.data.factor == 5
 
-    def test_a_field_spelled_like_the_tag_is_refused_by_dump(self) -> None:
-        """A field spelled like the tag would read back as a second opener, so no spec spells the instance."""
-        with pytest.raises(ConfargError, match=r"no configuration spells it.*'Kind'"):
-            confarg.dump(WithCallable(fn=_CallableWithKind(1)), union_tag="Kind")
-
-    def test_a_field_spelled_like_another_tag_dumps(self) -> None:
-        """Under the default tag, a field spelled Kind is an ordinary field of the spec."""
-        assert confarg.dump(WithCallable(fn=_CallableWithKind(1)))["fn"] == {
-            "class": f"{_MOD}._CallableWithKind",
-            "Kind": 1,
-        }
-
-    def test_an_any_dict_spelling_class_dumps_without_warning(self) -> None:
-        """Under a custom tag, class is no opener, so a dict an Any holds spelling it reads back as itself."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            assert confarg.dump(_WithTagReaders(data={"class": "x"}), union_tag="Kind")["data"] == {"class": "x"}
-
-    def test_an_any_dict_spelling_the_tag_warns(self) -> None:
-        """Under a custom tag, a dict an Any holds spelling the tag reads back as a spec, so dump warns."""
+    def test_an_any_dict_spelling_the_class_key_warns(self) -> None:
+        """A dict an Any holds spelling the class key reads back as a spec, so dump warns."""
         with pytest.warns(ConfargWarning, match="opener key"):
-            confarg.dump(_WithTagReaders(data={"Kind": "x"}), union_tag="Kind")
+            confarg.dump(_WithTagReaders(data={"class": "x"}))
 
 
 def _kwargs_fn(**kwargs: int) -> int:
@@ -1203,7 +1143,7 @@ class TestBindParamChecking:
 
     def test_valid_bind_passes(self) -> None:
         """Valid bind parameters pass without error."""
-        assert _resolve_bind_kwargs(_add, {"x": 1, "y": 2}, _SpecContext(("f",), "class", construct)) == {
+        assert _resolve_bind_kwargs(_add, {"x": 1, "y": 2}, _SpecContext(("f",), construct)) == {
             "x": 1,
             "y": 2,
         }
@@ -1211,12 +1151,12 @@ class TestBindParamChecking:
     def test_unknown_key_raises(self) -> None:
         """An unknown bind key raises TypeCoercionError."""
         with pytest.raises(TypeCoercionError, match="Unknown bind parameter"):
-            _resolve_bind_kwargs(_add, {"x": 1, "z": 99}, _SpecContext(("f",), "class", construct))
+            _resolve_bind_kwargs(_add, {"x": 1, "z": 99}, _SpecContext(("f",), construct))
 
     def test_error_names_invalid_and_valid(self) -> None:
         """The error message names both invalid and valid keys."""
         with pytest.raises(TypeCoercionError, match="'z'") as exc_info:
-            _resolve_bind_kwargs(_add, {"z": 1}, _SpecContext(("myfield",), "class", construct))
+            _resolve_bind_kwargs(_add, {"z": 1}, _SpecContext(("myfield",), construct))
         assert "x" in str(exc_info.value)
         assert "y" in str(exc_info.value)
 
@@ -1226,11 +1166,11 @@ class TestBindParamChecking:
         def handler(self: int, event: int) -> int:  # noqa: FURB118  # the declared self is the point, not operator.add
             return self + event
 
-        assert _resolve_bind_kwargs(handler, {"self": 1}, _SpecContext(("f",), "class", construct)) == {"self": 1}
+        assert _resolve_bind_kwargs(handler, {"self": 1}, _SpecContext(("f",), construct)) == {"self": 1}
 
     def test_var_keyword_fn_skips_validation(self) -> None:
         """Test that **kwargs functions skip bind key validation."""
-        _resolve_bind_kwargs(_kwargs_fn, {"anything": 1, "goes": 2}, _SpecContext(("f",), "class", construct))
+        _resolve_bind_kwargs(_kwargs_fn, {"anything": 1, "goes": 2}, _SpecContext(("f",), construct))
 
     def test_uninspectable_skips_validation(self) -> None:
         """Uninspectable builtins skip bind key validation."""
@@ -1240,7 +1180,7 @@ class TestBindParamChecking:
             pytest.skip("len is inspectable on this platform")
         except (ValueError, TypeError):
             pass
-        assert _resolve_bind_kwargs(len, {"unknown": 1}, _SpecContext(("f",), "class", construct)) == {"unknown": 1}
+        assert _resolve_bind_kwargs(len, {"unknown": 1}, _SpecContext(("f",), construct)) == {"unknown": 1}
 
     def test_bind_unknown_key_raises_via_load(self, tmp_json: Any) -> None:
         """An unknown argument of bind: raises via confarg.load, at the path of its args."""
@@ -1354,12 +1294,12 @@ class TestSerialization:
 
     def test_plain_function(self) -> None:
         """A plain function serializes to its dotted path."""
-        assert _serialize_callable(_double, _no_owner, "class") == f"{_MOD}._double"
+        assert _serialize_callable(_double, _no_owner) == f"{_MOD}._double"
 
     def test_partial(self) -> None:
         """A partial serializes to a bind: dict with its keywords under args."""
         p = functools.partial(_add, y=5)
-        out = _serialize_callable(p, _no_owner, "class")
+        out = _serialize_callable(p, _no_owner)
         assert out == {"bind": f"{_MOD}._add", "args": {"y": 5}}
 
     @pytest.mark.parametrize(
@@ -1380,7 +1320,7 @@ class TestSerialization:
     def test_partial_no_bind(self) -> None:
         """A partial with no bound args serializes to the bare dotted path (round-trips to the callable)."""
         p = functools.partial(_double)
-        out = _serialize_callable(p, _no_owner, "class")
+        out = _serialize_callable(p, _no_owner)
         assert out == f"{_MOD}._double"
 
     def test_class_instance_with_spec(self, tmp_json: Any) -> None:
@@ -2438,7 +2378,7 @@ class TestCallableBesideAnotherVariant:
         assert built(2) == 6
 
     def test_a_class_spec_naming_a_struct_variant_is_the_struct(self) -> None:
-        """The union tag still selects a struct variant it names."""
+        """The class key still selects a struct variant it names."""
         assert construct(_IntFn | _Level, {"class": f"{__name__}._Level", "level": 2}) == _Level(2)
 
     def test_a_classfn_spec_is_the_callable(self) -> None:
@@ -2447,7 +2387,7 @@ class TestCallableBesideAnotherVariant:
         assert built(5) == 10
 
     def test_a_struct_owning_the_opener_key_keeps_it_as_data(self) -> None:
-        """A struct variant with a member named `bind` reads `{bind: …}` as its field, as the union tag yields."""
+        """A struct variant with a member named `bind` reads `{bind: …}` as its field, as the class key yields."""
         assert construct(_IntFn | _OwnsBind, {"bind": _DOUBLE}) == _OwnsBind(bind=_DOUBLE)
 
     @pytest.mark.parametrize("tp", [_IntFn | dict[str, str], Any | dict[str, str]])

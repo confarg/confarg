@@ -104,7 +104,7 @@ class TestLoadFlagsIntoApp:
     def test_basic_flags_registered(self) -> None:
         """Flags from build_static_flags appear in the app's argument collection."""
         app = _make_app()
-        flags = build_static_flags(Simple, union_tag="class", config_flag="")
+        flags = build_static_flags(Simple, config_flag="")
         load_flags_into_app(flags, app)
         args = app.assemble_argument_collection()
         option_names = _option_names(args)
@@ -114,7 +114,7 @@ class TestLoadFlagsIntoApp:
     def test_name_map_set_on_app(self) -> None:
         """load_flags_into_app stores the name map in _app_meta."""
         app = _make_app()
-        flags = build_static_flags(Simple, union_tag="class", config_flag="")
+        flags = build_static_flags(Simple, config_flag="")
         load_flags_into_app(flags, app)
         meta = _app_meta[id(app)]
         assert meta["name_map"].get("host") == "host"
@@ -123,7 +123,7 @@ class TestLoadFlagsIntoApp:
     def test_command_ref_set_on_app(self) -> None:
         """load_flags_into_app stores the synthetic command in _app_meta."""
         app = _make_app()
-        flags = build_static_flags(Simple, union_tag="class", config_flag="")
+        flags = build_static_flags(Simple, config_flag="")
         load_flags_into_app(flags, app)
         meta = _app_meta[id(app)]
         assert callable(meta["command"])

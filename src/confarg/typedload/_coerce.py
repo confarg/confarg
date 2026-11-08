@@ -640,7 +640,7 @@ def _is_struct_variant(tp: Any) -> bool:
 
 
 def _is_taggable_leaf(tp: Any) -> bool:
-    """True if tp is a registered leaf whose fields an explicit union tag may still name.
+    """True if tp is a registered leaf whose fields an explicit class key may still name.
 
     The complement of ``_is_struct_variant``: a registered leaf is opaque to every implicit
     decision, but a tag naming its class builds it from its ``__init__`` parameters.

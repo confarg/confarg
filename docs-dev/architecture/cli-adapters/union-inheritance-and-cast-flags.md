@@ -1,6 +1,6 @@
 # Union, inheritance and cast flags
 
-- A struct union registers `--f.<union_tag>` plus the fields of every variant.
+- A struct union registers `--f.class` plus the fields of every variant.
   Same-named flags from different variants are merged and their `choices` unioned (`_merge_or_append_spec`): first-wins would drop the other variants' values.
 - A base class with subclasses registers the tag and all subclass fields (recursively for completion paths).
   "Has subclasses" means *imported* subclasses, so the class a tag names on argv or in a `--config` file is imported first, by `_tags.import_tagged_classes` ([design decisions](../design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration)); without that the selector and the subclass's own flags exist or not depending on which modules happened to load.

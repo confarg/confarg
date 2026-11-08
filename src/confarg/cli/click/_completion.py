@@ -20,7 +20,6 @@ def setup_completion(
     command: click.Command,
     target: type,
     *,
-    union_tag: str = _defaults.UNION_TAG,
     config_flag: str = _defaults.CONFIG_FLAG,
 ) -> None:
     """Extend *command* with dynamic flags before Click's completion lifecycle runs.
@@ -41,13 +40,11 @@ def setup_completion(
     Args:
         command: The :class:`click.Command` to extend.
         target: The dataclass type whose fields define the available flags.
-        union_tag: Discriminator field name (same as :func:`confarg.load`).
         config_flag: Name of the config-file option (must match :func:`populate_command`).
     """
     _clicklike.setup_completion(
         command,
         target,
         _spec_to_option,
-        union_tag=union_tag,
         config_flag=config_flag,
     )
