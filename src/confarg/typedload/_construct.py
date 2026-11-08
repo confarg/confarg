@@ -1628,7 +1628,9 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     (dataclass or plain-class) variants, and finally leaf coercion in order.
     A tag-shaped key is the tag only where the union reads it as one
     (:func:`tag_reading`): not where a member owns its spelling, nor where a
-    variant that reads a dict holds it as data.
+    variant that reads a dict holds it as data. A ``None`` reaching here is no
+    value the union holds outright, :func:`construct` having taken it where the
+    union counts ``None``, so it meets the variants as any value does (BUG-298).
 
     Args:
         tp: The Union type.
@@ -1642,12 +1644,12 @@ def _construct_union(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
     Raises:
         AmbiguousUnionError: If multiple dataclass variants match structurally.
         TypeCoercionError: If no variant can accept the data.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-union-without-none-takes-no-none
     """
     all_args = _union_args(tp)
     non_none = _union_args_no_none(tp)
-
-    if data is None:  # pragma: no cover  # construct() short-circuits before reaching here
-        return None
 
     if len(non_none) == 1:
         return _construct_single_variant_union(all_args, non_none, data, path, union_tag)

@@ -1,6 +1,6 @@
 # Plan — A Protocol reads the scalars that satisfy it
 
-**Drafted:** 2026-10-28 · **Status:** approved · **Tickets:** [FEAT-59](../features/FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md), [BUG-299](../bugs/BUG-299-a-union-with-a-struct-variant-registers-no-cast-flag.md) · **Builds on:** [the Protocol plan](protocol-typed-fields.md)
+**Drafted:** 2026-10-28 · **Status:** approved · **Tickets:** [FEAT-59](../features/FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md), [BUG-299](../bugs/BUG-299-a-union-with-a-struct-variant-registers-no-cast-flag.md) · **Builds on:** [the Protocol plan](protocol-typed-fields.md) · **Amended:** 2026-11-02, BUG-298 landed: a union without `None` refuses a file's `null`, so `ratio: SupportsFloat` refuses it from the start
 
 Under FEAT-57 a Protocol field takes its value through the `class:` tag only ([a Protocol takes no plain value, for now](protocol-typed-fields.md#a-protocol-takes-no-plain-value-for-now)), so a field typed by a Protocol that a plain value satisfies cannot be given one:
 
@@ -170,7 +170,7 @@ Each row of the tables above becomes a test against the `loader` fixture, so a f
 - `--ratio abc` is refused with the message above, its Protocol line naming the scalars and the tag as the channel spells it; under `SupportsIndex`, `--n 3.5` names `an int or a bool`.
 - `{class: pkg.Impl, ...}` under `SupportsFloat` still builds a nominal and a structural implementer, and `{}` is refused for want of a tag.
 - `dump(C())` and `dump_file()` of `ratio: SupportsFloat = 1.0` read back; `C(ratio=3)` dumps `3`, `C(ratio=True)` dumps `true`, `Printable` holding `'3'` dumps `'3'` bare, `C(ratio=Decimal('3.5'))` dumps with the foreign-value warning.
-- `x: Printable` takes a file's `null` and `--x none` as `None`; `ratio: SupportsFloat` refuses both, the first once [BUG-298](../bugs/BUG-298-a-union-without-none-takes-a-files-null.md) has landed.
+- `x: Printable` takes a file's `null` and `--x none` as `None`; `ratio: SupportsFloat` refuses both ([a union without `None` takes no `None`](../../architecture/types/construction.md#a-union-without-none-takes-no-none)).
 - `SupportsFloat | str`, `SupportsFloat | float`, `SupportsFloat | None`, `list[SupportsFloat]`, `dict[str, SupportsIndex]`, and a Protocol root target.
 - `${ratio}` reads `1.0` with no source setting it, and `3.5` under `--ratio 3.5`.
 - `SupportsAbs[int]` and `SupportsAbs[str]` read alike; a callback Protocol reads as FEAT-2 says, no scalar joining it.
@@ -189,5 +189,4 @@ Run the touched tests on 3.12 to 3.15, as FEAT-57's, since `is_protocol` and the
 
 ## Related, not part of this plan
 
-- [BUG-298](../bugs/BUG-298-a-union-without-none-takes-a-files-null.md): a union without `None` takes a file's `null` today, so `ratio: SupportsFloat` would too until it lands.
 - [FEAT-39](../features/FEAT-39-a-struct-instance-default-is-no-base.md): a Protocol field defaulting to an implementer's instance is no base; a scalar default is one already.
