@@ -29,8 +29,10 @@ Vanilla's argv parser was the only holdout.
 ## A position is one key, whatever spells it
 
 A namedtuple's field name, its index and its negative index name one position, and so do a fixed tuple's two indices.
-Construction reads every key of a fixed-length dict by `_fixed_position` and lays them in the dict's order, the later write winning, so a mix of spellings builds: `--pt.0 1 --pt.y 2` builds `Pt(1, 2)`, and `--pt.x 13 --pt.0 9` sets `x` to 9, as a repeated flag's later value wins.
-Only one source writes two spellings into one dict, in its own order: argv in argv order, a file as written.
+Construction reads every key of a fixed-length dict by `_fixed_position`, so a mix of spellings builds: `--pt.0 1 --pt.y 2` builds `Pt(1, 2)`.
+Two spellings of one position are two writes on argv and in the environment, which the merge reconciles before construction, the later winning: `--pt.x 13 --pt.0 9` sets `x` to 9, as a repeated flag's later value wins ([which keys are one key](../pipeline/deep-merge.md#which-keys-are-one-key)).
+Within one value, a file's `pt: {x: 1, 0: 2}` or a caller's dict, they are refused, `keys 'x' and '0' both name the field x` ([one value holds each key once](../pipeline/deep-merge.md#one-value-holds-each-key-once)).
+Until BUG-312 construction laid them in the dict's order, the later winning, which dropped the other value with no error.
 
 Until Q-1 was answered a mixed dict was refused as naming an unknown field, `'0'`, which called a spelling the same function took alone unknown.
 The other answer weighed was to keep the refusal and only reword it; it was set aside because the reconciliation already existed over a positional base (BUG-160), so `--pt 1 2 --pt.x 9 --pt.1 8` built while `--pt.x 9 --pt.1 8` did not, the same two patches.

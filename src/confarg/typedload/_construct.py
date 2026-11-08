@@ -38,6 +38,7 @@ from confarg._merge import (
     _apply_list_ops,
     _DeleteSentinel,
     _is_pin_dict,
+    _key_index,
     _merge_existing_value,
     _replace_base,
 )
@@ -192,9 +193,10 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath) ->
     The merge carries a positional list under ``ListOp.BASE`` beside a patch it
     cannot apply without the type, and the CLI's arity flag leaves one under its sub-flags.
     Each patch key is laid at the field whose position it names
-    (:func:`~confarg._types._fixed_position`), a name and an index alike, in the patch's
-    order (Q-1); a key naming no position is kept as spelled, for construction to refuse. A
-    patch value refines what the base holds at its position, through the merge's own combiner.
+    (:func:`~confarg._types._fixed_position`), a name and an index alike (Q-1), two naming one
+    position refused (BUG-312); a key naming no position is kept as spelled, for construction
+    to refuse. A patch value refines what the base holds at its position, through the merge's
+    own combiner.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/namedtuple-arity-flag-argv-order.md#build-reconciles-the-positions-with-the-patch
@@ -204,9 +206,9 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath) ->
     _check_namedtuple_length(tp, base, path)
     laid: dict[Any, Any] = dict(zip(field_names, base, strict=False))
     at = _merge_at(tp)
-    for spelled, v in data.items():
-        if spelled is ListOp.BASE:
-            continue
+    patch = {k: v for k, v in data.items() if k is not ListOp.BASE}
+    _refuse_a_position_spelled_twice(tp, patch, tp.__name__, path)
+    for spelled, v in patch.items():
         position = _fixed_position(tp, spelled)
         k = spelled if position is None else field_names[position]
         if isinstance(v, _DeleteSentinel):
@@ -710,9 +712,10 @@ def _indexed_dict_to_positions(
 
     Every key is read by :func:`~confarg._types._fixed_position`: an index as ``str()``
     writes one, or an integer, a negative one counting from the end, and a namedtuple's field
-    name. Two keys naming one position resolve in the dict's order, the later winning, as a
-    later write does (Q-1). A delete at a position is returned as it is, for the caller to
-    read as the position unset (BUG-243).
+    name. Two keys naming one position are refused: one value spells each position once
+    (BUG-312), a later write over another spelling being the merge's to reconcile (Q-1). A
+    delete at a position is returned as it is, for the caller to read as the position unset
+    (BUG-243).
 
     Args:
         tp: The fixed tuple or namedtuple type.
@@ -728,6 +731,7 @@ def _indexed_dict_to_positions(
     Dev Notes:
         docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
     """
+    _refuse_a_position_spelled_twice(tp, data, what, path)
     length = len(_fixed_seq_types(tp) or ())
     out: dict[int, Any] = {}
     unknown: list[Any] = []
@@ -753,6 +757,25 @@ def _indexed_dict_to_positions(
     if unknown:
         raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path), data)
     return out
+
+
+def _refuse_a_position_spelled_twice(tp: Any, data: dict[Any, Any], what: str, path: FieldPath) -> None:
+    """Refuse *data*, the keyed form of the fixed-length *tp*, if two of its keys name one position (BUG-312).
+
+    A position is read by :func:`~confarg._types._fixed_position`, as the merge reads it; a key
+    naming none is left for the caller to refuse.
+    """
+    spellings: dict[Any, list[Any]] = {}
+    for k in data:
+        if (position := _fixed_position(tp, k)) is not None:
+            spellings.setdefault(position, []).append(k)
+
+    def reading(position: int, _: list[Any]) -> str:
+        if _is_namedtuple(tp):
+            return f"name the field {list(_namedtuple_fields(tp))[position]}"
+        return f"name position {position}"
+
+    _refuse_keys_read_as_one(lambda: what, spellings, path, reading)
 
 
 def _call_struct(
@@ -1090,14 +1113,55 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath) -> dict[Any, Any]:
         The constructed dict with coerced keys and constructed values.
 
     Raises:
-        TypeCoercionError: If data is not a dict, or holds a list op the merge recorded.
+        TypeCoercionError: If data is not a dict, holds a list op the merge recorded, or holds
+            two keys the dict reads as one (:meth:`~confarg._merge.MergeAt.key_identity`, BUG-312).
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#one-value-holds-each-key-once
     """
     kt, vt = _dict_kv(tp)
     if not isinstance(data, dict):
         raise TypeCoercionError.wrong_shape(_src_type(data), data, "dict", "dict", _spell_field_path(path))
     if op := next((k for k in data if isinstance(k, ListOp)), None):
         raise TypeCoercionError.list_op_on(str(op), "dict", _spell_field_path(path))
+
+    def reading(identity: Any, keys: list[Any]) -> str:
+        if _type_kind(_resolve_type(kt)) is _TypeKind.ANY:
+            return f'read as the key "{identity}"'  # JSON's spelling, as the merge reads it
+        return f"read as the key {_spell_key(read_key(kt, keys[0], path))}"  # a key it refuses is refused as such
+
+    _refuse_keys_read_as_one(lambda: _spell_type(tp), _key_index(data, _merge_at(tp)), path, reading)
     return {read_key(kt, k, path): construct(vt, v, path=(*path, str(k))) for k, v in data.items()}
+
+
+def _refuse_keys_read_as_one(
+    what: Callable[[], str], index: dict[Any, list[Any]], path: FieldPath, reading: Callable[[Any, list[Any]], str]
+) -> None:
+    """Refuse the value *what* names at *path* if *index* files two of its keys under one identity.
+
+    *index* holds each key the value spells under what its type reads it as, a dict's by
+    :meth:`~confarg._merge.MergeAt.key_identity`, a fixed-length sequence's by its position;
+    *reading* says what the first such keys are, for the message, and *what* spells the type,
+    asked only for one. One value holds each key once: the merge carries every spelling a
+    source wrote, and only construction would keep one of them, so no entry is dropped for
+    another (BUG-312).
+
+    Raises:
+        TypeCoercionError: Naming every spelling of the first key spelled twice.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#one-value-holds-each-key-once
+    """
+    for identity, keys in index.items():
+        if len(keys) > 1:
+            raise TypeCoercionError.keys_read_as_one(what(), _spell_field_path(path), keys, reading(identity, keys))
+
+
+def _spell_key(key: Any) -> str:
+    """Spell a key as a message names what a dict reads it as: text quoted, a member by its class and name."""
+    if isinstance(key, enum.Enum):
+        return f"{type(key).__name__}.{key.name}"
+    return repr(key) if isinstance(key, str) else str(key)
 
 
 def read_key(kt: Any, key: Any, path: FieldPath) -> Any:
