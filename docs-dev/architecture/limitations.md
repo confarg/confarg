@@ -34,7 +34,7 @@ When a ticket closes and the answer turns out to be "we will not do that", the r
   Below the root the subscript's fallback indexes by the integer, but the root has no node to index ([expressions](expressions/reference-anchoring.md#implementation-constraints)).
 - A reference to a whole node substitutes that node's *value*, so each referencing site is constructed separately: two fields referring to one struct hold equal, non-identical objects.
   There is no way to share one instance ([expressions](expressions/values-and-references.md#referencing-a-whole-subtree)).
-- In a `resolve()`d dict those paths do alias one sub-dict, so mutating it in place reaches every site that referenced it.
+- In a `resolve()`d dict those paths do alias one sub-dict, so mutating it in place reaches every site that referenced it, and a part no expression is written in is the caller's own, so mutating it reaches the dict `resolve()` was handed ([expressions](expressions/resolution.md#resolution-copies-only-what-it-writes)).
   Inspect and dump the resolved dict; do not edit it.
 - An expression may not read a node that holds it, even through a function that would not need its own value: inside `svc`, `${len(svc)}` and `${svc[k]}` are cycles.
   The dependency graph is built from syntax and cannot see what a function reads or which key `k` names ([expressions](expressions/resolution.md#a-reference-reads-everything-its-path-reaches)).

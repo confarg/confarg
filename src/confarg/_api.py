@@ -290,7 +290,9 @@ def resolve(
         union_tag: The field name used as a discriminator tag in unions.
 
     Returns:
-        A new dict with all ``${...}`` expression strings replaced by their values.
+        A dict with all ``${...}`` expression strings replaced by their values, which shares
+        with *data* every part no expression is written in, and may be *data* itself: inspect
+        or dump it, do not edit it in place.
 
     Raises:
         ConfargError: If a patch the merge left pending does not apply over a default.

@@ -586,21 +586,26 @@ def resolve_expressions(
             one of its own when omitted.
 
     Returns:
-        A new dict with all ${...} expression strings replaced by their values.
-        Returns data unchanged if no expressions are found.
+        *data* itself when it holds no expression. Otherwise a new dict with every ${...}
+        expression string replaced by its value, which shares with *data* every part no
+        expression is written in: only the dicts and lists on an expression's path are new.
 
     Raises:
         CircularReferenceError: If expression references form a cycle.
         UnsafeExpressionError: If an expression contains disallowed constructs.
         MissingReferenceError: If an expression references a field that does not exist.
         ExpressionEvalError: If an expression fails at runtime.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#resolution-copies-only-what-it-writes
     """
     # 1. Scan for expressions
     expr_fields = _scan_expressions(data)
     if not expr_fields:
         return data
 
-    data = _Namespace(copy.deepcopy(data), read, write, copies)
+    data = _Namespace(data, read, write, copies)
+    _copy_written_paths(data, expr_fields)
 
     # 2. Extract references and build dependency graph
     deps = _dependency_graph(data, expr_fields)
@@ -629,6 +634,28 @@ def resolve_expressions(
             _settle_pending(data, path, unresolved, settle)
 
     return dict(data)
+
+
+def _copy_written_paths(data: MergeDict, paths: Iterable[_Path]) -> None:
+    """Replace each dict and list below the root of *data* that a path of *paths* steps into by a copy of it.
+
+    A node is copied once per position it stands at, so a part the caller's data holds at two
+    positions becomes two, each written by the expressions at its own. A copy is a plain dict or
+    list, as every walker rebuilds a node it changes; every other value stays the caller's own.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/resolution.md#resolution-copies-only-what-it-writes
+    """
+    copied: set[_Path] = set()
+    for path in paths:
+        node: Any = data
+        for depth, part in enumerate(path[:-1], start=1):
+            key = part if isinstance(node, dict) else int(cast("str", part))  # an element's position, never an op
+            if path[:depth] not in copied:
+                child = node[key]
+                node[key] = dict(child) if isinstance(child, dict) else list(child)
+                copied.add(path[:depth])
+            node = node[key]
 
 
 def _pending_prefixes(data: MergeDict, path: Sequence[str | ListOp], *, crossed: bool = False) -> list[_Path]:
