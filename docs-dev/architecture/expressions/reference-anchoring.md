@@ -100,7 +100,8 @@ No plain path reads a root key that is no identifier — `${['web-1']}` is a lis
   `_anchor_markers` is the one answer to "does a name follow this marker?", and the same answer decides whether `canonicalize_references` may drop a `::` ([below](#a-relative-reference-is-never-serialized-as-an-absolute-path)). jq spells it the same way — `.foo` is shorthand for `.["foo"]`, and `.[0]` indexes the input — as does JSONPath with `$['web-1']`.
   Before BUG-126 the stand-in always took the dot, and `__UP1__.[0]` did not parse.
 - **`_AnchorResolver` rewrites only the stand-in** (`.` → `svc`), never the chain after it.
-  Each segment the expression spells keeps its own node, so a subscript stays a subscript: when the path read misses, its fallback indexes by the key it spells, the integer `0` of `${.m[0]}` or `${.[0]}` on a YAML `{0: x}`, where a rebuilt attribute could only index by the string `"0"` ([values and references](values-and-references.md#spelling-a-path)).
+  Each segment the expression spells keeps its own node, so a subscript stays a subscript: `${.a['__class__']}` is an item lookup as written, and a computed key off an anchor is evaluated as one ([values and references](values-and-references.md#spelling-a-path)).
+  An integer key no longer needs the subscript's node, since the walk reaches a YAML `{0: x}` by the digits `0` either way (BUG-311); before, only the subscript's fallback indexed by the integer, where a rebuilt attribute could only index by the string `"0"`.
   Before BUG-125 this was a safety rule too: the attribute fallback was `getattr`, so `${.a['__class__'].mro}` rebuilt as `a.__class__.mro` would have bypassed the dunder ban, which validation applies to attributes as written.
 - **A resolved tree still unparses as written** (BUG-136).
   Evaluation runs on the tree `_AnchorResolver` rewrote, so a message built there from a node — the uncalled-method hint, `as in .n.upper(...)` — would otherwise spell the absolute path, `xs[0].n.upper`, pinning the element to its index ([above](#a-relative-reference-is-never-serialized-as-an-absolute-path)).
@@ -114,10 +115,10 @@ No plain path reads a root key that is no identifier — `${['web-1']}` is a lis
 - **The configuration root has no node to stand for.**
   A path is a `Name` and the links after it, and the empty path has no `Name`.
   So where the stand-in names the root — `::`, or a dot run that climbs all the way up — the first segment after it becomes the base name instead (`_segment`, the one reading of a single link that `_attribute_chain` also asks): `${::['web-1']}` reads the key `web-1`.
-  The base name is a string, so a non-string key at the root is not reachable ([limitations](../limitations.md#expressions)).
+  The base name is a string, which reaches an integer key at the root by its digits as it does below it, so `${::[0]}` reads a YAML `{0: x}` root key (BUG-311; [values and references](values-and-references.md#spelling-a-path)).
   A stand-in still in the tree after that names the root whole (`${::}`, `${..}` from one level down, `${::[k]}`); `_collect_names` reads it as the empty path, and since the root holds every expression, it is the cycle any reference to an ancestor is ([resolution](resolution.md#a-reference-reads-everything-its-path-reaches)).
 - **A spelled path parses back as itself.**
-  `_path_to_ast` writes a segment with a dot only when it is an identifier that is no keyword, no dunder and that Python reads as written (`_reads_as_written`: `ﬁle` would read back as `file`, and a body writing it is refused); everything else is a subscript, by the integer when the segment spells an index (`[0]`, which also reaches an integer key below the root), else by the string.
+  `_path_to_ast` writes a segment with a dot only when it is an identifier that is no keyword, no dunder and that Python reads as written (`_reads_as_written`: `ﬁle` would read back as `file`, and a body writing it is refused); everything else is a subscript, by the integer when the segment spells an index (`[0]`, which also reaches an integer key), else by the string.
   It is what `_Prefixer` unparses, and what `_AnchorResolver` builds the path of a dot run with, so the two agree with `_attribute_chain` on every segment.
 - `_Prefixer` rewrites only `ast.Name` bases.
   That is correct only because lambdas and comprehensions are not in `_ALLOWED_NODES`, so every non-function `Name` is a reference base.

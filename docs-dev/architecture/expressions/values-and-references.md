@@ -26,13 +26,13 @@ The merged dict holds an `Enum` or registered leaf as it was written, on every c
 
 - **The reader** (`_typed_read.TypedReading`) steps from the root to the position read by the typed merge's own walk (`TypedAt`, which reads the tag or spec each node holds), and coerces the value there with `_coerce.read_as_object` where that type, an optional included, is one `Enum`, registered or `Literal`-over-`Enum` type, or a number, a bool or `None`: a file's `1` at a `float` reads `1.0`, as construction builds it (BUG-154).
   A union of several variants reads as the variant construction picks (`_construct.read_union_leaf`), every variant but a Callable tried: `str | Color` reads `red` as the member, `hello` as written, and `int | str` reads the token `5` as the number it builds.
-  `Any` and a base with untagged subclasses read as written, as do a value the type refuses, a pending op's items and an expression yet to resolve.
+  `Any` and a base with untagged subclasses read as written, as do a value the type refuses and a pending op's items.
   A dict whose class key names a registered leaf reads as the leaf construction builds from it, wherever construction takes the tag — at the leaf, a struct it subclasses, a union, an `Any` or a Callable — so `{class: pkg.Point, x: 3}` reads as `"3"` does (BUG-283); [a tagged leaf reads as the leaf it builds](#a-tagged-leaf-reads-as-the-leaf-it-builds) says where it does not.
   It applies to every read, a source's value, an earlier expression's result and each leaf of a subtree alike, so an expression never sees one leaf as text and another as the object.
-- **A value is pending by its position, never by its text.**
-  `resolve_expressions` hands the reader the positions whose expression has yet to resolve (`_Namespace.pending`), which read as written; every other value has resolved, so `$${HOME}`, resolved to the literal `${HOME}`, reads as `Path('${HOME}')` at a `Path` field, as construction builds it, and so does the same text an expression computes (BUG-310).
-  A read meets a pending position where the dependency graph did not order it: a subscript indexing its base (`${m[0]}` on an integer key, [spelling a path](#spelling-a-path)) reads the base whole, the reading expression itself included, and no coercer or constructor runs on that text.
+- **Every value a read reaches has resolved.**
+  The dependency graph orders before a read every expression it reaches ([a reference reads everything its path reaches](resolution.md#a-reference-reads-everything-its-path-reaches)), and a subscript indexes no base the graph did not order ([spelling a path](#spelling-a-path)), so text spelling `${...}` that a read meets is the literal an escape resolves to: `$${HOME}`, resolved to the literal `${HOME}`, reads as `Path('${HOME}')` at a `Path` field, as construction builds it, and so does the same text an expression computes (BUG-310).
   `contains_expression`, the predicate of every gate before `build()` ([deferral rule](deferral-rule.md#deferral-rule)), matches the literal as well as the expression, so it cannot tell them apart once resolution has started; until BUG-310 the reader asked it, and read every literal as text.
+  BUG-310 told an expression yet to resolve by its position, from the set of positions resolution had still to write, because a subscript indexing its base read the base whole, pending expressions included; once that read reached its own position (BUG-311), no read met the set any more, and it went.
 - **The writer** (`_serialize.written_form`) gives what an expression leaves behind — a pure result, an interpolated piece, a computed subscript key — in the form `dump()` writes: an `Enum` member's value, a registered type's serializer.
   `resolve()` rewrites only what expressions produced, so a source's `RED` comes out as `RED`.
 - **Without them**, `resolve_expressions` reads and writes values as they are: the engine knows no type ([resolution](resolution.md#resolution-algorithm)).
@@ -56,10 +56,12 @@ The reader (`_typed_read._read_tagged_leaf`) reads such a dict as what `construc
 - **What an expression leaves is the dump form**, as for any typed leaf: a pure `${origin}` leaves `'3'`, which an `Any` holds as text; the tagged spelling no longer escapes that cost.
   Rejected: writing back the tagged dict a leaf was read from, which needs the reader to hand the writer its source spelling, and writes one object two ways.
 - **A dict construction refuses reads as written**, the constructor's own exception included, for construction to raise.
-- **A dict holding what is yet to be computed reads as written**: an expression yet to resolve, told by its position, or a `call:` or `bind:` at any depth below the tag (`_typed_read._computes`).
-  The literal an escape resolves to is a field's text, so `{class: pkg.Note, text: $${n}}` reads as the `Note('${n}')` it builds (BUG-310).
+- **A dict holding what is yet to be computed reads as written**: a `call:` or `bind:` at any depth below the tag (`_typed_read._computes`).
+  An expression below the tag has resolved before the read, so the literal an escape resolves to is a field's text: `{class: pkg.Note, text: $${n}}` reads as the `Note('${n}')` it builds (BUG-310).
   An expression cannot read a call's result before construction ([calls and expressions share one graph](resolution.md#calls-and-expressions-share-one-graph)), and reading through construction would run the call once more per read; FEAT-35 lifts both together.
 - **A field below the tag** reads as the member the tagged dict holds: `${origin.x}` is the built `origin.x`.
+- **A subscript below the tag is a key of the dict** (`${pair[0]}`), missing as any key the dict lacks, never an index into the leaf it builds: no subscript of a dict answers what the walk missed ([spelling a path](#spelling-a-path)), and indexing the leaf would read the dict whole, before an expression below the tag that the reference's dependencies never named had resolved, so the result hung on key order (BUG-311).
+  The spelling that holds no dict, `pair: "1,2"`, is indexed as its leaf ([limitations](../limitations.md#expressions)).
 
 Until BUG-283 the reader walked every dict as a struct's fields before asking its type, so a tagged leaf interpolated as its dict's text and refused a whole-value reference into a `str` field, while the same leaf written as `"3"` read as `Point(x=3)`.
 
@@ -117,10 +119,33 @@ Evaluation knows the key, and reads it as the segment its constant spelling woul
 Evaluation asks `_attribute_chain` with its namespace, and the dependency graph without, so the two differ only in what syntax alone cannot know.
 A key that spells no segment (a bool, a float) is Python's subscript alone.
 
-Evaluation reads the path first and falls back on Python's subscript only when the path is missing (`_eval_path_or`): that is what lets `${name[0]}` index a string, and keeps a dict with a non-string key (`{0: x}`, which a caller's data or a YAML `!!int` tag can produce) reachable as `${m[0]}`.
+Evaluation reads the path first and falls back on Python's subscript only where the walk stops at a value that is no dict or list (`_eval_path_or`): that is what lets `${name[0]}` index a string, and a value read as an object be indexed.
 A dot falls back the same way, as the subscript of the name it spells, so `${svc[k].host}` reads what `${svc[k]['host']}` reads; it never reaches a Python attribute ([safety model](safety-model.md#a-dot-reads-a-key-never-an-attribute)).
-The path model's segments are strings, as everywhere else in `dictexpr`, so `${m[0]}` reads a key `"0"` before an integer key `0`.
-When the fallback fails too, the path's own miss is reported — `Field 'svc.nope' not found`, or `index 5 out of range` — rather than a `KeyError`.
+A walk that misses inside a dict or a list reports its miss — `Field 'svc.nope' not found`, or `index 5 out of range` — rather than a `KeyError`, and indexes nothing: the walk answers every key their subscript does (next paragraph), and the base read whole would hold expressions the reference's dependencies never named (BUG-311).
+The miss is named at the segment that missed, so `${a.nope.x}` reports `a.nope`; when the fallback fails too, the path's own miss is reported the same way.
+
+**An integer key is reached by its digits** (BUG-311).
+A dict key no string spells — `{0: x}`, which a caller's data or a YAML `!!int` tag can produce — is reached by a segment spelling that integer (`_list_index`) where the dict holds no key that is the text itself: `${m[0]}`, `${m['0']}`, and `${m[k]}` with `k` either `0` or `'0'`, all read it, as `${xs['1']}` reads a list element.
+The path model's segments stay strings, as everywhere else in `dictexpr` and on every channel: a flag, an env var and a file all write a `dict[int, …]` key as its text.
+`_step`, the one walk, reaches the key, so the dependency graph names the position the scan names (`m.0` as `("m", 0)`) and the reference waits for exactly the expressions it reads; `key(m[0])`, a node anchor (`${.[0]}`) and the root (`${::[0]}`, which no fallback could index) reach it the same way.
+A key equal to the integer is reached as Python's subscript reaches it, so `${m[1]}` reads a key `True` or `1.0`, as the fallback did.
+
+A dict holding both the text and such a key is refused, whichever way the segment is spelled: `Field 'm.0' is ambiguous: '0' could be either the key '0' or the key 0`.
+The segment could name either entry, and construction keeps only one of them under a `dict[int, …]`, so no answer would be the built value.
+A position the scan names is its key exactly, so an expression held under the key `'0'` of such a dict still resolves: only what an expression spells is refused (`_step`'s `spelled`).
+
+Until BUG-124 a position was a dotted string, so `m.0` named the integer key and the text one alike.
+Holding positions as tuples named the integer key `0` while a reference spelled the text `'0'`, which the reference then reached only through the subscript fallback, reading `m` whole before the expressions in it resolved: `${a[0].p}` read a sibling's `${x}` as its text or as `1` by key order alone (BUG-311; BUG-125 made the dot fall back the same way).
+Precedent: OmegaConf's interpolation segments are text too, `${m.0}` reaches an integer key `0`, and it refuses a dict holding both `'0'` and `0` when the configuration is created; jq and JSON Pointer have text keys only.
+
+Rejected, for BUG-311:
+
+- **Waiting for the whole base a fallback reads**: a reference whose path misses would wait for every expression below where its walk stopped.
+  `${a[0].p}` inside `a` would be a cycle, two such references in one dict a false one (`q` waiting on `s`, `s` on `q`), and a typo inside its own struct (`${.name}`) a `CircularReferenceError` in place of `Field 'svc.name' not found`.
+- **Typed segments**, `[0]` the integer key and `['0']` the text one (maintainer-chosen against).
+  Every text channel writes a `dict[int, …]` key as text, so `${m[0]}` would miss whatever a file or a flag set and the spelling would depend on the channel; positions would also turn `str | int | ListOp` across the scan, the write-back, the typed reader and the typed merge's walk, which the CLI shares.
+- **The text key first**, as before: `${m[0]}` read `'0'` of a dict holding both while construction kept whichever came last, and no path reached the integer key.
+- **Only a key of type `int`**: `${m[1]}` would stop reaching `True` and `1.0`, which the fallback reached.
 
 Some nodes spell no path at all: a base not rooted at a name (`${(a if c else b)['x']}`), or a key that is no segment (`${m[flag]}` with `flag: false`).
 Their miss has no field to name, so it stays an `ExpressionEvalError`, worded the way a path's detail is: `Error in expression "${(a if c else b)['x']}": key 'x' not found`, or `index 5 out of range` (BUG-134).
@@ -136,7 +161,7 @@ Path-first is also the order an attribute already used.
 
 Rejected, for a computed key (BUG-128): **Python's subscript first, the path only to word its miss.**
 Before BUG-128 `${svc[k]}` was Python's subscript alone and its miss surfaced as an `ExpressionEvalError` quoting the bare `KeyError` (`'nope'`), so the error a caller caught depended on how the key was spelled.
-Keeping that order and naming the path only on a miss would still give one segment two answers: with `k: 0`, `${m[k]}` read the integer key of `{"0": a, 0: b}` while `${m[0]}` reads the string one, and `${xs[k]}` with `k: "1"` failed on an element `${xs['1']}` reads — a miss reported as `Field 'xs.1' not found` on a path that exists.
+Keeping that order and naming the path only on a miss would still give one segment two answers: with `k: 0`, `${m[k]}` read the integer key of `{"0": a, 0: b}` while `${m[0]}` read the string one, and `${xs[k]}` with `k: "1"` failed on an element `${xs['1']}` reads — a miss reported as `Field 'xs.1' not found` on a path that exists.
 Precedents give a key one meaning however it is written: jq's `.[$k]` is `.["web"]` once `$k` is `"web"`, JavaScript's `a[k]` is `a["web"]`, and Jinja2's `StrictUndefined` raises the same `UndefinedError` for `foo[k]` as for `foo.bar`.
 
 ## A position is a sequence of segments

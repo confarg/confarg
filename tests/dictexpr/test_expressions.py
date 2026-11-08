@@ -1487,7 +1487,7 @@ class TestComputedSubscriptPaths:
     @pytest.mark.parametrize(
         ("data", "key", "constant", "computed"),
         [
-            pytest.param({"m": {"0": "s", 0: "i"}}, 0, "m[0]", "m[k]", id="digit-string-key-first"),
+            pytest.param({"m": {0: "i"}}, "0", "m[0]", "m[k]", id="integer-key-by-its-digits"),
             pytest.param({"xs": ["a", "b"]}, "1", "xs['1']", "xs[k]", id="digit-string-index"),
         ],
     )
@@ -2070,6 +2070,87 @@ class TestAListIndexHasOneSpelling:
         """The relative spelling walks the same step."""
         with pytest.raises(MissingReferenceError, match=r"'\+1' is not a valid index"):
             resolve_expressions({"xs": ["a", "b"], "c": {"v": "${..xs['+1']}"}})
+
+
+class TestAnIntegerKeyIsReachedByItsDigits:
+    """A segment spelling an integer reaches a dict key equal to it where no text key is spelled so (BUG-311).
+
+    The one walk reaches it, so the dependency graph names the position the scan names and the
+    reference waits for exactly the expressions it reads, never for a base read whole.
+    """
+
+    @pytest.mark.parametrize(
+        ("data", "path", "expected"),
+        [
+            pytest.param({"x": 1, "a": {0: {"q": "${a[0].p}", "p": "${x}"}}}, ("a", 0, "q"), 1, id="sibling-after"),
+            pytest.param({"q": "${a[0].p}", "x": 1, "a": {0: {"p": "${x}"}}}, ("q",), 1, id="from-outside"),
+            pytest.param({"x": 1, "m": {1: "${m[0]}", 0: "${x}"}}, ("m", 1), 1, id="inside-the-base"),
+            pytest.param({"x": 1, "m": {1: "${.[0]}", 0: "${x}"}}, ("m", 1), 1, id="node-anchor"),
+            pytest.param({"q": "${::[0]}", 0: "${x}", "x": 1}, ("q",), 1, id="root-key"),
+            pytest.param({"q": "${m[0].upper()}", "m": {0: "${t}"}, "t": "ab"}, ("q",), "AB", id="method-receiver"),
+            pytest.param({"q": "${m[-1]}", "x": 1, "m": {-1: "${x}"}}, ("q",), 1, id="negative-key"),
+            pytest.param({"q": "${m[1]}", "m": {True: "${x}"}, "x": 1}, ("q",), 1, id="bool-key"),
+            pytest.param({"q": "${m[1]}", "m": {1.0: "${x}"}, "x": 1}, ("q",), 1, id="float-key"),
+            pytest.param({"q": "${m['0']}", "m": {0: "${x}"}, "x": 1}, ("q",), 1, id="string-subscript"),
+            pytest.param({"k": "0", "q": "${m[k]}", "m": {0: "${x}"}, "x": 1}, ("q",), 1, id="computed-text"),
+            pytest.param({"q": "${key(a[0].p)}", "a": {0: {"p": 1}}}, ("q",), "p", id="key-through-it"),
+        ],
+    )
+    def test_the_reference_reads_the_resolved_value(
+        self, data: MergeDict, path: tuple[Any, ...], expected: object
+    ) -> None:
+        """Whatever the order of the keys, the expression the reference reads has resolved first."""
+        node: Any = resolve_expressions(data)
+        for segment in path:
+            node = node[segment]
+        assert node == expected
+
+    def test_a_reference_to_an_ancestor_through_it_is_a_cycle(self) -> None:
+        """``m[0]`` holds ``m[0].b`` itself, as ``svc`` holds ``svc.a``."""
+        with pytest.raises(CircularReferenceError, match=r"m\.0\.b"):
+            resolve_expressions({"m": {0: {"a": 1, "b": "${m[0]}"}}})
+
+    @pytest.mark.parametrize(
+        ("m", "expr", "keys"),
+        [
+            pytest.param({"0": "t", 0: "i"}, "${m[0]}", "'0' could be either the key '0' or the key 0", id="int"),
+            pytest.param({0: "i", "0": "t"}, "${m['0']}", "'0' could be either the key '0' or the key 0", id="text"),
+            pytest.param(
+                {"1": "t", True: "b"}, "${m[1]}", "'1' could be either the key '1' or the key True", id="bool"
+            ),
+            pytest.param({"0": "t", 0: "i"}, "${key(m[0])}", "'0' could be either the key '0' or the key 0", id="key"),
+            pytest.param({"0": "t", 0: "i"}, "${m[k]}", "'0' could be either the key '0' or the key 0", id="computed"),
+        ],
+    )
+    def test_a_dict_holding_both_spellings_is_ambiguous(self, m: dict, expr: str, keys: str) -> None:
+        """A segment that could name either entry reads neither, whichever way it is spelled."""
+        message = rf"Field 'm\.(0|1)' is ambiguous: {re.escape(keys)}$"
+        with pytest.raises(MissingReferenceError, match=message):
+            resolve_expressions({"m": m, "k": 0, "q": expr})
+
+    def test_a_text_key_spelled_so_is_still_read(self) -> None:
+        """Only a key no text spells is reached by its digits."""
+        assert resolve_expressions({"m": {"0": "t", 1: "i"}, "q": "${m[0]}"})["q"] == "t"
+
+    @pytest.mark.parametrize("key", [date(2020, 1, 1), (1, 2), None], ids=["date", "tuple", "none"])
+    def test_a_key_no_text_spells_is_walked_past(self, key: object) -> None:
+        """A key that is no text spells no index, so the walk reaches what it holds."""
+        resolved = resolve_expressions({"x": 1, "m": {key: {"a": "${x}"}}, "q": "${m}"})
+        assert resolved["m"][key] == {"a": 1}
+        assert resolved["q"] == {key: {"a": 1}}
+
+    @pytest.mark.parametrize("expr", ["${a.nope}", "${a['nope']}", "${a.p.x}", "${xs[5]}", "${a[0]}"])
+    def test_a_miss_inside_a_container_reads_no_base(self, expr: str) -> None:
+        """No subscript of a dict or a list answers what the walk did not, so the base is never read whole."""
+        seen: list[tuple[Any, ...]] = []
+
+        def read(_data: MergeDict, path: Any, value: Any) -> Any:
+            seen.append(tuple(path))
+            return value
+
+        with pytest.raises(MissingReferenceError, match="not found"):
+            resolve_expressions({"q": expr, "a": {"p": {"y": "${y}"}}, "xs": ["${y}"], "y": 1}, read=read)
+        assert seen == []
 
 
 class TestAMissOffAValueNoPathNames:

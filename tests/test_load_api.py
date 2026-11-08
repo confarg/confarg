@@ -443,11 +443,11 @@ class TestAnExpressionReadsATypedLeaf:
         built = confarg.build(_Typed, {**raw, "out": f"${{{key} / 'y'}}", "same": f"${{{key} == literal}}"})
         assert (built.out, built.same) == ("${HOME}/y", True)
 
-    def test_a_pending_expression_reads_as_written(self, leaf_registry: None) -> None:
-        """A read that indexes its base holds the reading expression itself, which no coercion meets (BUG-310).
+    def test_an_integer_key_reads_its_own_position(self, leaf_registry: None) -> None:
+        """``${ranks[0]}`` reads the leaf at ``ranks.0``, never ``ranks`` with ``alias`` unresolved (BUG-310, BUG-311).
 
-        ``ranks.0`` spells no key of the data, so ``${ranks[0]}`` indexes ``ranks`` read whole,
-        ``alias`` included while it resolves: its text reaches no coercion, which would fail on it.
+        The integer key is reached by its digits, so the reading coerces the one leaf there; the
+        coercion fails on any other text, the expression ``alias`` holds included.
         """
         confarg.register_leaf_type(_Rank, lambda v: _RANKS[v], serialize=lambda _: "low")
         built = confarg.build(_Ranked, {"ranks": {0: "low", "alias": "${ranks[0]}"}})
@@ -522,6 +522,17 @@ class _Note:
         _NOTES_BUILT.append(self.text)
 
 
+@dataclasses.dataclass
+class _Pair:
+    """A registered leaf an expression can index, built from ``"a,b"`` or, under a class key, from its fields."""
+
+    a: int = 0
+    b: int = 0
+
+    def __getitem__(self, index: int) -> int:
+        return (self.a, self.b)[index]
+
+
 _SPOT_CALLS: list[int] = []
 
 
@@ -545,6 +556,7 @@ class _Tagged:
     positive: _Positive | None = None
     note: _Note | None = None
     notes: dict[int | str, _Note] = dataclasses.field(default_factory=dict)
+    pair: _Pair | None = None
     out: Any = None
     label: str = ""
     same: bool = False
@@ -630,11 +642,11 @@ class TestAnExpressionReadsATaggedLeaf:
         built = confarg.build(_Tagged, {"note": _tag(_Note, text="$${n}"), "label": "at ${note}"})
         assert (built.note, built.label) == (_Note("${n}"), "at ${n}")
 
-    def test_a_tagged_leaf_holding_a_pending_expression_reads_as_written(self) -> None:
-        """The reading builds no leaf from an expression yet to resolve, which a read indexing its base meets (BUG-310).
+    def test_a_tagged_leaf_holding_an_expression_builds_once_it_resolved(self) -> None:
+        """The reading builds no leaf from an expression yet to resolve (BUG-310, BUG-311).
 
-        ``notes.0`` spells no key of the data, so ``${notes[0]}`` indexes ``notes`` read whole,
-        ``t`` included while the expression it holds resolves.
+        ``${notes[0]}`` reads ``notes.0`` alone, so ``t`` is read once the expression it holds
+        resolved, and no note is built from the text ``${notes[0]}``.
         """
         _NOTES_BUILT.clear()
         built = confarg.build(_Tagged, {"notes": {0: "a", "t": _tag(_Note, text="${notes[0]}")}})
@@ -645,6 +657,20 @@ class TestAnExpressionReadsATaggedLeaf:
         """A class key at a Callable builds the registered leaf it names, which the reference reads."""
         built = confarg.build(_Tagged, {"dial": _tag(_Dial, x=3), "label": "at ${dial}"})
         assert (built.dial, built.label) == (_Dial(3), "at 3")
+
+    @pytest.mark.parametrize("first", ["reference", "leaf"])
+    def test_a_subscript_below_the_tag_is_a_field_of_the_dict(self, first: str) -> None:
+        """``${pair[0]}`` misses in the tagged dict whatever the order, never indexing the leaf it builds (BUG-311).
+
+        The subscript is a path below the tag, as ``${origin.x}`` is, and no dict answers what
+        the walk did not: the leaf is indexed only from the spelling that holds no dict.
+        """
+        confarg.register_leaf_type(_Pair, lambda v: _Pair(*map(int, v.split(","))), serialize=lambda p: f"{p.a},{p.b}")
+        leaf = {"pair": _tag(_Pair, a="${anything}", b=2), "anything": 1}
+        raw = {"out": "${pair[0]}", **leaf} if first == "reference" else {**leaf, "out": "${pair[0]}"}
+        with pytest.raises(confarg.exceptions.MissingReferenceError, match=r"Field 'pair\.0' not found"):
+            confarg.build(_Tagged, raw)
+        assert confarg.build(_Tagged, {"pair": "1,2", "out": "${pair[0]}"}).out == 1
 
 
 @dataclasses.dataclass

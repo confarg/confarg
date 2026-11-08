@@ -1219,6 +1219,11 @@ class MissingReferenceError(ConfargError):
         return cls(f"{base}: {detail}") if detail is not None else cls(f"{base} in configuration")
 
     @classmethod
+    def ambiguous_key(cls, path: str, text: str, other: object) -> MissingReferenceError:
+        """Return an error for a segment spelling both the key *text* and the key *other*, equal to its integer."""
+        return cls(f"Field '{path}' is ambiguous: '{text}' could be either the key {text!r} or the key {other!r}")
+
+    @classmethod
     def uncalled(cls, path: str, kind: str, name: str, callee: str) -> MissingReferenceError:
         """Return an error for a missing field spelled like a whitelisted *kind* named without a call.
 
