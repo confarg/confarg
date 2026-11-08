@@ -59,7 +59,7 @@ Open the topics that match the code you are touching; the reading guide maps sou
 | `_parse_cli.py`, `_cast.py` | [CLI parsing](cli-parsing/README.md) |
 | `cli/**` | [CLI adapters](cli-adapters/README.md), and [CLI parsing](cli-parsing/README.md) |
 | `_types.py`, `typedload/**`, `_serialize.py`, `_import.py` | [types](types/README.md) |
-| `_callable.py`, anything `Callable`-typed | [callables](callables.md) |
+| `_callable.py`, `_conformance.py`, anything `Callable`-typed | [callables](callables.md) |
 | `dictexpr/**`, any value gate that runs before `build()` | [expressions](expressions/README.md) |
 | anything mentioning `locals` / `_locals` | [locals](locals.md) |
 | a new feature or public behavior | [design decisions](design-decisions/README.md), [limitations](limitations.md), and the boards in [../todo/](../todo/README.md) |
@@ -103,6 +103,7 @@ confarg/
 │   type machinery
 ├── _types.py          type introspection; _StrToken, _UnionSeqToken, _Pinned
 ├── _callable.py       Callable specs (bind/call/class/classfn), serialization of callables
+├── _conformance.py    whether a callable can be called as a signature calls it
 ├── _import.py         dotted-path import with builtins fallback
 ├── _serialize.py      typed object → dict (inverse of construction)
 ├── typedload/         resolved dict → typed object; leaf coercion and registry

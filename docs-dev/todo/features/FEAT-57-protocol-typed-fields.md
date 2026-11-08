@@ -19,7 +19,7 @@ effort: L  # crosses every channel and front-end, and records two design decisio
 risk: high  # the tag, construction, the type walk and the dump all change their answer at once
 impact: config  # a @runtime_checkable Protocol's class tag naming a class whose method cannot be called as declared stops loading
 severity: major  # a Protocol-typed field crashes with a raw TypeError; making it @runtime_checkable is a partial workaround
-blocked_by: [BUG-291, BUG-293, BUG-294, BUG-295, BUG-296]  # each introduces a predicate or a refusal the Protocol branch goes into
+blocked_by: [BUG-293, BUG-294, BUG-295, BUG-296]  # each introduces a predicate or a refusal the Protocol branch goes into
 ---
 
 # FEAT-57 — Protocol-typed fields

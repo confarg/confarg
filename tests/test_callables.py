@@ -16,7 +16,7 @@ import sys
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Concatenate, Literal, Unpack
 
 import pytest
 
@@ -29,7 +29,7 @@ from confarg._callable import (
     _serialize_callable,
     _SpecContext,
 )
-from confarg._types import _callable_param_types, _is_callable, _StrToken
+from confarg._types import _expected_call_signature, _is_callable, _StrToken
 from confarg.exceptions import ConfargError, SymbolImportError, TypeCoercionError
 from confarg.typedload._construct import construct
 
@@ -175,6 +175,26 @@ _impostor.__qualname__ = "_double"
 def _bad_factory(x: int) -> int:
     """Factory that returns a non-callable (used to test error path)."""
     return x * 2
+
+
+def _optional_x(x: int = 0) -> int:
+    """A function a ``Callable[[int], int]`` can call, its one parameter optional."""
+    return x
+
+
+def _kw_only(*, x: int) -> int:
+    """A function no ``Callable[[int], int]`` can call, its one parameter keyword-only."""
+    return x
+
+
+def _pfx(x: int, y: str) -> int:
+    """A function taking an int first, then a parameter a ParamSpec may supply."""
+    return x
+
+
+def _nullary() -> int:
+    """A function taking no argument."""
+    return 0
 
 
 class _InitBind:
@@ -341,6 +361,28 @@ class WithCallable:
 
 
 @dataclass
+class WithConcatenate:
+    """Target dataclass with a Callable field whose parameters are an int, then anything."""
+
+    fn: Callable[Concatenate[int, ...], int]
+
+
+@dataclass
+class WithParamSpec[**P]:
+    """Target dataclass with a Callable field whose parameters are a ParamSpec's."""
+
+    fn: Callable[P, int]
+
+
+def _paramspec_signatures[**P]() -> tuple[inspect.Signature | None, ...]:
+    """Return the expected signatures of the Callables spelled with a ParamSpec, *P* unbound."""
+    return (
+        _expected_call_signature(Callable[P, int]),
+        _expected_call_signature(Callable[Concatenate[int, str, P], int]),
+    )
+
+
+@dataclass
 class WithBareCallable:
     """Target dataclass with a bare (unparameterized) Callable field."""
 
@@ -405,21 +447,40 @@ class TestIsCallable:
 class TestCallableParamReturn:
     """Tests for callable parameter and return type inspection helpers."""
 
-    def test_param_types(self) -> None:
-        """Test extraction of parameter types from a parameterized Callable."""
-        assert _callable_param_types(Callable[[int, str], float]) == [int, str]
+    def test_expected_signature(self) -> None:
+        """A parameterized Callable calls its value with one positional-only argument per parameter type."""
+        assert str(_expected_call_signature(Callable[[int, str], float])) == "(_0, _1, /)"
 
-    def test_param_types_empty(self) -> None:
-        """Callable[[], T] returns an empty parameter list."""
-        assert _callable_param_types(Callable[[], int]) == []
+    def test_expected_signature_empty(self) -> None:
+        """Callable[[], T] calls its value with no argument."""
+        assert str(_expected_call_signature(Callable[[], int])) == "()"
 
-    def test_param_types_bare(self) -> None:
-        """Bare Callable returns None for parameter types."""
-        assert _callable_param_types(Callable) is None
+    def test_expected_signature_bare(self) -> None:
+        """Bare Callable checks no call."""
+        assert _expected_call_signature(Callable) is None
 
-    def test_param_types_ellipsis(self) -> None:
-        """Callable[..., T] returns None for parameter types."""
-        assert _callable_param_types(Callable[..., int]) is None
+    def test_expected_signature_ellipsis(self) -> None:
+        """Callable[..., T] checks no call."""
+        assert _expected_call_signature(Callable[..., int]) is None
+
+    def test_expected_signature_paramspec(self) -> None:
+        """Callable[P, T] checks no call, the ParamSpec standing for any parameters."""
+        assert _paramspec_signatures()[0] is None
+
+    def test_expected_signature_concatenate(self) -> None:
+        """Concatenate's prefix is positional-only, then an unannotated pair leaves the rest open."""
+        assert str(_paramspec_signatures()[1]) == "(_0, _1, /, *args, **kwargs)"
+        assert str(_expected_call_signature(Callable[Concatenate[int, ...], int])) == "(_0, /, *args, **kwargs)"
+
+    def test_expected_signature_unpacked_tuple(self) -> None:
+        """An unpacked fixed tuple is spliced in, a variadic one is a ``*args``."""
+        assert str(_expected_call_signature(Callable[[int, *tuple[str, bytes]], int])) == "(_0, _1, _2, /)"
+        assert str(_expected_call_signature(Callable[[int, *tuple[str, ...]], int])) == "(_0, /, *args)"
+        assert str(_expected_call_signature(Callable[[int, Unpack[tuple[str, ...]]], int])) == "(_0, /, *args)"
+
+    def test_expected_signature_not_callable(self) -> None:
+        """A type that is no Callable checks no call."""
+        assert _expected_call_signature(int) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1109,7 +1170,7 @@ class TestSignatureChecking:
 
     def test_incompatible_param_count_raises(self) -> None:
         """A function with wrong param count raises TypeCoercionError."""
-        with pytest.raises(TypeCoercionError, match="2 parameter"):
+        with pytest.raises(TypeCoercionError, match="argument 2 is passed by position, and no parameter takes it"):
             _check_callable_signature(_double, Callable[[int, int], int], "field")
 
     def test_bare_callable_no_check(self) -> None:
@@ -1137,7 +1198,7 @@ class TestSignatureChecking:
     def test_partial_wrong_count_raises(self) -> None:
         """Partial with wrong remaining param count raises TypeCoercionError."""
         p = functools.partial(_add, y=1)
-        with pytest.raises(TypeCoercionError, match="expects 2 parameter"):
+        with pytest.raises(TypeCoercionError, match="argument 2 is passed by position, and no parameter takes it"):
             _check_callable_signature(p, Callable[[int, int], int], "field")
 
     def test_signature_check_via_load(self) -> None:
@@ -1148,6 +1209,32 @@ class TestSignatureChecking:
                 argv=["--fn", f"{_MOD}._add"],
                 env={},
             )
+
+    def test_optional_parameter_takes_the_declared_one(self) -> None:
+        """A function whose one parameter is optional is a ``Callable[[int], int]`` (BUG-291)."""
+        assert confarg.build(WithCallable, {"fn": f"{_MOD}._optional_x"}).fn is _optional_x
+
+    def test_keyword_only_parameter_is_refused(self) -> None:
+        """A function whose one parameter is keyword-only is no ``Callable[[int], int]`` (BUG-291)."""
+        with pytest.raises(TypeCoercionError) as excinfo:
+            confarg.build(WithCallable, {"fn": f"{_MOD}._kw_only"})
+        assert str(excinfo.value) == (
+            "Callable at 'fn': _kw_only cannot be called as Callable[[int], int] calls it:"
+            " argument 1 is passed by position, and no parameter takes it ('x' is keyword-only)."
+        )
+
+    def test_concatenate_leaves_the_rest_open(self) -> None:
+        """``Concatenate[int, ...]`` checks its int prefix and takes any further parameter (BUG-291)."""
+        assert confarg.build(WithConcatenate, {"fn": f"{_MOD}._pfx"}).fn is _pfx
+        with pytest.raises(TypeCoercionError, match="argument 1 is passed by position, and no parameter takes it"):
+            confarg.build(WithConcatenate, {"fn": f"{_MOD}._nullary"})
+
+    def test_paramspec_checks_its_binding(self) -> None:
+        """A Callable whose parameters are a ParamSpec's checks what the ParamSpec binds, nothing when unbound."""
+        assert confarg.build(WithParamSpec, {"fn": f"{_MOD}._pfx"}).fn is _pfx
+        assert confarg.build(WithParamSpec[[int, str]], {"fn": f"{_MOD}._pfx"}).fn is _pfx
+        with pytest.raises(TypeCoercionError, match="parameter 'y' is required, and the call never passes it"):
+            confarg.build(WithParamSpec[[int]], {"fn": f"{_MOD}._pfx"})
 
 
 # ---------------------------------------------------------------------------

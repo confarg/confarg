@@ -1,6 +1,6 @@
 # Plan — Protocol-typed fields
 
-**Drafted:** 2026-10-26 · **Status:** approved · **Tickets:** [BUG-291](../bugs/BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md), [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [BUG-294](../bugs/BUG-294-the-dump-writes-a-class-its-type-field-does-not-admit.md), [BUG-295](../bugs/BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md), [BUG-296](../bugs/BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md), [FEAT-57](../features/FEAT-57-protocol-typed-fields.md), [FEAT-2](../features/FEAT-2-a-callback-protocol-reads-as-a-callable.md), [BUG-300](../bugs/BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) · **Amended:** 2026-10-28, after FEAT-59's design: members looked up in the `__mro__`, never on the metaclass, and a tag naming a class two Protocol variants admit (BUG-300); 2026-10-26, after a third review: a Protocol class refused in `construct_named_class` (BUG-296), the dump of a conforming non-struct value, the effective member map, abstract and coroutine members, `Concatenate`; after a second review: trivial inherited bodies, a tag-demanding variant left out of the untagged union match (BUG-295), the `type[X]` dump (BUG-294), `_is_callable` for FEAT-2, the non-struct conformer; and after a first review: a Protocol class refused at the tag, `_unproducible_return` and the synthetic constructor rewired, the member shapes settled, BUG-293 moved before FEAT-57's third step
+**Drafted:** 2026-10-26 · **Status:** approved · **Tickets:** [BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md), [BUG-294](../bugs/BUG-294-the-dump-writes-a-class-its-type-field-does-not-admit.md), [BUG-295](../bugs/BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md), [BUG-296](../bugs/BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md), [FEAT-57](../features/FEAT-57-protocol-typed-fields.md), [FEAT-2](../features/FEAT-2-a-callback-protocol-reads-as-a-callable.md), [BUG-300](../bugs/BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) · **Amended:** 2026-10-28, BUG-291 landed: the call-shape rule moved to the callables note, an unannotated or `Any` `*args, **kwargs` pair reading as `...`; 2026-10-28, after FEAT-59's design: members looked up in the `__mro__`, never on the metaclass, and a tag naming a class two Protocol variants admit (BUG-300); 2026-10-26, after a third review: a Protocol class refused in `construct_named_class` (BUG-296), the dump of a conforming non-struct value, the effective member map, abstract and coroutine members, `Concatenate`; after a second review: trivial inherited bodies, a tag-demanding variant left out of the untagged union match (BUG-295), the `type[X]` dump (BUG-294), `_is_callable` for FEAT-2, the non-struct conformer; and after a first review: a Protocol class refused at the tag, `_unproducible_return` and the synthetic constructor rewired, the member shapes settled, BUG-293 moved before FEAT-57's third step
 
 A field annotated with a `typing.Protocol` has no story today, and most of what reaches one crashes with a raw `TypeError`: every site that asks "is this class one the annotation accepts?" calls `issubclass` or `isinstance`, which Python refuses for a Protocol that is not `@runtime_checkable`.
 Where nothing calls them, a Protocol reads as a plain class whose fields are `typing.Protocol.__init__`'s `*args, **kwargs`.
@@ -178,22 +178,13 @@ Rejected: **refusing a method wherever a data member is declared**, which refuse
 
 ### One call-shape checker serves Protocol methods and `Callable[[...], R]`
 
-The shape check is the typing specification's assignability rule for callables with the types left out ([typing spec, callables](https://typing.python.org/en/latest/spec/callables.html)): every way the expected signature can be called must be a way the implementation can be called.
-`Callable[[A, B], R]` is the expected signature `(a, b, /)`; `Callable[..., R]` and a bare `Callable` check nothing.
-The existing `_callable._check_callable_signature` counts required parameters with `!=`, and is wrong both ways ([BUG-291](../bugs/BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md)): it refuses `def f(x: int = 0)` and accepts `def f(*, x: int)` under `Callable[[int], int]`, the opposite of `ty`.
-The new checker replaces it, so BUG-291 lands first and FEAT-57 reuses it.
+The shape check landed with BUG-291, as `_conformance.call_conforms`, and its rule, its rejected alternatives and its precedents are in [callables](../../architecture/callables.md#a-callable-is-checked-by-its-call-shape): the typing specification's assignability rule for callables with the types left out, where an expected `*args, **kwargs` pair, each unannotated or `Any`, stands for `...`.
+So a Protocol method declared `def greet(self, *args, **kwargs)` is implemented by any `greet`, as `ty` reads it (run), where jsonargparse refuses a `def greet(self)`; one declared `*args: int, **kwargs: int` needs both.
+The expected signature of a Protocol method is read with `inspect.signature(..., eval_str=True)`, falling back to the unevaluated one when a name does not resolve, so a string `Any` reads as `Any` where it can.
 
-For an expected signature E and an implementation I, both without their bound receiver:
+What FEAT-57 adds is the expected side of a method:
 
-- each positional parameter of E is taken at the same position by I, or by I's `*args`;
-- a positional-or-keyword parameter of E is also taken by name: I has a keyword-accepting parameter of that name, or `**kwargs`;
-- a keyword-only parameter of E is taken by name in I, or by `**kwargs`;
-- E's `*args` needs I's `*args`, E's `**kwargs` needs I's `**kwargs`;
-- a parameter optional in E is optional in I;
-- every parameter of I nothing in E fills is optional, or is I's `*args` or `**kwargs`.
-
-A callable whose signature `inspect` cannot read (a C function, a builtin) is accepted, as the current check skips it; a member that is not callable at all is refused before that.
-A Protocol method that is a `staticmethod` or a `classmethod` is compared without the receiver its implementation binds, as jsonargparse's `get_protocol_method_signature` does.
+- A Protocol method that is a `staticmethod` or a `classmethod` is compared without the receiver its implementation binds, as jsonargparse's `get_protocol_method_signature` does.
 
 Rejected: **a checker per feature**, keeping the Callable one beside a new Protocol one; the two answer the same question and the existing one already drifted from the typing rules.
 Precedent: jsonargparse uses one `protocol_params_match` for a Protocol's methods and for a function implementing a callback Protocol.
@@ -228,8 +219,7 @@ class Scorer(Protocol):
 A Protocol with any other member beside `__call__` stays struct-like: a function has no `label`.
 
 Two predicates move together for it, since `_KIND_ORDER` asks `STRUCT` before `CALLABLE`: `_is_plain_class` answers `False` for it, so `_is_struct_variant` does not claim it, and `_types._is_callable`, which today answers `get_origin(tp) is Callable` only, answers `True` for it; without the second, the type falls through to `LEAF`.
-The expected signature has one home, which replaces `_callable._callable_param_types`: it answers `(a, b, /)` for `Callable[[A, B], R]`, `__call__`'s signature without its receiver for a callback Protocol, and nothing for `Callable[..., R]`, so `_check_callable_signature` stays a thin caller of `call_conforms`.
-For `Callable[Concatenate[A, B, P], R]` it answers the prefix `(a, b, /)` and leaves the rest open, since the ParamSpec may supply any further parameter: today the count check reads `Concatenate[int, ...]` as one parameter, and refuses `def pfx(x: int, y: str)`, which ty accepts, naming `typing.Unpack[typing.Concatenate[int, ...]]` (run; BUG-291).
+The expected signature has one home, `_types._expected_call_signature`, which BUG-291 made answer `(a, b, /)` for `Callable[[A, B], R]`, `(a, b, /, *args, **kwargs)` for `Concatenate[A, B, P]`, and nothing for `Callable[..., R]`; FEAT-2 adds `__call__`'s signature without its receiver for a callback Protocol, so `_check_callable_signature` stays a thin caller of `call_conforms`.
 
 Rejected: **struct-like only**, which refuses a function that a type checker accepts, so the more precise annotation would be the harder one to configure; **out of scope**, leaving the crash.
 Precedent: jsonargparse's `function_implements_protocol` takes a function only when `get_protocol_members(origin) == ["__call__"]`; PEP 544 presents callback Protocols as `Callable`'s richer spelling.
@@ -298,7 +288,7 @@ It answers four questions, and nothing else in the package calls `isinstance` or
 |---|---|---|
 | is this class a Protocol? | `is_protocol(cls)` — `typing.is_protocol` from 3.13, `cls._is_protocol` on 3.12 | everything below |
 | which members must an implementer have, of which kind, and is it a callback Protocol? | `protocol_members(proto)` — the effective member map, name → method or data, built once per Protocol from `typing.get_protocol_members` (3.13+) or `proto.__protocol_attrs__` (3.12): a member is a method when the Protocol defines it as a function, `staticmethod` or `classmethod`; each member records whether its own definition is trivial or `@abstractmethod`, from the one `ast` read of the Protocol's source; the four ordering methods are marked; and the map says whether `__call__` is its only member | the two checks below; `_types._is_plain_class` and `_types._is_callable`, which both read the callback answer instead of deriving it |
-| can this implementation be called as that signature is? | `call_conforms(impl, expected)` | the class check; `_callable._check_callable_signature` (BUG-291); a callback Protocol's resolved value (FEAT-2) |
+| can this implementation be called as that signature is? | `call_conforms(impl, expected)`, landed with BUG-291 | the class check; `_callable._check_callable_signature`; a callback Protocol's resolved value (FEAT-2) |
 | does this class, or this instance, satisfy the Protocol? | `class_conforms(cls, proto)` — the methods, holding only the per-pair logic (where each member is found, the call-shape walk, the reason as data); `instance_conforms(value, proto)` — methods on its class, then data members with `hasattr` | `_types._tagged_struct`; `typedload._coerce._coerce_type_ref`; `_callable._unproducible_return` (a Callable whose declared return is a Protocol); `typedload._holding._variant_holds`, which the dump and construction both ask of a built instance (BUG-293); construction after a named class is built under a Protocol |
 
 Whether a class may be built at all is not `_conformance`'s question: `construct_named_class` refuses a Protocol class through `is_protocol`, as decided above ([BUG-296](../bugs/BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md)).
@@ -338,10 +328,7 @@ That is the non-disjoint case the table's order exists for ([shape dispatch](../
 
 ## Phases
 
-1. **[BUG-291](../bugs/BUG-291-a-callables-arity-check-refuses-an-optional-parameter-and-accepts-a-keyword-only-one.md)**: `_conformance.call_conforms`, and `_check_callable_signature` rewritten on it.
-   Test-first: both reproductions, then the rule's cases on both sides.
-   The implementation side: positional-only, `*args`, `**kwargs`, a partial's bound arguments, an uninspectable builtin, a non-callable.
-   The expected side, the half BUG-291 is about: `Callable[[], R]`, an expected keyword-only parameter, an expected default (what makes `LaxSig` conform), an expected `*args` and `**kwargs`.
+1. BUG-291, landed: `_conformance.call_conforms`, `_types._expected_call_signature`, and `_check_callable_signature` rewritten on them.
 2. **[BUG-293](../bugs/BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md)**, landed before FEAT-57's third step: its design pass made `_callable._accepts` and `_serialize._holds` one predicate, `_holds`, moved to `typedload/_holding.py` and asked by construction of every built instance ([its plan](a-calls-value-is-read-by-construction.md), after BUG-297 and FEAT-60), so FEAT-57 writes its Protocol branch once, in that predicate.
    FEAT-57 is `blocked_by` it for that reason.
    **[BUG-295](../bugs/BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md)** introduces `_demands_tag`, which FEAT-57's second step extends, **[BUG-294](../bugs/BUG-294-the-dump-writes-a-class-its-type-field-does-not-admit.md)** the `type[X]` dump check FEAT-57 reuses, and **[BUG-296](../bugs/BUG-296-a-class-opener-naming-a-protocol-is-refused-with-advice-no-key-can-follow.md)** the refusal of a Protocol class in `construct_named_class`; all three land first too.
@@ -354,7 +341,7 @@ That is the non-disjoint case the table's order exists for ([shape dispatch](../
    3. `instance_conforms`: the data-member check after construction, and the holding predicate BUG-293 left on it; a conforming non-struct value dumped as an `Any` node writes it, with its warning.
       No raw `TypeError` site is left.
    4. Generic Protocols.
-4. **[FEAT-2](../features/FEAT-2-a-callback-protocol-reads-as-a-callable.md)**: `_is_plain_class` refusing a callback Protocol and `_types._is_callable` answering it, the two together; the expected signature's one home replacing `_callable_param_types`; `_unproducible_return` reading `__call__`'s return annotation.
+4. **[FEAT-2](../features/FEAT-2-a-callback-protocol-reads-as-a-callable.md)**: `_is_plain_class` refusing a callback Protocol and `_types._is_callable` answering it, the two together; `_expected_call_signature` answering a callback Protocol's `__call__`; `_unproducible_return` reading `__call__`'s return annotation.
 
 ## Verification
 
@@ -369,7 +356,6 @@ Each row of the tables above becomes a test against the `loader` fixture, so a f
 - A custom `union_tag` a nominal implementer's field owns, inside a union beside an all-defaults struct: `{}` builds the struct, as BUG-295 rules for a variant whose tag is shadowed.
 - A `typing_extensions.Protocol` field behaves as a `typing.Protocol` one, on 3.12 and 3.13+ (`typing_extensions.Protocol is typing.Protocol` is `False` on 3.12, run), skipped where `typing_extensions` is not installed.
 - `Callable[..., Named]` given the bare path of a class whose methods conform: accepted as a factory, as recorded.
-- `Callable[Concatenate[int, ...], int]` given `pfx(x: int, y: str)`: accepted.
 - A plain-class nominal implementer with no `__init__` of its own: `{class: pkg.Impl}` builds and `{class: pkg.Impl, name: x}` is refused as an unknown field, before and after the class's first instantiation.
 - A custom `union_tag` spelled like a nominal implementer's field, tagged and untagged: the field's value, the structural selection and its warning, as under an ABC.
 - An untagged value, an empty dict and a missing value under a Protocol, with and without a nominal implementer imported; the message names the flag and offers the implementers as examples.
@@ -401,7 +387,7 @@ Run the touched tests on 3.12 to 3.15: the introspection API differs between 3.1
 - A design decision, "a callback Protocol reads as a Callable", from FEAT-2.
 - [class names a subclass](../../architecture/design-decisions/class-names-a-subclass-call-computes.md#class-names-a-subclass-call-computes): "a subclass of it" becomes "a subclass of it, or a class implementing it when it is a Protocol".
 - [introspection](../../architecture/types/introspection.md): a Protocol in the shape list; the binding rule for a structural implementer under a [tag binds through its bases](../../architecture/types/introspection.md#a-tag-binds-the-class-it-names-through-its-bases).
-- [callables](../../architecture/callables.md): the call-shape rule replacing the arity count.
+- [callables](../../architecture/callables.md#a-callable-is-checked-by-its-call-shape): a Protocol method's expected signature, its receiver, and the gradual pair it may declare.
 - [invariants](../../architecture/invariants.md): a decision-maker row, "does this class or value satisfy a Protocol?" → `_conformance`.
 - [limitations](../../architecture/limitations.md): annotations are not compared; a method is accepted where a data member is declared; a `type[P]` field does not check data members; a method member stored on the instance is refused, where mypy accepts it; a custom `union_tag` a nominal implementer's field owns leaves structural implementers unreachable; a structural implementer is in `--help` only once named; a Protocol takes no plain value (until FEAT-59).
 - [limitations](../../architecture/limitations.md), continued: a stub inherited from a Protocol whose source cannot be read counts as an implementation; a bare class path under `Callable[..., P]` does not check data members either; a coroutine function where a plain method is declared, or the reverse, is accepted where ty and mypy refuse it; a conforming non-struct value dumps with a warning, since nothing reads it back under a Protocol until FEAT-59.

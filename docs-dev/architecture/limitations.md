@@ -122,6 +122,7 @@ A field default is the layer below every source only where the class declares it
 
 ## Callables and serialization
 
+- A Callable field checks how its value can be called, never the types: `def f(x: str)` is taken by `Callable[[int], int]`, which a type checker refuses ([callables](callables.md#a-callable-is-checked-by-its-call-shape)).
 - An instance method is recognized only when its path names the class that holds it: a module-level alias of a method (`m = C.m`, named as `pkg.m`) is a plain function, used unbound ([callables](callables.md#auto-binding)).
   A callable confarg did not build may not be serializable at all ([callables](callables.md#round-trip)).
 - A callable or a class two public names hold as one object is dumped under the one that names it on every platform: on Windows `ntpath.join` is `os.path.join` and `getpass.win_getpass` is `getpass.getpass`, so a `ntpath.join` or a `getpass.win_getpass` dumped there reads elsewhere as that platform's `os.path.join` or `getpass.getpass` ([dotted imports](types/dotted-imports.md#a-path-names-the-module-that-publishes-the-object)).
