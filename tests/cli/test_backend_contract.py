@@ -11376,7 +11376,7 @@ class TestAMixedRootIsSetWholeOrByFieldContract:
 
     def test_a_root_file_holding_both_is_refused(self, loader: ConfargLoader, tmp_yaml) -> None:
         """A mapping is not ordered, so nothing in it says which of the two was written last."""
-        with pytest.raises(TypeCoercionError, match=re.escape("from both '__root__' and the field(s) ['a']")):
+        with pytest.raises(TypeCoercionError, match=re.escape("from the key(s) ['a']: '__root__' sets its whole")):
             self._load(loader, files=[tmp_yaml("__root__: 5\na: 3\n")])
 
     def test_a_union_of_structs_alone_is_set_by_field(self, loader: ConfargLoader) -> None:
@@ -11402,3 +11402,38 @@ class TestAMixedRootIsSetWholeOrByFieldContract:
             assert (root.metavar, root.nargs) == (field.metavar, field.nargs)
             if shape is not None:
                 assert (root.metavar, root.nargs) == shape
+
+
+class TestAKeyBesideARootSetWholeContract:
+    """A root file's key beside ``__root__``, at a root that is no struct, is refused rather than dropped.
+
+    ``build()`` read ``__root__`` alone, so ``port: 1`` in a root file for an ``int`` built the
+    value and dropped the key, and alone it reported that no value was provided.
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [pytest.param("__root__: 5\nport: 1\n", id="beside"), pytest.param("port: 1\n", id="alone")],
+    )
+    def test_a_root_file(self, loader: ConfargLoader, tmp_yaml, text: str) -> None:
+        """The key is named, whether ``__root__`` stands beside it or no file holds one."""
+        with pytest.raises(TypeCoercionError, match=re.escape("from the key(s) ['port']: '__root__' sets its whole")):
+            loader.load(int, files=[tmp_yaml(text)], argv=["--json", "5"], env={})
+
+    def test_the_locals_stand_beside_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The locals namespace is no key of the value."""
+        assert loader.load(int, files=[tmp_yaml("__root__: ${locals.n}\nlocals:\n  n: 5\n")], argv=[], env={}) == 5
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            pytest.param(dict[str, int], id="dict"),
+            pytest.param(dict[str, int] | _MixedRootA, id="dict-or-struct"),
+        ],
+    )
+    def test_a_dict_root_keeps_the_namespace(self, loader: ConfargLoader, tmp_yaml, target: Any) -> None:
+        """A dict root's keys live under ``__root__``, so ``locals`` beside it is the namespace, on every channel."""
+        path = tmp_yaml("locals:\n  n: 5\n__root__:\n  z: ${locals.n}\n")
+        assert loader.load(target, files=[path], argv=[], env={}) == {"z": 5}
+        assert loader.load(target, files=[path], argv=["--app.locals.n", "7"], env={}, cli_prefix="app") == {"z": 7}
+        assert loader.load(target, files=[path], argv=[], env={"APP_LOCALS__N": "7"}, env_prefix="APP_") == {"z": 7}

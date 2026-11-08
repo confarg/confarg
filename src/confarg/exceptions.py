@@ -802,15 +802,15 @@ class TypeCoercionError(ConfargError):
         return cls._refusal(message, reason=f"valid members {listed}")
 
     @classmethod
-    def whole_root_beside_fields(cls, tp: str, root_key: str, fields: Sequence[Any]) -> TypeCoercionError:
-        """Return the error for a mixed root's data holding *fields* beside the *root_key* that sets it whole.
+    def keys_beside_a_whole_root(cls, tp: str, root_key: str, keys: Sequence[Any]) -> TypeCoercionError:
+        """Return the error for the data of a root set whole holding *keys* beside the *root_key* that holds it.
 
         Dev Notes:
-            docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+            docs-dev/architecture/cli-parsing/cli-prefix.md#a-root-set-whole-reads-no-key-beside-its-root
         """
         return cls(
-            f"Cannot build {tp} at the root from both {root_key!r} and the field(s) {sorted(map(str, fields))}:"
-            f" {root_key!r} sets the whole value, so no field can be set beside it."
+            f"Cannot build {tp} at the root from the key(s) {sorted(map(str, keys))}:"
+            f" {root_key!r} sets its whole value, so no key can be set beside it."
         )
 
     @classmethod

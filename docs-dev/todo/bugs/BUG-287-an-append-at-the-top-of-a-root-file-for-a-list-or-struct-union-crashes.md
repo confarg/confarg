@@ -17,7 +17,8 @@ A root file holding `__append__: [1]` at its top, for a root `list[int] | A`, cr
 The same op one level down, on a field `f: list[int] | A`, builds `[1]`, and so does the root file `__root__: {__append__: [1]}`.
 The default layer applies the root's pending ops over nothing (`_applied_over_nothing`) and hands expression resolution a list where the merged root is always a dict.
 Fix direction: decide what a pending op at the top of a mixed root ([a mixed root](../../architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field)) is: the whole value's op, read as `__root__` holding it, or a key no variant reads, refused naming it.
-The answer also settles what `_MixedRootAt.left_beside` does with such a key, kept beside a field write and dropped under a whole one today, and what a plain `list[int]` root does with the same file, which builds nothing and reports `MissingFieldError` as if no value had been supplied.
+The answer also settles what `_MixedRootAt.left_beside` does with such a key, kept beside a field write and dropped under a whole one today, and what a plain `list[int]` root does with the same file, which builds nothing and reports `MissingFieldError` as if no value had been supplied, and beside a value set whole, `--json '[5]'`, builds `[5]` and drops the op without a word.
+`build()` refuses every other key beside `__root__` at a root set whole ([no key beside it](../../architecture/cli-parsing/cli-prefix.md#a-root-set-whole-reads-no-key-beside-its-root)) and leaves a pending op to this ticket, so refusing it is one condition there.
 
 Origin: a regression from PR-458 (BUG-219, BUG-220), which read a pending list op as the list it makes, so that an expression reading one sees a list, and applied the ops over nothing in the default layer; its parent built `[1]` from this file.
 It applied them at every node, the root included, where `resolve_expressions` walks a dict.

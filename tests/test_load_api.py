@@ -600,6 +600,32 @@ class TestAMixedRootBuildsFromRootOrFields:
         with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
             entry(int | _Bug266A, {"__root__": 5, "a": 3})
         assert str(exc_info.value) == (
-            "Cannot build int | _Bug266A at the root from both '__root__' and the field(s) ['a']:"
-            " '__root__' sets the whole value, so no field can be set beside it."
+            "Cannot build int | _Bug266A at the root from the key(s) ['a']:"
+            " '__root__' sets its whole value, so no key can be set beside it."
         )
+
+
+class TestARootSetWholeReadsNoKeyBesideItsRoot:
+    """``build()`` refuses a key beside ``__root__`` at a root that is no struct, as at a mixed one, and dropped it."""
+
+    @pytest.mark.parametrize(
+        ("target", "data", "spelled"),
+        [
+            pytest.param(int, {"__root__": 5, "port": 1}, "int", id="beside"),
+            pytest.param(int, {"port": 1}, "int", id="alone"),
+            pytest.param(list[int], {"__root__": [1], "port": 1}, "list[int]", id="list"),
+        ],
+    )
+    def test_the_key_is_refused(self, target: Any, data: dict[str, Any], spelled: str) -> None:
+        """Nothing reads the key, so a file that holds it says something no value carries."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(target, data)
+        assert str(exc_info.value) == (
+            f"Cannot build {spelled} at the root from the key(s) ['port']:"
+            " '__root__' sets its whole value, so no key can be set beside it."
+        )
+
+    def test_the_locals_and_an_op_stand_beside_it(self) -> None:
+        """The locals namespace is no key of the value, and a pending op at the root is BUG-287's."""
+        assert confarg.build(int, {"__root__": "${locals.n}", "locals": {"n": 5}}) == 5
+        assert confarg.build(list[int], {"__root__": [5], ListOp.APPEND: [3]}) == [5]

@@ -31,7 +31,7 @@ from confarg._parse_cli import (
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _check_native_types, _DumpOptions, _serialize, _serialize_untyped, written_form
 from confarg._typed_read import TypedReading
-from confarg._types import _MISSING, RootKind, TagPolicy, _resolve_type, _root_kind, _spell_type
+from confarg._types import _MISSING, TagPolicy, _resolve_type, _root_kind, _spell_type
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import MissingFieldError, TypeCoercionError
 from confarg.typedload import construct as _tc
@@ -220,16 +220,16 @@ def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> A
     """Construct *target_r* from a resolved dict: a root set whole from ``__root__``, a struct from the whole.
 
     Raises:
-        TypeCoercionError: If a mixed root's dict holds fields beside ``__root__``, which the
-            merge never leaves and a root file may hold, and of which nothing says which was
-            written last.
+        TypeCoercionError: If the dict of a root set whole holds a key beside ``__root__``, a
+            pending op aside: at a root that is no struct nothing reads the key, and at a mixed
+            one nothing says which of the two a root file holding both wrote last.
 
     Dev Notes:
-        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-root-set-whole-reads-no-key-beside-its-root
     """
-    if (kind := _root_kind(target_r)).held_whole(resolved):
-        if kind is RootKind.MIXED and (fields := [k for k in resolved if k != _defaults.ROOT_KEY]):
-            raise TypeCoercionError.whole_root_beside_fields(_spell_type(target_r), _defaults.ROOT_KEY, fields)
+    if _root_kind(target_r).held_whole(resolved):
+        if keys := [k for k in resolved if k != _defaults.ROOT_KEY and not isinstance(k, ListOp)]:
+            raise TypeCoercionError.keys_beside_a_whole_root(_spell_type(target_r), _defaults.ROOT_KEY, keys)
         raw = resolved.get(_defaults.ROOT_KEY, _MISSING)
         if raw is _MISSING:
             raise MissingFieldError(path=(), field_type=_spell_type(target_r))
