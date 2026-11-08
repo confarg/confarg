@@ -349,7 +349,8 @@ class TestAPatchOverAnExpression:
         cfg = tmp_yaml(_EXPR_BASES)
         over = tmp_yaml("db: {port: 9}\n", "over.yaml")
         assert confarg.load(_ExprBases, argv=["--config", str(cfg), "--config", str(over)], env={}).db == _ExprDb(
-            "ph", 9
+            "ph",
+            9,
         )
 
     def test_an_item_that_is_an_expression_is_patched_too(self, tmp_yaml) -> None:

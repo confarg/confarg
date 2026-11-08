@@ -107,7 +107,8 @@ class TestTheDefault:
     def test_the_descriptor_itself_is_no_default(self) -> None:
         """A ``__get__`` returning itself on class access leaves the field required, and the refusal says why."""
         with pytest.raises(
-            MissingFieldError, match=re.escape("Its descriptor ReturnsSelf returns itself on class access")
+            MissingFieldError,
+            match=re.escape("Its descriptor ReturnsSelf returns itself on class access"),
         ):
             confarg.load(_d.SelfDefault, argv=[], env={})
         assert "default" not in (next(s for s in build_static_flags(_d.SelfDefault) if s.name == "locate").note or "")

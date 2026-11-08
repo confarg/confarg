@@ -404,7 +404,13 @@ class ConfargError(Exception):
 
     @classmethod
     def too_many_copies(
-        cls, action: str, bound: int, copied: int, path: FieldPath | None = None, *, line: int | None = None
+        cls,
+        action: str,
+        bound: int,
+        copied: int,
+        path: FieldPath | None = None,
+        *,
+        line: int | None = None,
     ) -> ConfargError:
         """Return the error for a configuration copying more than *bound* positions, *copied* where it crossed.
 
@@ -672,7 +678,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
         """
         return cls(
-            f"Cannot construct {what} at '{path}': it holds {value!r} at '{member_path}', which is no {member_type}."
+            f"Cannot construct {what} at '{path}': it holds {value!r} at '{member_path}', which is no {member_type}.",
         )
 
     @classmethod
@@ -701,7 +707,8 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
         """
         return cls._refusal(
-            f"Cannot construct {what} at '{path}': dict keys must be integer indices", plain=(path, value)
+            f"Cannot construct {what} at '{path}': dict keys must be integer indices",
+            plain=(path, value),
         )
 
     @classmethod
@@ -889,7 +896,7 @@ class TypeCoercionError(ConfargError):
         """
         return cls(
             f"Cannot build {tp} at the root from the key(s) {sorted(map(str, keys))}:"
-            f" {root_key!r} sets its whole value, so no key can be set beside it."
+            f" {root_key!r} sets its whole value, so no key can be set beside it.",
         )
 
     @classmethod

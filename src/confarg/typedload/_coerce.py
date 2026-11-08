@@ -300,7 +300,7 @@ _LEAF_COERCIONS.update(
         time: _coerce_time,
         timedelta: _coerce_timedelta,
         timezone: _coerce_timezone,
-    }
+    },
 )
 #: A Path is written with forward slashes, which every OS reads, so a dump is portable; a
 #: Decimal and a UUID as their str(), the date and time types as ISO 8601 text: each as the
@@ -316,7 +316,7 @@ _LEAF_SERIALIZERS.update(
         time: time.isoformat,
         timedelta: _format_duration,
         timezone: _format_offset,
-    }
+    },
 )
 
 
@@ -860,7 +860,11 @@ def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
         return _LEAF_COERCIONS[cls](value)
     except _LeafRefusal as exc:
         raise TypeCoercionError.cannot_coerce_because(
-            _src_type(value), value, _spell_type(tp), path, exc.hint
+            _src_type(value),
+            value,
+            _spell_type(tp),
+            path,
+            exc.hint,
         ) from None
     except (TypeError, ValueError, OSError):
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, _spell_type(tp), path) from None

@@ -256,7 +256,11 @@ def _delete_indices(ops: MergeDict, delete_key: ListOp, key: str) -> list[int]:
     indices = ops[delete_key]
     if not isinstance(indices, list | tuple) or not all(type(i) is int for i in indices):
         raise TypeCoercionError.op_not_a_list(
-            str(delete_key), "a list of indices", type(indices).__name__, indices, key
+            str(delete_key),
+            "a list of indices",
+            type(indices).__name__,
+            indices,
+            key,
         )
     return list(indices)
 

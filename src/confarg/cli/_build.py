@@ -1052,7 +1052,11 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
             # loop consumes for any union with one.
             whole = _shaped(_whole_value_spec(flag, resolved, help_text, group, group_description), resolved)
             tag = _build_class_key_spec(
-                flag, concrete, group, group_description, callable_class=_holds_a_callable(resolved)
+                flag,
+                concrete,
+                group,
+                group_description,
+                callable_class=_holds_a_callable(resolved),
             )
             specs = [whole, tag, *openers]
             by_name: dict[str, FlagSpec] = {s.name: s for s in specs}

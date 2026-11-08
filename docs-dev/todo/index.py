@@ -214,7 +214,7 @@ def _parse(path: Path, board: str, errors: list[str]) -> Ticket | None:
     heading = _HEADING.match(lines[0]) if lines else None
     if heading is None:
         errors.append(
-            f"{where}: the line after the front matter, or after one blank line, must read '# <ID> — <headline>'"
+            f"{where}: the line after the front matter, or after one blank line, must read '# <ID> — <headline>'",
         )
         return None
     tid, headline = heading.group(1), heading.group(2)
