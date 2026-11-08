@@ -226,7 +226,7 @@ A callable therefore dumps as what it is, opener by opener:
 
 | Built from | Dumps as |
 |---|---|
-| a function, a class, a static or class method | its dotted path, when it reads back as the callable |
+| a function, a class, a static or class method | its dotted path through the module that publishes it ([dotted imports](types/dotted-imports.md#a-path-names-the-module-that-publishes-the-object)), when it reads back as the callable |
 | an instance method, whoever built its owner | the path through its owner's class beside the fields the owner holds, as a `classfn:` spec; the bare path when the owner's constructor takes no argument ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |
 | `bind:` | `{bind: <target>, args: {<arguments>}}`, whatever the keywords spell, each positional argument named by the parameter it fills (`_named_partial_args`); a bare path when nothing is bound. The target is serialized by these same rules. A positional argument no name holds, one spilling into `*args` or one of a target whose signature cannot be read, cannot be dumped |
 | a callable instance, `class:` or whoever built it | its class's path beside the fields it holds, as a `class:` spec ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |

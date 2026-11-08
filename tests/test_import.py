@@ -2,21 +2,24 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Tests for _import_dotted (symbol import by dotted path).
+"""Tests for _import_dotted (symbol import by dotted path) and dotted_name, its writer.
 
 Covers dotted module paths, chained getattr, the builtins fallback for bare
-names (regression: `type` fields with `--value int`), and the error path.
+names (regression: `type` fields with `--value int`), the error path, and the
+module a written path names.
 """
 
 from __future__ import annotations
 
+import ntpath
+import os
 import sys
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import pytest
 
-from confarg._import import _import_dotted
+from confarg._import import _import_dotted, dotted_name
 from confarg.exceptions import SymbolImportError, SymbolNotFoundError
 
 if TYPE_CHECKING:
@@ -260,3 +263,132 @@ class TestAFailingModuleIsNamed:
             else:
                 outcomes.add("imported")
         assert outcomes == {"raised", "imported"}
+
+
+class TestAPathNamesTheModuleThatPublishesTheObject:
+    """A dotted path names the module that publishes the object, not the one that defines it (BUG-279).
+
+    A platform module, a private submodule or an accelerator defines what a public module
+    publishes, and a path through it loads on no other platform or version.
+    """
+
+    @pytest.mark.parametrize(
+        ("path", "written"),
+        [
+            pytest.param("os.getcwd", "os.getcwd", id="platform-module"),
+            pytest.param("os.path.join", "os.path.join", id="platform-path-module"),
+            pytest.param("os.path.normpath", "os.path.normpath", id="platform-path-renamed"),
+            pytest.param("os.path.getsize", "os.path.getsize", id="generic-path-module"),
+            pytest.param("os.path.commonprefix", "os.path.commonprefix", id="generic-path-pure"),
+            pytest.param("getpass.getpass", "getpass.getpass", id="renamed-per-platform"),
+            pytest.param("asyncio.SelectorEventLoop", "asyncio.SelectorEventLoop", id="platform-submodule"),
+            pytest.param("pathlib.Path", "pathlib.Path", id="private-submodule"),
+            pytest.param("json.JSONDecodeError", "json.JSONDecodeError", id="public-submodule"),
+            pytest.param("concurrent.futures.ThreadPoolExecutor", "concurrent.futures.ThreadPoolExecutor", id="lazy"),
+            pytest.param("functools.reduce", "functools.reduce", id="accelerator"),
+            pytest.param("threading.Lock", "threading.Lock", id="thread-accelerator"),
+            pytest.param("io.StringIO.write", "io.StringIO.write", id="accelerator-c-method"),
+            pytest.param("types.FunctionType", "types.FunctionType", id="builtins-unnamed"),
+            pytest.param("bisect.bisect", "bisect.bisect_right", id="own-name-first"),
+        ],
+    )
+    def test_a_stdlib_object_is_named_where_python_publishes_it(self, path: str, written: str) -> None:
+        """What a module defines on one platform or version, its public module publishes on all."""
+        obj = _import_dotted(path)
+        assert dotted_name(obj) == written
+        assert _import_dotted(written) == obj
+
+    def test_ntpath_is_written_as_os_path_where_it_is_os_path(self) -> None:
+        """Where ``ntpath`` is ``os.path``, its functions are one object under both names, written as ``os.path``.
+
+        Elsewhere ``ntpath.join`` is another function than ``os.path.join``, and keeps its name.
+        """
+        expected = "os.path.join" if os.path is ntpath else "ntpath.join"
+        assert dotted_name(ntpath.join) == expected
+
+    @pytest.fixture
+    def packages(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+        """Lay out packages publishing what their submodules define, every one prefixed ``bug279_``."""
+        for package in ("bug279_open", "bug279_closed", "bug279_lazy"):
+            (tmp_path / package).mkdir()
+        (tmp_path / "bug279_open" / "models.py").write_text(
+            "class Dog:\n"
+            "    @staticmethod\n"
+            "    def make():\n"
+            "        return Dog()\n\n"
+            "    class Collar:\n"
+            "        pass\n\n\n"
+            "class _Hidden:\n"
+            "    pass\n\n\n"
+            "def _impl():\n"
+            "    pass\n\n\n"
+            "class Forged:\n"
+            "    pass\n\n\n"
+            "Forged.__qualname__ = 'Dog'\n"
+        )
+        (tmp_path / "bug279_open" / "__init__.py").write_text(
+            "from bug279_open.models import Dog, _Hidden, _impl as run\n"
+        )
+        (tmp_path / "bug279_closed" / "models.py").write_text("class Cat:\n    pass\n")
+        (tmp_path / "bug279_closed" / "__init__.py").write_text(
+            "from bug279_closed.models import Cat\n\n__all__ = []\n"
+        )
+        (tmp_path / "bug279_lazy" / "thread.py").write_text("class Thread:\n    pass\n")
+        (tmp_path / "bug279_lazy" / "process.py").write_text("class Process:\n    pass\n")
+        (tmp_path / "bug279_lazy" / "broken.py").write_text("class Broken:\n    pass\n")
+        (tmp_path / "bug279_lazy" / "__init__.py").write_text(
+            "import importlib\n\n"
+            "__all__ = ['Broken', 'Process', 'Thread']\n\n\n"
+            "def __getattr__(name):\n"
+            "    if name == 'Broken':\n"
+            "        raise ValueError('hook boom')\n"
+            "    if name in __all__:\n"
+            "        return getattr(importlib.import_module(f'bug279_lazy.{name.lower()}'), name)\n"
+            "    raise AttributeError(name)\n"
+        )
+        monkeypatch.syspath_prepend(str(tmp_path))
+        yield
+        for name in [k for k in sys.modules if k.startswith("bug279_")]:
+            sys.modules.pop(name)
+
+    @pytest.mark.parametrize(
+        ("path", "written"),
+        [
+            pytest.param("bug279_open.models.Dog", "bug279_open.Dog", id="no-all"),
+            pytest.param("bug279_open.models.Dog.make", "bug279_open.Dog.make", id="static-method"),
+            pytest.param("bug279_open.models.Dog.Collar", "bug279_open.Dog.Collar", id="nested-class"),
+            pytest.param("bug279_open.models._impl", "bug279_open.run", id="renamed"),
+            pytest.param("bug279_open.models._Hidden", "bug279_open.models._Hidden", id="private-name"),
+            pytest.param("bug279_closed.models.Cat", "bug279_closed.models.Cat", id="unlisted-in-all"),
+            pytest.param("bug279_open.models.Forged", "bug279_open.models.Forged", id="forged-qualname"),
+        ],
+    )
+    @pytest.mark.usefixtures("packages")
+    def test_a_package_publishes_what_import_star_takes(self, path: str, written: str) -> None:
+        """Its ``__all__``, or every name not starting with ``_``; an object defined in a class goes with it.
+
+        A class whose qualified name was rewritten to another class's is written by the name its
+        module publishes it under, which imports back as it, where its qualified name does not.
+        """
+        assert dotted_name(_import_dotted(path)) == written
+
+    @pytest.mark.usefixtures("packages")
+    def test_a_lazy_hook_that_fails_publishes_nothing(self) -> None:
+        """The hook's error is not raised from the path: the next module that publishes the class is."""
+        broken = _import_dotted("bug279_lazy.broken.Broken")
+        assert dotted_name(broken) == "bug279_lazy.broken.Broken"
+
+    @pytest.mark.usefixtures("packages")
+    def test_a_lazy_export_runs_no_other_names_hook(self) -> None:
+        """The object's own name is read with ``getattr``; the package's other lazy names are not."""
+        thread = _import_dotted("bug279_lazy.thread.Thread")
+        assert dotted_name(thread) == "bug279_lazy.Thread"
+        assert "bug279_lazy.process" not in sys.modules
+
+    def test_a_class_defined_in_a_function_keeps_its_unloadable_path(self) -> None:
+        """No module publishes it, so its path is its qualified name, which a dump refuses."""
+
+        class Local:
+            pass
+
+        assert dotted_name(Local) == f"{__name__}.{Local.__qualname__}"

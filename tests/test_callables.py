@@ -1210,6 +1210,9 @@ class TestSerialization:
         "path",
         [
             pytest.param("math.sqrt", id="builtin"),
+            pytest.param("os.getcwd", id="platform-module"),
+            pytest.param("os.path.join", id="platform-path-module"),
+            pytest.param("functools.reduce", id="accelerator"),
             pytest.param(f"{_MOD}._Scaler.static_double", id="static-method"),
             pytest.param(f"{_MOD}._Scaler.class_triple", id="class-method"),
             pytest.param(f"{_MOD}._NoArgProcessor.transform", id="instance-method"),
