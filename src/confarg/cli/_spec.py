@@ -238,7 +238,8 @@ def _struct_doc(tp: type) -> str:
     Dev Notes:
         docs-dev/architecture/cli-adapters/framework-specifics.md#help-text-is-format-neutral
     """
-    own = tp.__dict__.get("__doc__")
+    # Read through the class, not its __dict__: from 3.15 dataclasses stores a descriptor that writes the text on access
+    own = tp.__doc__ if "__doc__" in tp.__dict__ else None
     if own is not None and dataclasses.is_dataclass(tp):
         try:
             generated = tp.__name__ + str(inspect.signature(tp)).replace(" -> None", "")
