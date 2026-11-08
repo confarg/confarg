@@ -88,14 +88,16 @@ class TestUnknownFields:
     def test_keys_of_different_types_are_listed_together(self) -> None:
         """A YAML integer key beside a string key is refused by name, not with a raw ``TypeError``."""
         with pytest.raises(
-            confarg.exceptions.TypeCoercionError, match=re.escape("Unknown field(s) ['1', 'x'] for Named")
+            confarg.exceptions.TypeCoercionError,
+            match=re.escape("Unknown field(s) ['1', 'x'] for Named"),
         ):
             confarg.build(self.WithNamed, {"one": {1: "a", "x": "b"}})
 
     def test_a_list_op_is_listed_by_the_key_a_file_writes(self) -> None:
         """``one: {__append__: [1], bogus: 2}`` names ``__append__`` as written, beside the other key."""
         with pytest.raises(
-            confarg.exceptions.TypeCoercionError, match=re.escape("Unknown field(s) ['__append__', 'bogus'] for Named")
+            confarg.exceptions.TypeCoercionError,
+            match=re.escape("Unknown field(s) ['__append__', 'bogus'] for Named"),
         ):
             confarg.build(self.WithNamed, {"one": {ListOp.APPEND: [1], "bogus": 2}})
 
@@ -557,7 +559,10 @@ class TestAUnionRefusalNamesEachVariantsReason:
         ],
     )
     def test_a_refusal_at_the_unions_own_path_says_its_reason_alone(
-        self, field_type: Any, value: Any, line: str
+        self,
+        field_type: Any,
+        value: Any,
+        line: str,
     ) -> None:
         """A variant's line gives its reason, not its message again: the union's line names the path."""
         Target = make_target("v", field_type, default=None)
@@ -761,7 +766,7 @@ class TestUnreadablePlainClassField:
         with pytest.raises(confarg.exceptions.ConfargError) as exc_info:
             confarg.dump(value)
         assert str(exc_info.value).startswith(
-            f"Cannot serialize _Hidden at '{where}': field 'offset' is declared in _Hidden.__init__"
+            f"Cannot serialize _Hidden at '{where}': field 'offset' is declared in _Hidden.__init__",
         )
 
 
@@ -868,7 +873,10 @@ class TestASequenceRefusalIsOneSpelling:
         ("field_type", "value", "expected"),
         [
             pytest.param(
-                Point, [1, 2, 3], "Cannot construct Point at 'p': expected 2 elements, got 3", id="namedtuple"
+                Point,
+                [1, 2, 3],
+                "Cannot construct Point at 'p': expected 2 elements, got 3",
+                id="namedtuple",
             ),
             pytest.param(
                 tuple[_Feat46Opts, int],
@@ -877,7 +885,10 @@ class TestASequenceRefusalIsOneSpelling:
                 id="tuple-too-long",
             ),
             pytest.param(
-                tuple[int, int], [1], "Cannot construct tuple[int, int] at 'p': expected 2 elements, got 1", id="short"
+                tuple[int, int],
+                [1],
+                "Cannot construct tuple[int, int] at 'p': expected 2 elements, got 1",
+                id="short",
             ),
             pytest.param(
                 tuple[int, int],
@@ -892,7 +903,10 @@ class TestASequenceRefusalIsOneSpelling:
                 id="tuple-keys",
             ),
             pytest.param(
-                list[int], {"a": 1}, "Cannot construct collection at 'p': dict keys must be integer indices", id="list"
+                list[int],
+                {"a": 1},
+                "Cannot construct collection at 'p': dict keys must be integer indices",
+                id="list",
             ),
         ],
     )
@@ -950,7 +964,8 @@ class TestAMessageNamesATypeByWhatConfargReads:
         """A class reads ``complex``, not ``<class 'complex'>``."""
         Target = make_target("x", Optional[complex], default=None)
         with pytest.raises(
-            confarg.exceptions.TypeCoercionError, match=re.escape("Unsupported leaf type complex at 'x'")
+            confarg.exceptions.TypeCoercionError,
+            match=re.escape("Unsupported leaf type complex at 'x'"),
         ):
             confarg.load(Target, argv=["--x", "1j"], env={})
 
@@ -965,7 +980,8 @@ class TestAMessageNamesATypeByWhatConfargReads:
         """``native_types`` echoes a union by its variants."""
         flat = Flat(name="n", count=1, rate=1.0, verbose=False)
         with pytest.raises(
-            TypeError, match=re.escape("native_types names int | str, which is no registered leaf type")
+            TypeError,
+            match=re.escape("native_types names int | str, which is no registered leaf type"),
         ):
             confarg.dump(flat, native_types=(int | str,))  # ty: ignore[invalid-argument-type]  # refused on purpose
 

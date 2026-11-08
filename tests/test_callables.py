@@ -2222,7 +2222,9 @@ class TestPositionalArguments:
     def test_call_fills_a_positional_only_parameter(self) -> None:
         """The ticket's ``call:``: the positional-only ``factor`` is passed by position."""
         cfg = confarg.load(
-            WithBareCallable, argv=["--fn.call", f"{_MOD}._make_scaler", "--fn.args.factor", "2"], env={}
+            WithBareCallable,
+            argv=["--fn.call", f"{_MOD}._make_scaler", "--fn.args.factor", "2"],
+            env={},
         )
         assert cfg.fn(3) == 6
 
@@ -2259,7 +2261,8 @@ class TestPositionalArguments:
     def test_a_name_shared_with_kwargs_fills_the_declared_parameter(self) -> None:
         """Under the flat ``args`` mapping a name means the declared parameter, never a ``**kwargs`` key."""
         cfg = confarg.build(
-            WithBareCallable, {"fn": {"bind": f"{_MOD}._positional_only_beside_kwargs", "args": {"a": 1}}}
+            WithBareCallable,
+            {"fn": {"bind": f"{_MOD}._positional_only_beside_kwargs", "args": {"a": 1}}},
         )
         assert cfg.fn() == (1, {})
 

@@ -100,7 +100,10 @@ class TestYamlAliases:
         lines += [f"  l{i}: &l{i} {items(10, f'*l{i - 1}')}" for i in range(1, 7)]
         text = "\n".join(lines) + "\n"
         refused_within(
-            5, InvalidConfigFileError, r"copies more than 100000 positions", lambda: load_text(tmp_path, text)
+            5,
+            InvalidConfigFileError,
+            r"copies more than 100000 positions",
+            lambda: load_text(tmp_path, text),
         )
 
 
@@ -260,7 +263,8 @@ class TestCallerData:
 
     @pytest.mark.usefixtures("bound_100")
     @pytest.mark.parametrize(
-        ("call", "action"), [("build", "build"), ("from_dict", "construct"), ("resolve", "resolve")]
+        ("call", "action"),
+        [("build", "build"), ("from_dict", "construct"), ("resolve", "resolve")],
     )
     def test_one_copy_past_the_bound_is_refused(self, call: str, action: str) -> None:
         """The refusal names the key that crossed the bound."""

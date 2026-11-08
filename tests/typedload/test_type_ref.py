@@ -345,7 +345,8 @@ class TestBuildRoundtrip:
         """
         holder: Any = make_dataclass("Holder", [("t", bound)])
         with pytest.warns(
-            ConfargWarning, match=r"Value at 't' will not read back: its class int is no value of type\["
+            ConfargWarning,
+            match=r"Value at 't' will not read back: its class int is no value of type\[",
         ):
             dumped = confarg.dump(holder(t=cls))
         assert dumped == {"t": {"bind": "builtins.int"}}

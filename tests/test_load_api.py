@@ -591,7 +591,9 @@ class TestAnExpressionReadsATaggedLeaf:
         ids=["optional", "leaf", "union", "list-item", "struct-base", "any"],
     )
     def test_an_interpolation_writes_the_dump_form_of_the_leaf_the_tag_builds(
-        self, raw: dict[str, Any], reference: str
+        self,
+        raw: dict[str, Any],
+        reference: str,
     ) -> None:
         """Wherever the class key names a registered leaf, the reference reads what construction builds there."""
         assert confarg.build(_Tagged, {**raw, "label": f"at ${{{reference}}}"}).label == "at 3"

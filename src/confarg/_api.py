@@ -204,7 +204,11 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, copies: Copies) -> Me
     laid = lay_defaults(target_r, data, for_resolution=True)
     settle = settle_pending(target_r)
     resolved = resolve_expressions(
-        laid.data, read=TypedReading(target_r), write=written_form, settle=settle, copies=copies
+        laid.data,
+        read=TypedReading(target_r),
+        write=written_form,
+        settle=settle,
+        copies=copies,
     )
     resolved = drop_untouched(resolved, laid.untouched)
     # An expression standing for a value copies it where it is written, so the tree can be deeper

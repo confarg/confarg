@@ -108,7 +108,10 @@ class TestATagNoVariantTakes:
             pytest.param(datetime, "datetime", "datetime is built from one value, not from keys", id="registered-leaf"),
             pytest.param(int | str, "int | str", "no variant of int | str is built from keys", id="scalars"),
             pytest.param(
-                int | Path, "int | Path", "no variant of int | Path is built from keys", id="untaggable-leaf-variant"
+                int | Path,
+                "int | Path",
+                "no variant of int | Path is built from keys",
+                id="untaggable-leaf-variant",
             ),
             pytest.param(
                 int | datetime,
@@ -125,7 +128,10 @@ class TestATagNoVariantTakes:
         assert str(exc_info.value) == _no_class_refusal(spelled, why, "pathlib.Path")
 
     def test_the_tag_is_not_imported(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
     ) -> None:
         """Every tag is refused, so none is imported: a module the tag names never runs."""
         (tmp_path / "bug252_broken.py").write_text("raise RuntimeError('boom')\n")
@@ -135,7 +141,9 @@ class TestATagNoVariantTakes:
             with pytest.raises(TypeCoercionError) as exc_info:
                 construct(int | str, {"class": tag}, path=("x",))
             assert str(exc_info.value) == _no_class_refusal(
-                "int | str", "no variant of int | str is built from keys", tag
+                "int | str",
+                "no variant of int | str is built from keys",
+                tag,
             )
         assert "bug252_broken" not in sys.modules
 
@@ -177,7 +185,10 @@ class TestATagSpelledKeyIsDataWhereNoTagSelects:
         assert construct(tp, {"class": "confidential"}, path=("x",)) == {"class": "confidential"}
 
     def test_the_key_is_not_imported(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
     ) -> None:
         """Data is never imported: a module the key's value names never runs."""
         (tmp_path / "bug276_broken.py").write_text("raise RuntimeError('boom')\n")
@@ -232,7 +243,10 @@ class TestAUnionKeyType:
             pytest.param(dict[int | None, int], {"none": 6}, {None: 6}, id="a-none-word-is-none"),
             pytest.param(dict[str | int, int], {"1": 5, "a": 6}, {1: 5, "a": 6}, id="rank-not-declaration-order"),
             pytest.param(
-                dict[_Bug261Color | str, int], {"RED": 5, "x": 6}, {_Bug261Color.RED: 5, "x": 6}, id="enum-member"
+                dict[_Bug261Color | str, int],
+                {"RED": 5, "x": 6},
+                {_Bug261Color.RED: 5, "x": 6},
+                id="enum-member",
             ),
         ],
     )
@@ -318,13 +332,22 @@ class TestOneValueHoldsEachKeyOnce:
                 id="equal",
             ),
             pytest.param(
-                Any, {"1": "x", 1: "y"}, """dict[Any, Any] at 'd': keys '1' and 1 both read as the key "1\"""", id="any"
+                Any,
+                {"1": "x", 1: "y"},
+                """dict[Any, Any] at 'd': keys '1' and 1 both read as the key "1\"""",
+                id="any",
             ),
             pytest.param(
-                dict, {"1": "x", 1: "y"}, """dict at 'd': keys '1' and 1 both read as the key "1\"""", id="bare-dict"
+                dict,
+                {"1": "x", 1: "y"},
+                """dict at 'd': keys '1' and 1 both read as the key "1\"""",
+                id="bare-dict",
             ),
             pytest.param(
-                _Bug312Pt, {"x": 1, "0": 2}, "_Bug312Pt at 'd': keys 'x' and '0' both name the field x", id="namedtuple"
+                _Bug312Pt,
+                {"x": 1, "0": 2},
+                "_Bug312Pt at 'd': keys 'x' and '0' both name the field x",
+                id="namedtuple",
             ),
             pytest.param(
                 _Bug312Pt,
@@ -669,7 +692,9 @@ class TestAnAmbiguityInsideAVariantEndsTheWalk:
             pytest.param({"pair": [_REX]}, "pair[0]", id="fixed-length"),
             pytest.param({"held": {"pet": _REX}}, "held.pet", id="struct-fallback"),
             pytest.param(
-                {"kennel": {"class": f"{__name__}._Kennel", "item": [_REX]}}, "kennel.item[0]", id="tag-binding"
+                {"kennel": {"class": f"{__name__}._Kennel", "item": [_REX]}},
+                "kennel.item[0]",
+                id="tag-binding",
             ),
         ],
     )
@@ -1152,7 +1177,10 @@ class TestClassKeyOnAScalarField:
         with pytest.raises(TypeCoercionError) as exc_info:
             construct(int | None, {"class": tag}, path=("n",))
         assert str(exc_info.value) == _no_class_refusal(
-            "int", "int is built from one value, not from keys", tag, path="n"
+            "int",
+            "int is built from one value, not from keys",
+            tag,
+            path="n",
         )
 
     def test_an_untagged_dict_keeps_the_generic_refusal(self) -> None:
@@ -1558,7 +1586,9 @@ class TestAClassTakingNothingThatHoldsCStorageIsNoStruct:
         assert built.random() == random.Random(1).random()
 
     @pytest.mark.parametrize(
-        "tp", [_OneSlot, _TwoSlots, _DictSlot, _SlotDeclaredAgain], ids=["str", "tuple", "dict-slot", "declared-again"]
+        "tp",
+        [_OneSlot, _TwoSlots, _DictSlot, _SlotDeclaredAgain],
+        ids=["str", "tuple", "dict-slot", "declared-again"],
     )
     def test_slots_are_storage_an_attribute_reaches(self, tp: type) -> None:
         """A slot is no C storage, however declared, a base's slot declared again included: ``{}`` builds the class."""
@@ -1678,7 +1708,8 @@ class TestATagThatIsNoStringIsRefused:
         monkeypatch.syspath_prepend(str(tmp_path))
         request.addfinalizer(lambda: sys.modules.pop("bug235_broken", None))
         with pytest.raises(
-            SymbolImportError, match=rf"from the 'class' key at '{where}'.*bug235_missing_dependency"
+            SymbolImportError,
+            match=rf"from the 'class' key at '{where}'.*bug235_missing_dependency",
         ) as e:
             construct(_TagHolder, {where: {"class": "bug235_broken.Thing"}})
         assert not isinstance(e.value, TypeCoercionError)

@@ -731,7 +731,10 @@ class TestANamespaceBelowAUnion:
         """An override of the field is a value, not a write of a whole namespace."""
         cfg = write(tmp_path, "c.yaml", f"item:\n  class: {__name__}.OwnsTheName\n  locals: 5\n")
         result = confarg.load(
-            HoldsAUnion, argv=["--config", str(cfg)], env={"APP_ITEM__LOCALS": "7"}, env_prefix="APP_"
+            HoldsAUnion,
+            argv=["--config", str(cfg)],
+            env={"APP_ITEM__LOCALS": "7"},
+            env_prefix="APP_",
         )
         assert result.item == OwnsTheName(locals=7)
 

@@ -610,7 +610,8 @@ class TestDecimal:
         assert loader.load(WithPrice, argv=[], env={}, files=[path]).price == Decimal("1.1")
 
     @pytest.mark.parametrize(
-        ("value", "expected"), [(5, Decimal(5)), ("1.10", Decimal("1.10")), (float("inf"), Decimal("Infinity"))]
+        ("value", "expected"),
+        [(5, Decimal(5)), ("1.10", Decimal("1.10")), (float("inf"), Decimal("Infinity"))],
     )
     def test_a_native_value_reads(self, value: object, expected: Decimal) -> None:
         """An int, a str and a special float from a file are each the decimal they spell."""
@@ -632,7 +633,8 @@ class TestDecimal:
     def test_a_default_is_laid(self, loader: ConfargLoader) -> None:
         """A ``Decimal`` default is the base layer, so a reference reads it."""
         Prices = make_dataclass(
-            "Prices", [("base", Decimal, field(default=Decimal("1.5"))), ("total", Decimal, field(default=Decimal(0)))]
+            "Prices",
+            [("base", Decimal, field(default=Decimal("1.5"))), ("total", Decimal, field(default=Decimal(0)))],
         )
         assert loader.load(Prices, argv=["--total", "${base * 2}"], env={}).total == Decimal("3.0")
 
@@ -892,7 +894,8 @@ class TestTimezone:
     def test_utc_is_refused(self, loader: ConfargLoader) -> None:
         """Python's ``str()`` of a timezone is no ISO 8601 offset."""
         with pytest.raises(
-            _COERCION, match=r"to timezone at 'tz': a timezone is an ISO 8601 offset, such as '\+02:00' or 'Z'$"
+            _COERCION,
+            match=r"to timezone at 'tz': a timezone is an ISO 8601 offset, such as '\+02:00' or 'Z'$",
         ):
             loader.load(_tz(), argv=["--tz", "UTC"], env={})
 

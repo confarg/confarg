@@ -1438,7 +1438,11 @@ def _handle_delete_token(ctx: _ParseCtx, token: str, path: list[str]) -> None:
 
 
 def _collect_append_items(  # the flag's spelling and path name it in a refusal
-    args: Sequence[str], i: int, et: Any, spelling: str, at: Sequence[str | int]
+    args: Sequence[str],
+    i: int,
+    et: Any,
+    spelling: str,
+    at: Sequence[str | int],
 ) -> tuple[list[Any], int]:
     """Collect append-mode values from args, returning (items, new_i).
 
