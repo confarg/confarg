@@ -10,9 +10,8 @@ where:
   - src/confarg/typedload/_coerce.py::_coerce_type_ref
   - src/confarg/typedload/_construct.py::_construct_struct_dispatch
   - src/confarg/typedload/_construct.py::construct_named_class
-  - src/confarg/_serialize.py::_variant_holds
+  - src/confarg/_serialize.py::_variant_holds  # in typedload/_holding.py once BUG-293 moves it
   - src/confarg/_serialize.py::_needs_tag
-  - src/confarg/_callable.py::_accepts
   - src/confarg/cli/_build.py::_collect_struct_specs
   - src/confarg/exceptions.py::TypeCoercionError
   # and a new leaf module, src/confarg/_conformance.py
