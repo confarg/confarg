@@ -30,9 +30,9 @@ if TYPE_CHECKING:
 from confarg import _defaults
 from confarg._callable import (
     _COMPUTATION_OPENERS,
-    _OBJECT_OPENERS,
     _competing_openers,
     names_an_opener,
+    object_openers,
     opens_a_subtree,
     promote_bare_spec,
 )
@@ -287,7 +287,7 @@ def _opens_spec_subtree(stone: _Stone, part: str, depth: int) -> bool:
     )
 
 
-def _unnamed_spec_step(stone: _Stone, part: str, depth: int) -> Any:
+def _unnamed_spec_step(stone: _Stone, part: str, depth: int, union_tag: str) -> Any:
     """Return the type of *part* below a spec node that names nothing yet, or :attr:`Named.NOTHING` for no spec node.
 
     Below a Callable or an ``Any``, an object opener's value is a dotted-path leaf, a
@@ -302,7 +302,7 @@ def _unnamed_spec_step(stone: _Stone, part: str, depth: int) -> Any:
     """
     kind = _type_kind(stone.node)
     if kind in (_TypeKind.CALLABLE, _TypeKind.ANY):
-        if part in _OBJECT_OPENERS:
+        if part in object_openers(union_tag):
             return str
         if part in _COMPUTATION_OPENERS:
             return TARGET
@@ -312,11 +312,11 @@ def _unnamed_spec_step(stone: _Stone, part: str, depth: int) -> Any:
     return Named.NOTHING
 
 
-def _opens_a_spec(node: Any, naming: Any) -> bool:
+def _opens_a_spec(node: Any, naming: Any, union_tag: str) -> bool:
     """Return whether a key below the node *node*, holding *naming*, is read by a spec: no namespace lies below it."""
     if _type_kind(node) in (_TypeKind.CALLABLE, _TypeKind.ANY) or is_arguments(node):
         return True
-    return naming is not None and _is_typed_call(naming, node)
+    return naming is not None and _is_typed_call(naming, node, union_tag)
 
 
 def _walk_path(
@@ -417,8 +417,8 @@ def _step(  # noqa: C901, PLR0913  # one answer per kind of step; where the walk
             continue
         answer = Named.NOTHING if naming is None else named_child(node, part, naming, union_tag)
         if answer is Named.NOTHING:
-            answer = _unnamed_spec_step(stone, part, depth)
-        below_spec = state.in_spec or _opens_a_spec(node, naming)
+            answer = _unnamed_spec_step(stone, part, depth, union_tag)
+        below_spec = state.in_spec or _opens_a_spec(node, naming, union_tag)
         if answer is Named.REFUSED:
             yield stone, None
         elif answer is Named.UNTYPED:
@@ -574,7 +574,7 @@ def _opener_reader_at(target: Any, parts: list[str], union_tag: str, named: Nami
     Dev Notes:
         docs-dev/architecture/callables.md#cli
     """
-    if not parts or not names_an_opener(parts[-1]):
+    if not parts or not names_an_opener(parts[-1], union_tag):
         return None
     return _walk_opener_reader(_walk_path(target, parts, union_tag, named=named), parts, union_tag)
 
@@ -582,7 +582,7 @@ def _opener_reader_at(target: Any, parts: list[str], union_tag: str, named: Nami
 def _walk_opener_reader(walk: _Walk, parts: list[str], union_tag: str) -> Any:
     """Return :func:`_opener_reader_at`'s answer from *walk*, the walk of *parts*."""
     k = len(parts) - 1
-    if k < 0 or not names_an_opener(parts[k]):
+    if k < 0 or not names_an_opener(parts[k], union_tag):
         return None
     for e in walk.layers[k]:
         if e.before.str_subtree or not (_reads_specs(e.stone.node) or _opens_spec_subtree(e.stone, parts[k], k)):
@@ -1887,7 +1887,7 @@ def _open_callable_shorthand(
         docs-dev/architecture/callables.md#cli
     """
     for n in range(1, len(path)):
-        if names_an_opener(path[n]):
+        if names_an_opener(path[n], union_tag):
             continue
         existing = _peek_nested(data, path[:n])
         if not isinstance(existing, str):
@@ -1927,8 +1927,10 @@ def _restart_restated_node(data: MergeDict, path: list[str], target: Any, union_
         return False
     # Among the openers, it restates one that still competes beside it: an object opener
     # takes a computation word as a field, whichever was written first.
-    after = _competing_openers({**node, key: ""})
-    if names_an_opener(key) and (key not in after or not set(_competing_openers(node)) & set(after)):
+    after = _competing_openers({**node, key: ""}, union_tag)
+    if names_an_opener(key, union_tag) and (
+        key not in after or not set(_competing_openers(node, union_tag)) & set(after)
+    ):
         return False
     kept: MergeDict = {ListOp.BASE: DICT_DELETE} if node.get(ListOp.BASE) is DICT_DELETE else {}
     node.clear()

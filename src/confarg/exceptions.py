@@ -820,11 +820,15 @@ class TypeCoercionError(ConfargError):
         return cls._refusal(f"Cannot coerce {name!r} at '{path}': {reason}.", reason=reason)
 
     @classmethod
-    def class_as_factory(cls, name: str, path: str, returns: str) -> TypeCoercionError:
-        """Return the error for the class *name* a Callable would call as a factory, its instances no *returns*."""
+    def class_as_factory(cls, name: str, path: str, returns: str, union_tag: str) -> TypeCoercionError:
+        """Return the error for the class *name* a Callable would call as a factory, its instances no *returns*.
+
+        The remedy spells the instance's spec under *union_tag*, the class opener.
+        """
         reason = (
             f"class {name!r} would be used as a factory, but its instances are not {returns} (the Callable's"
-            f" declared return type). To use an instance of {name} as the callable, use the dict form: 'class: {name}'"
+            f" declared return type). To use an instance of {name} as the callable, use the dict form:"
+            f" '{union_tag}: {name}'"
         )
         return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
 

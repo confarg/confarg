@@ -110,6 +110,8 @@ On a typed field `class:` is the union tag, which selects a struct and builds it
 `class:` stays a keyword beside `call:`, though `call:` can build a class too: `class:` says "the type I want", and `call:` says "compute the value".
 `class:` never stands in for `call:`.
 
+`class` is the default spelling of the union tag, which opens this spec on every node: a custom `union_tag` renames the opener on a Callable and an `Any` as it renames the selector on a typed field, and `class` is then an ordinary key (BUG-305, [the union tag is the class key in every role](design-decisions/the-union-tag-is-the-class-key-in-every-role.md#the-union-tag-is-the-class-key-in-every-role)).
+
 ### Classfn builds the owner
 
 `{classfn: C.m, <init>}` builds the owner from the other keys and yields its bound method.
@@ -143,7 +145,7 @@ Each spelling meets the union at one place, and each place has one decision-make
 | The value | Read by | Example on `Callable[[int], int] \| Opts` |
 |---|---|---|
 | a string | the scalar walk, in stealing rank: the Callable just below type references and `Literal`, above the numbers and `str` | `pkg.double` is the function; `hello` is refused, as `str` would take it in `Callable \| str` |
-| a dict holding `bind` or `classfn` (or `class` when it is not the union tag) | the Callable variant, before any struct or dict variant (`spec_reading_variant`) | `{bind: pkg.add, args: {y: 3}}` is the partial |
+| a dict holding `bind` or `classfn` | the Callable variant, before any struct or dict variant (`spec_reading_variant`) | `{bind: pkg.add, args: {y: 3}}` is the partial |
 | a dict holding the union tag | a struct variant it names, else the Callable variant's spec (`_construct_union_by_tag`) | `{class: pkg.Mul, factor: 3}` is the instance; `{class: pkg.Opts}` the struct |
 | a dict holding `call` | the union, which takes the value as a typed call does (`_takes_typed_call`) | `{call: pkg.make_double}` is the function, `{call: pkg.make_opts}` the struct |
 
@@ -177,6 +179,7 @@ Beside `bind` or `call`, an argument sits under `args`, so a target's parameter 
 Beside `class` or `classfn`, every other key is a field, so a constructor's `bind` or `call` parameter is one too.
 `class` can name no Python parameter.
 A constructor parameter named `classfn` is the one an object opener cannot reach, since two object openers are refused; it is reached under the `args` of a `call` or a `bind` of the class.
+Under a custom union tag, which opens the spec in place of `class` ([the union tag is the class key in every role](design-decisions/the-union-tag-is-the-class-key-in-every-role.md#the-union-tag-is-the-class-key-in-every-role)), a parameter spelled like the tag is the other one, reached the same way, and `dump()` refuses an object holding a field of that spelling, as it refuses one named `classfn`.
 
 The words `_bind`, `_call`, `_class` and `_classfn` were the escaped set of openers of the grammar this replaced, which put arguments beside their opener; they are ordinary keys now.
 Removing them took with them the mode selection every channel shared (`active_directives`), the hint that named a mixed pair (BUG-25), and the dump's refusal of a keyword spelled like an escaped opener (BUG-217): under `args`, every keyword reads back as itself.

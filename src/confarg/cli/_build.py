@@ -29,10 +29,10 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import (
-    _OPENERS,
     _fillable_params,
     _instance_method_owner,
     _target_signature,
+    openers,
     spec_opener,
     yielded_callable_path,
 )
@@ -353,18 +353,15 @@ def _class_name(tp: Any, generic: str) -> str:
 # An index spelling's own segment: ``0``, ``-1`` — either sign, digits only.
 _INDEX_SEGMENT = re.compile(r"-?\d+")
 
-# (opener_suffix, opener) for each opener a ``--<field>.<opener>`` flag can spell.
-_OPENER_SPECS: tuple[tuple[str, str], ...] = tuple((f".{opener}", opener) for opener in _OPENERS)
-
-
 # What each opener builds from the flags around it, given what the spec yields. The flags are placeholders:
 # the walk is prefix-blind (docs-dev/architecture/cli-adapters/cli-prefix-boundaries.md#help-names-a-flag-as-typed).
 _OPENER_HELP = {
     _defaults.BIND_KEY: "function or class; the --FLAG.args.PARAM flags are partially applied to it",
-    _defaults.CLASS_KEY: "class to instantiate from the --FLAG.FIELD flags; the instance is {what}",
     _defaults.CALL_KEY: "factory function to call with the --FLAG.args.PARAM flags; its result is {what}",
     _defaults.CLASSFN_KEY: "instance method; the --FLAG.FIELD flags build its owner",
 }
+# What the union tag builds as the class opener: it spells no other opener (``_defaults.check_union_tag``).
+_CLASS_OPENER_HELP = "class to instantiate from the --FLAG.FIELD flags; the instance is {what}"
 
 # What a union tag also names beside a Callable variant: a class no variant holds is the Callable's ``class:``.
 _CALLABLE_CLASS_NOTE = ", or a callable class to instantiate as its callable"
@@ -396,7 +393,8 @@ def _opener_spec(
     if opener == _defaults.CALL_KEY and not builds_a_callable:
         note = f"Dotted import path of the function to call with the --FLAG.args.PARAM flags; its result is {subject}."
     else:
-        note = f"Dotted import path for {subject} ({_OPENER_HELP[opener].format(what=what)})."
+        role = _OPENER_HELP.get(opener, _CLASS_OPENER_HELP)
+        note = f"Dotted import path for {subject} ({role.format(what=what)})."
     return FlagSpec(
         name=f"{flag}.{opener}" if flag else opener,
         metavar="DOTTED.PATH",
@@ -427,7 +425,7 @@ def _opener_specs(
         return []
     return [
         _opener_spec(flag, opener, reader, group, group_description)
-        for opener in _OPENERS
+        for opener in openers(union_tag)
         if (reader := opener_reader(tp, opener, union_tag)) is not None
     ]
 
@@ -581,17 +579,18 @@ def _collect_callable_factory_specs(
     return result
 
 
-def _collect_callable_field_specs(
+def _collect_callable_field_specs(  # noqa: PLR0913  # the union tag spells the class opener *mode* may be
     field_flag: str,
     target_path: str,
     mode: str,
     existing_names: set[str],
+    union_tag: str,
     *,
     grouped: bool = True,
 ) -> list[FlagSpec]:
     """Build the argument FlagSpecs for one callable spec given its target and its opener, *mode*.
 
-    A ``class`` target's arguments are its fields, ``--<field>.<name>``, typed as they are,
+    The arguments of a target the union tag names are its fields, ``--<field>.<name>``, typed as they are,
     and so are those of a ``classfn`` target's owner; a ``bind`` or ``call`` target's are
     the parameters of the function, or of the class's constructor, that it names,
     ``--<field>.args.<param>``, grouped under the field when *grouped*. A ``classfn`` target
@@ -600,7 +599,7 @@ def _collect_callable_field_specs(
     if mode == _defaults.CLASSFN_KEY:
         owner = _instance_method_owner(target_path)
         return [] if owner is None else _collect_callable_factory_specs(field_flag, owner, existing_names)
-    if mode == _defaults.CLASS_KEY:
+    if mode == union_tag:
         with contextlib.suppress(SymbolImportError):
             cls = _import_dotted(target_path)
             if isinstance(cls, type):
@@ -608,9 +607,10 @@ def _collect_callable_field_specs(
     return _collect_callable_argument_specs(field_flag, target_path, existing_names, grouped=grouped)
 
 
-def _match_opener_suffix(key: str) -> tuple[str, str] | None:
-    """Return (field_flag, opener) if ``key`` ends with an opener suffix."""
-    for suffix, opener in _OPENER_SPECS:
+def _match_opener_suffix(key: str, union_tag: str) -> tuple[str, str] | None:
+    """Return (field_flag, opener) if ``key`` ends with the suffix of an opener under *union_tag*."""
+    for opener in openers(union_tag):
+        suffix = f".{opener}"
         if key.endswith(suffix) and len(key) > len(suffix):
             return key[: -len(suffix)], opener
     return None
@@ -665,12 +665,12 @@ def _collect_fn_paths_from_argv(
             continue
         if "=" in tok:
             key, _, val = tok[2:].partition("=")
-            matched = _match_opener_suffix(key)
+            matched = _match_opener_suffix(key, union_tag)
             if matched is not None and _opens_spec_at(target, *matched, union_tag):
                 found[matched[0]] = (val, matched[1])
             i += 1
         else:
-            matched = _match_opener_suffix(tok[2:])
+            matched = _match_opener_suffix(tok[2:], union_tag)
             if matched is not None and i + 1 < len(argv) and not argv[i + 1].startswith("--"):
                 if _opens_spec_at(target, *matched, union_tag):
                     found[matched[0]] = (argv[i + 1], matched[1])
@@ -733,7 +733,7 @@ def _blob_document_from_argv(target: Any, argv: Sequence[str], union_tag: str) -
     return doc
 
 
-def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tuple[str, str]]:
+def _spec_openings(flag: str, sub: Any, union_tag: str, *, typed: bool = False) -> dict[str, tuple[str, str]]:
     """Return {flag: (target_path, opener)} for the spec *sub* at *flag*, nested target specs included.
 
     Checks the string shorthand (implicit "bind") and the opener construction reads the
@@ -751,7 +751,7 @@ def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tup
         return {} if typed else {flag: (sub, _defaults.BIND_KEY)}
     if not isinstance(sub, dict):
         return {}
-    opener = spec_opener(sub)
+    opener = spec_opener(sub, union_tag)
     if opener is None or (typed and opener != _defaults.CALL_KEY):
         return {}
     value = sub[opener]
@@ -759,8 +759,8 @@ def _spec_openings(flag: str, sub: Any, *, typed: bool = False) -> dict[str, tup
         return {flag: (value, opener)}
     if not (isinstance(value, dict) and opener in (_defaults.BIND_KEY, _defaults.CALL_KEY)):
         return {}
-    found = _spec_openings(f"{flag}.{opener}", value)
-    yielded = yielded_callable_path(value)
+    found = _spec_openings(f"{flag}.{opener}", value, union_tag)
+    yielded = yielded_callable_path(value, union_tag)
     if yielded is not None:
         found[flag] = (yielded, opener)
     return found
@@ -790,10 +790,10 @@ def _collect_fn_paths_from_config(
     for name, ft in flds.items():
         flag = f"{prefix}.{name}" if prefix else name
         sub = config_dict.get(name)
-        if _is_typed_call(sub, ft):
-            result.update(_spec_openings(flag, sub, typed=True))
+        if _is_typed_call(sub, ft, union_tag):
+            result.update(_spec_openings(flag, sub, union_tag, typed=True))
         elif _reads_as_spec(ft, sub, union_tag):
-            result.update(_spec_openings(flag, sub))
+            result.update(_spec_openings(flag, sub, union_tag))
         elif _is_struct(resolved := _unwrap_optional(_resolve_type(ft))) and isinstance(sub, dict):
             result.update(_collect_fn_paths_from_config(sub, resolved, flag, union_tag))
     return result
@@ -1963,7 +1963,9 @@ def build_dynamic_flags(  # noqa: PLR0913  # one keyword per knob, as build_stat
             config_dict,
             union_tag,
         ):
-            result.extend(_collect_callable_field_specs(field_flag, target_path, mode, existing_names, grouped=grouped))
+            result.extend(
+                _collect_callable_field_specs(field_flag, target_path, mode, existing_names, union_tag, grouped=grouped)
+            )
         result.extend(_collect_callable_key_argv_specs(target, argv_list, union_tag, existing_names))
         result.extend(_collect_leaf_tag_argv_specs(target, argv_list, union_tag, existing_names))
         if config_flag:

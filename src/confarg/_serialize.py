@@ -18,7 +18,12 @@ from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from confarg import _defaults
-from confarg._callable import _serialize_callable, holds_an_opener, promote_bare_spec
+from confarg._callable import (
+    _serialize_callable,
+    holds_an_opener,
+    promote_bare_spec,
+    refuse_a_field_spelling_an_object_opener,
+)
 from confarg._cast import cast_name_for_type
 from confarg._depth import MAX_DEPTH, refuse_overflow
 from confarg._import import dotted_name, imports_back
@@ -198,6 +203,7 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
             spec = _serialize_callable(
                 instance,
                 lambda owner: _serialize_struct(type(owner), owner, path, opts),
+                opts.union_tag,
             )
             return _untyped_at(spec, path, opts)
         case _TypeKind.ANY:
@@ -349,7 +355,7 @@ def _serialize_any_form(
             _data_key(_serialize_leaf(None, k, opts.native_types), (*path, str(k))): item(v, str(k))
             for k, v in instance.items()
         }
-        if checked and holds_an_opener(out):
+        if checked and holds_an_opener(out, opts.union_tag):
             _warn_unread_any(instance, path, "it holds an opener key, so it reads back as the spec it spells")
         return out
     if isinstance(instance, list):
@@ -402,12 +408,13 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
     """Return the spec an ``Any`` node reads *instance* back from: a callable's, a struct's, or a leaf.
 
     A callable is written as a Callable field writes it, a bare path opened into its
-    ``bind:`` form, since an ``Any`` node reads a bare string as text; a struct as its
-    ``class:`` spec beside its fields; a leaf as :func:`_serialize_leaf` writes it.
+    ``bind:`` form, since an ``Any`` node reads a bare string as text; a struct as the spec
+    the union tag opens beside its fields; a leaf as :func:`_serialize_leaf` writes it.
 
     Raises:
         ConfargError: If no spec spells the callable or the struct (:func:`_serialize_callable`,
-            :func:`_class_path`), or the value is of a leaf construction does not build
+            :func:`_class_path`, a struct field spelled like an object opener), or the value is
+            of a leaf construction does not build
             (:func:`_refuse_an_unsupported_leaf`).
 
     Dev Notes:
@@ -419,11 +426,14 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
         spec = _serialize_callable(
             instance,
             lambda owner: _serialize_struct(type(owner), owner, path, opts),
+            opts.union_tag,
         )
         return _untyped_at(promote_bare_spec(spec) if isinstance(spec, str) else spec, path, opts)
     cls = type(instance)
     if _is_struct(cls):
-        return {_defaults.CLASS_KEY: _class_path(cls), **_serialize_struct(cls, instance, path, opts)}
+        fields = _serialize_struct(cls, instance, path, opts)
+        refuse_a_field_spelling_an_object_opener(fields, cls, "its", opts.union_tag, opts.union_tag)
+        return {opts.union_tag: _class_path(cls), **fields}
     _refuse_an_unsupported_leaf(cls, path)
     return _serialize_leaf(None, instance, opts.native_types)
 

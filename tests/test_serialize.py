@@ -555,6 +555,21 @@ class _AnyHeldAny:
     p: Any = None
 
 
+@_dc
+class _AnyHeldClassfn:
+    """A struct whose field is spelled like the ``classfn`` opener, which no object spec holds beside its own."""
+
+    classfn: int = 1
+    a: int = 2
+
+
+@_dc
+class _AnyHeldKind:
+    """A struct whose field is spelled like the custom union tag ``Kind`` (BUG-305)."""
+
+    Kind: int = 1  # spelled like the tag on purpose
+
+
 class _AnyScaler:
     """A plain callable class with no ``__eq__``: it reads back as an object holding the same state."""
 
@@ -651,6 +666,27 @@ class TestDumpAny:
         with pytest.warns(ConfargWarning, match=r"'x\.p'"):
             dumped = confarg.dump(Target(x=_AnyHeldAny(p=Path("q"))))
         assert dumped == {"x": {"class": f"{_MOD}._AnyHeldAny", "p": "q"}}
+
+    @pytest.mark.parametrize(
+        ("held", "union_tag", "field"),
+        [
+            pytest.param(_AnyHeldClassfn(), "class", "classfn", id="classfn"),
+            pytest.param(_AnyHeldKind(), "Kind", "Kind", id="custom-tag"),
+        ],
+    )
+    def test_a_struct_with_a_field_spelled_like_an_opener_warns_naming_it(
+        self, held: Any, union_tag: str, field: str
+    ) -> None:
+        """No spec holds a field spelled like an object opener beside its own, so the warning names the field."""
+        Target = make_target("x", Any, default=None)
+        reason = rf"has a field named '{field}', which a '{union_tag}:' spec cannot hold beside its opener"
+        with pytest.warns(ConfargWarning, match=reason):
+            confarg.dump(Target(x=held), union_tag=union_tag)
+
+    def test_a_field_spelled_like_another_tag_dumps_as_the_spec(self) -> None:
+        """Under the default tag, a struct's field spelled Kind is an ordinary field of its spec."""
+        Target = make_target("x", Any, default=None)
+        assert confarg.dump(Target(x=_AnyHeldKind())) == {"x": {"class": f"{_MOD}._AnyHeldKind", "Kind": 1}}
 
     def test_a_dict_holding_an_opener_warns(self) -> None:
         """A dict holding a class key reads back as a spec, not as the dict, so it warns."""

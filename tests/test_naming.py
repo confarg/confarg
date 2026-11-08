@@ -59,8 +59,8 @@ class TestNamedMemberNamesListsWhatNamedChildTypes:
         assert named_child(_Base, "other", node, "class") is Named.NOTHING
         assert named_member_names(_Base, node, "class") == []
 
-    def test_a_typed_call_beside_a_tag_lists_nothing(self) -> None:
-        """Under a custom tag, a ``call:`` beside it is a typed call, whose keys are ``call`` and ``args`` alone."""
+    def test_a_call_beside_a_custom_tag_is_no_typed_call(self) -> None:
+        """A custom tag is the class key, so ``call:`` beside it reads as beside ``class``: the tag names the class."""
         node: MergeDict = {"call": "builtins.dict", "kind": _SUB}
-        assert named_child(_Base, "camelCase", node, "kind") is Named.REFUSED
-        assert named_member_names(_Base, node, "kind") == []
+        assert named_child(_Base, "camelCase", node, "kind") is int
+        assert "camelCase" in named_member_names(_Base, node, "kind")

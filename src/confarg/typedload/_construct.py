@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import (
-    _OPENERS,
     _import_class_by_path,
     _resolve_callable_spec,
     holds_an_opener,
+    openers,
     resolve_held_spec,
     resolve_typed_call,
 )
@@ -538,7 +538,8 @@ def _construct_typed(tp: Any, data: Any, path: FieldPath, union_tag: str) -> Any
 def _construct_any(data: Any, path: FieldPath, union_tag: str) -> Any:
     """Construct what an ``Any`` node holds of *data*: a spec's value, a container of ``Any`` nodes, or a leaf.
 
-    A dict holding an opener is a spec, read with every opener (:func:`resolve_held_spec`);
+    A dict holding an opener, the union tag among them, is a spec, read with every opener
+    (:func:`resolve_held_spec`);
     any other dict is a ``dict[Any, Any]`` and a list a ``list[Any]``, so a spec at any depth
     is read too. A leaf is held as it is, a token as its text (:func:`_held_by_any`). A
     container in which nothing changed is returned as the very object given.
@@ -547,7 +548,7 @@ def _construct_any(data: Any, path: FieldPath, union_tag: str) -> Any:
         docs-dev/architecture/callables.md#an-any-node-reads-every-opener
     """
     if isinstance(data, dict):
-        if holds_an_opener(data):
+        if holds_an_opener(data, union_tag):
             return resolve_held_spec(data, path, union_tag, construct)
         held = _construct_dict(dict[Any, Any], data, path, union_tag)
         unchanged = all(
@@ -561,21 +562,20 @@ def _construct_any(data: Any, path: FieldPath, union_tag: str) -> Any:
     return _held_by_any(data)
 
 
-def _is_typed_call(data: Any, tp: Any) -> bool:
+def _is_typed_call(data: Any, tp: Any, union_tag: str) -> bool:
     """True if *data* is a ``call:`` spec for a field of type *tp*, and that field is not a Callable.
 
     A ``call:`` key is a spec only where no member of the annotation could hold that key as data: a
     dict type and a Callable keep their own meaning, and a struct member named ``call``
-    keeps the field's data. ``class:`` is the union tag, which already selects a struct, its
-    other keys the struct's fields; a ``bind:`` beside ``call:`` is a second opener, which the
-    call refuses.
+    keeps the field's data. The *union_tag* already selects a struct, its other keys the
+    struct's fields; a ``bind:`` beside ``call:`` is a second opener, which the call refuses.
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
     """
     if not isinstance(data, dict):
         return False
-    if _defaults.CALL_KEY not in data or _defaults.CLASS_KEY in data:
+    if _defaults.CALL_KEY not in data or union_tag in data:
         return False
     return _takes_typed_call(tp)
 
@@ -625,7 +625,7 @@ def spec_reading_variant(tp: Any, data: Any, union_tag: str) -> Any:
     """
     if not isinstance(data, dict):
         return None
-    present = {k for k in _OPENERS if k in data} - {union_tag, _defaults.CALL_KEY}
+    present = {k for k in openers(union_tag) if k in data} - {union_tag, _defaults.CALL_KEY}
     return _opener_keys_reader(_union_args_no_none(tp), present) if present else None
 
 
@@ -749,11 +749,11 @@ def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noq
         docs-dev/architecture/design-decisions/the-type-decides-replace-or-refine.md#the-type-decides-whether-a-value-replaces-or-refines
     """
     tp = _resolve_type(tp)
-    if _is_typed_call(data, tp):
-        return _names_a_target(data, (_defaults.CALL_KEY,))
+    if _is_typed_call(data, tp, union_tag):
+        return _names_a_target(data, (_defaults.CALL_KEY,), union_tag)
     match _type_kind(tp):
         case _TypeKind.CALLABLE | _TypeKind.ANY:
-            return _names_a_target(data, _OPENERS)
+            return _names_a_target(data, openers(union_tag), union_tag)
         case _TypeKind.UNION:
             members = _union_branches(tp)
             if len(members) == 1:
@@ -770,13 +770,13 @@ def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noq
             return False
 
 
-def _names_a_target(data: MergeDict, openers: Sequence[str]) -> bool:
-    """True if *data* names a target under one of *openers*: anything but a delete or a dict holding no opener."""
+def _names_a_target(data: MergeDict, keys: Sequence[str], union_tag: str) -> bool:
+    """True if *data* names a target under an opener of *keys*: anything but a delete or a dict holding no opener."""
     return any(
         k in data
         and not isinstance(data[k], _DeleteSentinel)
-        and not (isinstance(data[k], dict) and not holds_an_opener(data[k]))
-        for k in openers
+        and not (isinstance(data[k], dict) and not holds_an_opener(data[k], union_tag))
+        for k in keys
     )
 
 
@@ -814,7 +814,7 @@ def construct(tp: Any, data: Any, *, path: FieldPath = (), union_tag: str = _def
         _refuse_a_forbidden_literal(tp, _spell_field_path(path))
     if data is None and _allows_none(tp):
         return None
-    if _is_typed_call(data, tp):
+    if _is_typed_call(data, tp, union_tag):
         return resolve_typed_call(data, tp, path=path, union_tag=union_tag, construct_fn=construct)
     return _construct_typed(tp, data, path, union_tag)
 
@@ -1958,7 +1958,7 @@ def construct_named_class(  # noqa: PLR0913  # the class, its keys, and how the 
 ) -> Any:
     """Build exactly *cls* from *data*, whatever subclasses it has.
 
-    *cls* is the class a callable spec names: the one ``class:`` names, or the owner a
+    *cls* is the class a callable spec names: the one the union tag names, or the owner a
     ``classfn:`` path names. Subclass dispatch has nothing left to choose, as after a union
     tag selected the class, and both are built by one constructor, :func:`_construct_named`.
     *name* is the class as the spec wrote it and *opener* the key that named it, which a
