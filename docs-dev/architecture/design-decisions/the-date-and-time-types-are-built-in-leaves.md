@@ -1,7 +1,8 @@
 # The date and time types are built-in leaves
 
 `date`, `datetime`, `time`, `timedelta` and `timezone` are registered leaves with no call to `register_leaf_type`, as `Path`, `Decimal` and `UUID` are ([Decimal and UUID are built-in leaves](decimal-and-uuid-are-built-in-leaves.md#decimal-and-uuid-are-built-in-leaves)): `_coerce._LEAF_COERCIONS` and `_LEAF_SERIALIZERS` hold an entry for each (FEAT-51, every choice below maintainer-chosen).
-Unregistered, none of them was usable: `date`, `datetime` and `time` have no signature `inspect` reads, so each was an unsupported leaf, refused on every channel and by `dump()`; `timedelta` and `timezone` were refused the same way.
+Unregistered, none of them was usable: each is built by a `__new__` written in C, whose signature confarg does not read ([a class built by a C `__new__` reads no signature](a-structs-members-are-its-constructors-parameters.md#a-class-built-by-a-c-__new__-reads-no-signature)), so each was an unsupported leaf, refused on every channel and by `dump()`.
+Registered, none is a struct either, so no class tag opens one.
 `zoneinfo.ZoneInfo` stays out: whether `ZoneInfo('Europe/Paris')` exists depends on the machine's time zone database (the `tzdata` package on Windows), so a field typed by one would load on one host and not another.
 
 Registered, each is everything a registration makes a type ([Decimal and UUID are built-in leaves](decimal-and-uuid-are-built-in-leaves.md#decimal-and-uuid-are-built-in-leaves)): it outranks every other leaf kind in a union, an expression computes with the object (`${start + span}`), a default is laid as the base layer, and its `__name__` is a `__cast__` name.

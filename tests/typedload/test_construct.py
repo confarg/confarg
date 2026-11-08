@@ -6,14 +6,17 @@
 
 import _thread
 import enum
+import hashlib
 import random
 import re
+import struct
 import sys
 import threading
 from collections.abc import Callable
 from dataclasses import InitVar, dataclass, field
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, Protocol
 from uuid import UUID
@@ -26,7 +29,7 @@ from confarg._merge import (
     MERGE_OP_KEYS,
     ListOp,
 )
-from confarg._types import _StrToken, _UnionSeqToken
+from confarg._types import _is_struct, _StrToken, _UnionSeqToken
 from confarg.exceptions import (
     AmbiguousUnionError,
     ConfargWarning,
@@ -1303,6 +1306,27 @@ class _ForwardingNew:
         self.x = x
 
 
+class _ForwardingCall(type):
+    """A metaclass whose ``__call__`` forwards everything, as a registry or singleton metaclass does."""
+
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        return super().__call__(*args, **kwargs)
+
+
+class _NewUnderACall(metaclass=_ForwardingCall):
+    x: int
+
+    def __new__(cls, x: int = 0) -> "_NewUnderACall":
+        obj = super().__new__(cls)
+        obj.x = x
+        return obj
+
+
+class _InitUnderACall(metaclass=_ForwardingCall):
+    def __init__(self, x: int = 0) -> None:
+        self.x = x
+
+
 @dataclass
 class _HoldsNoInit:
     m: _NoInit
@@ -1343,6 +1367,11 @@ class TestAClassTakingNothingIsAStructWithNoFields:
     def test_a_forwarding_new_does_not_hide_init(self) -> None:
         """A class defining ``__init__`` is read by it, whatever ``__new__`` takes."""
         assert construct(_ForwardingNew, {"x": 5}).x == 5
+
+    @pytest.mark.parametrize("tp", [_NewUnderACall, _InitUnderACall])
+    def test_a_metaclass_call_does_not_hide_the_constructor(self, tp: type) -> None:
+        """A metaclass ``__call__`` forwarding everything is not read in place of ``__new__`` or ``__init__``."""
+        assert construct(tp, {"x": 5}).x == 5
 
 
 class _SeededRandom(random.Random):
@@ -1422,6 +1451,61 @@ class TestAClassTakingNothingThatHoldsCStorageIsNoStruct:
         """``register_leaf_type`` makes such a class a leaf, built by its coercion."""
         confarg.register_leaf_type(_thread.LockType, lambda _: threading.Lock())
         assert isinstance(construct(_thread.LockType, "fresh"), _thread.LockType)
+
+
+class _CNewDate(date):
+    """Inherits ``date``'s ``__new__``, written in C, and ``object.__init__``."""
+
+
+class _CInitError(Exception):
+    """Inherits ``BaseException``'s ``__init__``, written in C."""
+
+
+class TestAClassBuiltByACNewReadsNoSignature:
+    """A class whose ``__new__`` is written in C reads no signature, so it is no struct, on every Python (BUG-306).
+
+    CPython gives such a class a text signature from one release to the next, ``datetime``
+    on 3.15, and a text signature carries no annotation: reading it made a tag open the
+    class on some interpreters only, and argv's text reach its parameters untyped.
+    """
+
+    @pytest.mark.parametrize(
+        "tp",
+        [Decimal, hashlib.blake2b, datetime, date, time, timedelta, _CNewDate],
+        ids=["decimal", "unregistered", "datetime", "date", "time", "timedelta", "subclass"],
+    )
+    def test_it_is_no_struct(self, tp: type) -> None:
+        """``Decimal`` and ``blake2b`` have a text signature on every Python, the date types from 3.15."""
+        assert not _is_struct(tp)
+
+    @pytest.mark.parametrize(
+        ("tp", "data"),
+        [
+            pytest.param(Decimal, {"class": "decimal.Decimal", "value": "1.5"}, id="decimal"),
+            pytest.param(datetime, {"class": "datetime.datetime", "year": 2026, "month": 1, "day": 2}, id="datetime"),
+        ],
+    )
+    def test_a_tag_naming_a_registered_one_is_refused(self, tp: type, data: dict[str, Any]) -> None:
+        """A registered leaf it builds is read from one value: no tag opens it."""
+        with pytest.raises(TypeCoercionError, match=f"{tp.__name__} is built from one value, not from keys"):
+            construct(tp, data, path=("x",))
+
+    def test_a_python_new_is_still_read(self) -> None:
+        """``Fraction``'s ``__new__`` is written in Python: a struct of the parameters it names."""
+        assert construct(Fraction, {"class": "fractions.Fraction", "numerator": 1, "denominator": 3}) == Fraction(1, 3)
+
+    @pytest.mark.parametrize(
+        ("tp", "attribute", "expected"),
+        [
+            pytest.param(struct.Struct, "format", "<i", id="struct"),
+            pytest.param(_CInitError, "args", ("<i",), id="exception"),
+        ],
+    )
+    def test_a_c_init_is_still_read(self, tp: type, attribute: str, expected: object) -> None:
+        """A C ``__init__`` reads ``(*args, **kwargs)`` on every Python, as the same Python signature does."""
+        built = construct(tp, {"args": ["<i"]})
+        assert type(built) is tp
+        assert getattr(built, attribute) == expected
 
 
 @dataclass

@@ -8563,6 +8563,102 @@ class TestWholeValueFlagContract:
 
 
 # ---------------------------------------------------------------------------
+# A leaf built by a C ``__new__`` takes no tag (BUG-306)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _CNewLeaves:
+    """Registered leaves whose ``__new__`` is written in C: ``Decimal`` reads a text signature on every Python."""
+
+    price: Decimal | None = None
+    when: datetime | None = None
+
+
+_C_NEW_TAGS = [
+    pytest.param("price", "decimal.Decimal", {"value": "1.5"}, id="decimal"),
+    pytest.param("when", "datetime.datetime", {"year": "2026", "month": "1", "day": "2"}, id="datetime"),
+]
+
+
+class TestACNewLeafTakesNoTagContract:
+    """No tag opens a leaf built by a ``__new__`` written in C, from any channel, on any Python (BUG-306).
+
+    Its text signature named parameters with no annotation, and only on the interpreters that
+    give it one: on 3.15 the file built ``datetime`` from its fields while argv's ``'2026'``
+    escaped ``load()`` as ``datetime``'s raw ``TypeError``.
+    """
+
+    @pytest.mark.parametrize(("name", "tag", "params"), _C_NEW_TAGS)
+    def test_the_flat_tag_is_refused(self, loader: ConfargLoader, name: str, tag: str, params: dict[str, str]) -> None:
+        """``--price.value`` and ``PRICE__VALUE`` name no member, so every front-end refuses them."""
+        argv = [f"--{name}.class", tag, *(t for k, v in params.items() for t in (f"--{name}.{k}", v))]
+        with pytest.raises(_REJECTS_BARE_FLAG):
+            loader.load(_CNewLeaves, argv=argv, env={})
+        env = {f"MYAPP_{name.upper()}__CLASS": tag} | {
+            f"MYAPP_{name.upper()}__{k.upper()}": v for k, v in params.items()
+        }
+        with pytest.raises(ConfargError, match="has no matching field"):
+            loader.load(_CNewLeaves, argv=[], env=env, env_prefix="MYAPP_")
+
+    @pytest.mark.parametrize(("name", "tag", "params"), _C_NEW_TAGS)
+    def test_the_file_tag_is_refused(
+        self, loader: ConfargLoader, tmp_yaml, name: str, tag: str, params: dict[str, str]
+    ) -> None:
+        """A file's tag reaches construction, which reads the leaf from one value."""
+        cfg = tmp_yaml(f"{name}:\n  class: {tag}\n" + "".join(f'  {k}: "{v}"\n' for k, v in params.items()))
+        with pytest.raises(TypeCoercionError, match=f"{tag.rsplit('.', 1)[1]} is built from one value, not from keys"):
+            loader.load(_CNewLeaves, argv=[], env={}, files=[cfg])
+
+
+# ---------------------------------------------------------------------------
+# A metaclass ``__call__`` does not hide the constructor's parameters
+# ---------------------------------------------------------------------------
+
+
+class _ForwardingCall(type):
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        return super().__call__(*args, **kwargs)
+
+
+class _NewUnderACall(metaclass=_ForwardingCall):
+    x: int
+
+    def __new__(cls, x: int = 0) -> _NewUnderACall:
+        obj = super().__new__(cls)
+        obj.x = x
+        return obj
+
+
+class _InitUnderACall(metaclass=_ForwardingCall):
+    def __init__(self, x: int = 0) -> None:
+        self.x = x
+
+
+@dataclass
+class _UnderACall:
+    new: _NewUnderACall | None = None
+    init: _InitUnderACall | None = None
+
+
+class TestAMetaclassCallDoesNotHideTheConstructorContract:
+    """A metaclass ``__call__(cls, *args, **kwargs)`` is not read in place of ``__new__`` or ``__init__``.
+
+    Reading ``__new__`` through ``inspect.signature(cls)`` read the metaclass's ``__call__``: the
+    file refused ``x`` as no field of ``(args, kwargs)`` and argv refused ``--new.x``.
+    """
+
+    @pytest.mark.parametrize("name", ["new", "init"])
+    def test_every_channel_reaches_the_parameter(self, loader: ConfargLoader, tmp_yaml, name: str) -> None:
+        """``--new.x``, ``MYAPP_NEW__X`` and a file's ``new: {x: 3}`` each set ``x``."""
+        assert getattr(loader.load(_UnderACall, argv=[f"--{name}.x", "3"], env={}), name).x == 3
+        env = {f"MYAPP_{name.upper()}__X": "3"}
+        assert getattr(loader.load(_UnderACall, argv=[], env=env, env_prefix="MYAPP_"), name).x == 3
+        cfg = tmp_yaml(f"{name}:\n  x: 3\n")
+        assert getattr(loader.load(_UnderACall, argv=[], env={}, files=[cfg]), name).x == 3
+
+
+# ---------------------------------------------------------------------------
 # Local variables (the reserved ``locals:`` namespace)
 # ---------------------------------------------------------------------------
 
