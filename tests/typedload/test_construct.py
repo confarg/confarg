@@ -724,6 +724,33 @@ class _KindOnlyNeedySub(_KindOnlyNeedyBase):
 
 
 @dataclass
+class _KindOrPlainBase:
+    """Base with one subclass owning the tag's spelling and one that does not."""
+
+
+@dataclass
+class _KindOrPlainKinded(_KindOrPlainBase):
+    Kind: str = "x"
+
+
+@dataclass
+class _KindOrPlainPlain(_KindOrPlainBase):
+    p: int = 0
+
+
+@dataclass
+class _TagReaderVariant:
+    """Union variant owning no member spelled like the tag, so alone it reads the key as its tag."""
+
+    q: int = 0
+
+
+@dataclass
+class _TagReaderSub(_TagReaderVariant):
+    p: int = 0
+
+
+@dataclass
 class _KindOnlyUnionVariant:
     """Union variant whose subclass alone owns the tag's spelling."""
 
@@ -825,6 +852,46 @@ class TestTagFieldCollision:
             union_tag="Kind",
         )
         assert result == _KindOnlyUnionSub(Kind="v")
+
+    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
+    def test_subclass_fallback_refuses_the_key_to_a_subclass_not_owning_it(self) -> None:
+        """No subclass covering the keys, a subclass owning no such field refuses the key, never drops it.
+
+        The fallback tried each subclass through a constructor that dropped the tag-shaped
+        key as the tag, so ``Plain(p=1)`` was built and the member's value lost (BUG-303).
+        """
+        with pytest.raises(TypeCoercionError, match="no subclass accepts"):
+            _construct_struct_dispatch(_KindOrPlainBase, {"p": 1, "Kind": "anything"}, (), "Kind")
+
+    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
+    def test_union_fallback_never_reads_an_owned_key_as_a_variants_tag(self) -> None:
+        """A variant owning no member spelled like the tag refuses it as an unknown field.
+
+        The union reads the key as ``_KindVariant``'s value; its fallback constructed each
+        variant through its own dispatch, so ``_TagReaderVariant`` imported the key as its
+        subclass tag and built ``_TagReaderSub`` (BUG-303).
+        """
+        data = {"p": 1, "Kind": f"{__name__}._TagReaderSub"}
+        with pytest.raises(TypeCoercionError) as exc_info:
+            construct(_KindVariant | _TagReaderVariant, data, union_tag="Kind")
+        lines = str(exc_info.value).splitlines()
+        assert "  _KindVariant: unknown field(s) ['p']. Valid fields: ['Kind']" in lines
+        assert "  _TagReaderVariant: unknown field(s) ['Kind', 'p']. Valid fields: ['q']" in lines
+
+    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
+    def test_union_fallback_never_builds_the_class_an_owned_key_names(self) -> None:
+        """An owned key naming a variant's own class selects nothing: the variant refuses the key."""
+        data = {"Kind": f"{__name__}._OtherVariant", "other": "x"}
+        with pytest.raises(TypeCoercionError, match=r"_OtherVariant: unknown field\(s\) \['Kind'\]"):
+            construct(_KindVariant | _OtherVariant, data, union_tag="Kind")
+
+    @pytest.mark.filterwarnings("ignore::confarg.exceptions.ConfargWarning")
+    def test_union_fallback_never_opens_a_leaf_by_an_owned_key(self, leaf_registry: None) -> None:
+        """A registered leaf a tag opens is not opened by a key a member owns."""
+        confarg.register_leaf_type(_PlainLeaf, lambda v: _PlainLeaf(int(v)))
+        data = {"Kind": f"{__name__}._PlainLeaf", "a": 5}
+        with pytest.raises(TypeCoercionError, match=r"to _KindVariant \| _PlainLeaf"):
+            construct(_KindVariant | _PlainLeaf, data, union_tag="Kind")
 
     def test_unshadowed_tag_still_dispatches(self) -> None:
         """A struct without the colliding field keeps importing the tag's class path."""
