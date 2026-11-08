@@ -56,11 +56,12 @@ It still reaches `dump_file()`, which refuses it with a `ConfargError` naming it
 
 ## A value its type does not hold dumps as an `Any` node holds it
 
-A value its declared type does not hold — a `Bar` in a field typed `Empty`, a `3` in a struct field, `'abc'` in an `int` field, a `None` in a field that lists no `None`, a three-item tuple in a `tuple[int, int]` — is written as an `Any` node writes it, by its runtime type ([above](#an-any-node-dumps-the-spec-that-rebuilds-it)), with a `ConfargWarning` naming the path, the value's class and the declared type (`_serialize._serialize_foreign`, BUG-267).
+A value its declared type does not hold — a `Bar` in a field typed `Empty`, a `3` in a struct field, `'abc'` in an `int` field, a `None` in a field that lists no `None`, a three-item tuple in a `tuple[int, int]`, the class `int` in a `type[Base]` — is written as an `Any` node writes it, by its runtime type ([above](#an-any-node-dumps-the-spec-that-rebuilds-it)), with a `ConfargWarning` naming the path, the value's class and the declared type (`_serialize._serialize_foreign`, BUG-267); a value that is itself a class is named as one, "its class int", not by its metaclass.
 The object dump is forensic, so it records what the object holds rather than refusing it ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)), and the warning says that the dump will not read back.
 A value no spec spells is written untyped.
 
 Whether the type holds the value is `_serialize._holds`, asked before anything else of the value, and answered by the predicate that already picks a union's variant (`_variant_holds`), widened to what a type checker accepts for the annotation: an abstract collection holds any instance of its abstract class (a tuple in a `Sequence[int]`, a `frozenset` in an `AbstractSet[int]`, a `MappingProxyType` in a `Mapping[str, int]`), a str or bytes apart for a sequence, and a `float` holds an int, PEP 484's numeric tower.
+A `type[X]` holds a class its bound admits, by the predicate construction reads it with ([leaf coercion](leaf-coercion.md#a-type-reference-takes-a-subclass-of-its-bound)).
 A union holds what one of its variants holds, an exact holder preferred over a widened one, so `float | int` still writes `1` as the int it is.
 A type construction does not build at all is still refused first, whatever the value ([above](#an-unsupported-leaf-is-refused-both-ways)).
 

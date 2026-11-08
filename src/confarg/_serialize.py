@@ -51,6 +51,7 @@ from confarg._types import (
     _struct_state_fields,
     _tagged_struct,
     _tuple_types,
+    _type_ref_admits,
     _union_args,
     _union_args_no_none,
     _union_branches,
@@ -239,9 +240,11 @@ def _serialize_foreign(tp: Any, instance: Any, path: FieldPath, opts: _DumpOptio
     Dev Notes:
         docs-dev/architecture/types/serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it
     """
+    # A class is named itself, not by its metaclass: "its class int", never "its type".
+    held = f"class {instance.__name__}" if isinstance(instance, type) else type(instance).__name__
     warnings.warn(
         f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back: its"
-        f" {type(instance).__name__} is no value of {_spell_type(tp)}, the type it is"
+        f" {held} is no value of {_spell_type(tp)}, the type it is"
         " declared as. It is written as an Any field holds it.",
         ConfargWarning,
         stacklevel=3,
@@ -1013,7 +1016,7 @@ def _find_variant_type(tp: Any, instance: Any) -> Any | None:
     return None
 
 
-def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one return per kind
+def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: C901, PLR0911  # one return per kind
     """True if *instance* is a value of union variant *tp*.
 
     Dispatches on :func:`_type_kind`, as :func:`_serialize_by_type` does, so the variant
@@ -1046,6 +1049,9 @@ def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: PLR0911  # one retu
             return _literal_holds(_literal_members(tp), instance)
         case _TypeKind.ANY:
             return True
+        case _TypeKind.LEAF if _is_type_ref(tp):
+            # Read back by the same bound, so a class it refuses is written as foreign (BUG-294).
+            return isinstance(instance, type) and _type_ref_admits(tp, instance)
         case _TypeKind.UNION | _TypeKind.TAGGABLE_LEAF | _TypeKind.CALLABLE | _TypeKind.LEAF:
             # What is left is a class, or is parameterized over one (``type[X]``,
             # ``Callable[..., X]``).

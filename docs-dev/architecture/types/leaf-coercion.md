@@ -38,3 +38,14 @@ The two share one predicate for "is this leaf type coerced eagerly?" — `_is_ea
 
 `read_as_object` is the third reader: what an expression reads of a leaf, the value construction builds where one `_reads_as_object` or `_is_eagerly_coercible` type is certain — the object, or a file's `1` as the `1.0` a `float` holds — the value as written anywhere else and wherever the type refuses it.
 It never raises either, and never warns ([design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object)).
+
+## A type reference takes a subclass of its bound
+
+A `type[X]` field takes a class, a class object or the dotted path of one, that subclasses its bound, read as a type checker reads it (`_types._type_ref_bounds`): `type[A | B]` is `type[A] | type[B]` and takes a subclass of either, `type[Box[int]]` takes a subclass of `Box`, a class carrying no runtime trace of its arguments, and bare `type`, `type[object]` and `type[Any]` take every class, as PEP 484 reads `type[Any]` as `type`.
+A bound that names anything else, a `TypeVar` included, takes every class.
+A refusal names every class of the bound: "is not a subclass of `mod.A | mod.B`".
+
+One predicate answers it, `_types._type_ref_admits`, which `_coerce_type_ref` reads a value by and `_serialize._variant_holds` asks of a class a `type[X]` field holds, so the dump writes a class the bound does not admit as a foreign value, with its warning ([serialization](serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)), rather than a path its read-back refuses (BUG-294).
+Before, the dump answered `isinstance(value, type)`, held by any class; and the read side took the bound's first argument only when it was a class, so `type[A | B]` and `type[Box[int]]` took every class, and `type[Any]` none, `typing.Any` being a class since 3.11 that no other class subclasses.
+
+Precedent, run: pydantic and typeguard both read `type[A | B]` as either bound and `type[Any]` as any class; typeguard checks `type[Box[int]]` against `Box`, where pydantic refuses to build a schema for it.

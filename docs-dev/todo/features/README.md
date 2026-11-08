@@ -12,7 +12,7 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 |---|---|---|---|---|---|
 | [FEAT-60 — A tuple reads where a list reads](FEAT-60-a-tuple-reads-where-a-list-reads.md) | critical (via BUG-293) |  | S | medium | behavior |
 | [FEAT-58 — A `**kwargs` parameter takes extra keys, typed by its annotation](FEAT-58-a-kwargs-parameter-takes-extra-keys-typed-by-its-annotation.md) | critical |  | L | medium | config |
-| [FEAT-57 — Protocol-typed fields](FEAT-57-protocol-typed-fields.md) | major | BUG-293, BUG-294, BUG-295 | L | high | config |
+| [FEAT-57 — Protocol-typed fields](FEAT-57-protocol-typed-fields.md) | major | BUG-293, BUG-295 | L | high | config |
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
 | [FEAT-7 — Lazy resolution between `merge` and `build`](FEAT-7-lazy-resolution-merge-to-build.md) | minor |  | M | high | behavior |

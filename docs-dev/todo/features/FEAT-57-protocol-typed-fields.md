@@ -7,7 +7,9 @@ where:
   - src/confarg/_types.py::_direct_struct_subclasses
   - src/confarg/_types.py::_constructor_parameters  # typing's synthetic constructor read as object.__init__'s
   - src/confarg/_callable.py::_unproducible_return  # a Callable whose declared return is a Protocol
-  - src/confarg/typedload/_coerce.py::_coerce_type_ref
+  - src/confarg/_types.py::_type_ref_bounds  # the bound type[P] reads, a Protocol among its classes
+  - src/confarg/_types.py::_type_ref_admits  # the predicate type[P]'s read and dump share
+  - src/confarg/typedload/_coerce.py::_coerce_type_ref  # the refusal's Protocol wording
   - src/confarg/typedload/_construct.py::_construct_struct_dispatch
   - src/confarg/_serialize.py::_variant_holds  # in typedload/_holding.py once BUG-293 moves it
   - src/confarg/_serialize.py::_needs_tag
@@ -18,7 +20,7 @@ effort: L  # crosses every channel and front-end, and records two design decisio
 risk: high  # the tag, construction, the type walk and the dump all change their answer at once
 impact: config  # a @runtime_checkable Protocol's class tag naming a class whose method cannot be called as declared stops loading
 severity: major  # a Protocol-typed field crashes with a raw TypeError; making it @runtime_checkable is a partial workaround
-blocked_by: [BUG-293, BUG-294, BUG-295]  # each introduces a predicate or a refusal the Protocol branch goes into
+blocked_by: [BUG-293, BUG-295]  # each introduces a predicate or a refusal the Protocol branch goes into
 ---
 
 # FEAT-57 — Protocol-typed fields

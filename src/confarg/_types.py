@@ -1994,14 +1994,39 @@ def _is_type_ref(tp: Any) -> bool:
     return tp is type or get_origin(tp) is type
 
 
-def _type_ref_constraint(tp: Any) -> type:
-    """Upper-bound class from `type[X]`; `object` for bare `type`."""
-    tp = _resolve_type(tp)
-    args = get_args(tp)
-    if args:
-        c = _resolve_type(args[0])
-        return c if isinstance(c, type) else object
-    return object
+def _type_ref_bounds(tp: Any) -> tuple[type, ...]:
+    """Return the classes a value of the type reference *tp* must subclass one of; none where it takes every class.
+
+    As a type checker reads the bound: ``type[A | B]`` is ``type[A] | type[B]``, ``type[Box[int]]``
+    is bound by ``Box``, the arguments being no runtime fact of a class, and bare ``type`` and
+    ``type[Any]`` take every class. A bound naming anything that is no class, a ``TypeVar``
+    included, takes every class too.
+
+    Dev Notes:
+        docs-dev/architecture/types/leaf-coercion.md#a-type-reference-takes-a-subclass-of-its-bound
+    """
+    args = get_args(_resolve_type(tp))
+    if not args:
+        return ()
+    bound = _resolve_type(args[0])
+    variants = [_resolve_type(v) for v in _union_args(bound)] if _is_union(bound) else [bound]
+    classes = tuple(get_origin(v) or v for v in variants)
+    if any(c is Any or not isinstance(c, type) for c in classes):
+        return ()  # Any is a class since 3.11, which no other class subclasses
+    return classes
+
+
+def _type_ref_admits(tp: Any, cls: type) -> bool:
+    """True if the class *cls* is a value of the type reference *tp*: a subclass of one of its bounds.
+
+    The one answer construction reads a ``type[X]`` value by and ``dump()`` writes one by, so a
+    dump writes as foreign no class its read-back refuses.
+
+    Dev Notes:
+        docs-dev/architecture/types/leaf-coercion.md#a-type-reference-takes-a-subclass-of-its-bound
+    """
+    bounds = _type_ref_bounds(tp)
+    return not bounds or issubclass(cls, bounds)
 
 
 def _is_callable(tp: Any) -> bool:
