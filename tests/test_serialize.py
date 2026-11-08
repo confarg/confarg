@@ -30,7 +30,7 @@ import pytest
 
 import confarg
 from confarg._serialize import _serialize_leaf, _serialize_untyped
-from confarg._types import _Pinned, _StrToken, _UnionSeqToken
+from confarg._types import TagPolicy, _Pinned, _StrToken, _UnionSeqToken
 from confarg.exceptions import ConfargError, ConfargWarning
 from tests.conftest import (
     AppConfig,
@@ -885,6 +885,14 @@ class TestDumpSubclass:
         loaded = confarg.load(_SubWrapper, argv=[], env={}, files=[path])
         assert isinstance(loaded.item, _SubChild)
         assert loaded.item.value == pytest.approx(2.5)
+
+    @pytest.mark.parametrize("tag_policy", ["auto", "always"])
+    def test_a_union_tags_a_subclass_instance_with_its_own_class(self, tag_policy: TagPolicy) -> None:
+        """A union's tag names the class its struct variant's instance is written as, not the variant's (BUG-301)."""
+        Holder = make_target("item", _SubBase | _Foreign)
+        result = confarg.dump(Holder(item=_SubChild(value=1.0)), tag_policy=tag_policy)
+        assert result["item"] == {"value": 1.0, "class": "tests.test_serialize._SubChild"}
+        assert confarg.from_dict(Holder, result).item == _SubChild(value=1.0)
 
 
 # ---------------------------------------------------------------------------

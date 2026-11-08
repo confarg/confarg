@@ -477,11 +477,10 @@ def _serialize_struct(
     opts: _DumpOptions,
 ) -> dict[str, Any]:
     """Serialize a dataclass or plain-class instance to a dict."""
-    actual_tp = type(instance)
-    bound = _tagged_struct(actual_tp, tp) if actual_tp is not _class_of(tp) and _is_struct(actual_tp) else None
-    if bound is not None:
-        out = _serialize_struct(bound, instance, path, opts)
-        out[opts.union_tag] = _class_path(actual_tp)
+    written = _written_struct(tp, instance)
+    if written is not tp:
+        out = _serialize_struct(written, instance, path, opts)
+        out[opts.union_tag] = _class_path(type(instance))
         return out
     flds = _struct_state_fields(tp)
     out: dict[str, Any] = {}
@@ -493,6 +492,22 @@ def _serialize_struct(
         fp = (*path, name)
         out[name] = _serialize(ft, value, fp, opts)
     return out
+
+
+def _written_struct(tp: Any, instance: Any) -> Any:
+    """Return the struct *instance* is written as where *tp* is declared, *tp* itself or the instance's own class.
+
+    Its own class, when a tag naming it builds where *tp* is declared, is written with that tag,
+    by the struct and by a union alike.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#serialization
+    """
+    actual_tp = type(instance)
+    if actual_tp is _class_of(tp) or not _is_struct(actual_tp):
+        return tp
+    bound = _tagged_struct(actual_tp, tp)
+    return tp if bound is None else bound
 
 
 class _NotHeldError(AttributeError):
@@ -585,7 +600,7 @@ def _serialize_union(
 
     if _is_struct_variant(variant_tp):
         if isinstance(serialized, dict) and (opts.tag_policy == "always" or _needs_tag(tp, serialized, opts.union_tag)):
-            serialized[opts.union_tag] = _class_path(_class_of(variant_tp))
+            serialized[opts.union_tag] = _class_path(_class_of(_written_struct(variant_tp, instance)))
         return serialized
 
     # With one variant beside None, no other variant can take the dump: only a token selects
