@@ -134,6 +134,31 @@ class WithAliasAnnotated:
     service: AliasAnnotated
 
 
+# A union variant behind an alias, which typing does not flatten as it flattens one written inline.
+type AliasIntOrFloat = int | float
+type AliasMaybeInt = int | None
+
+
+@dataclass
+class WithAliasedVariants:
+    """Unions holding an aliased variant; each field reads as its twin in :class:`WithInlineVariants`."""
+
+    num: AliasIntOrFloat | bool = 0
+    maybe: AliasMaybeInt | str = "a"
+    same: AliasInt | int = 0
+    service: AliasUnion | None = None
+
+
+@dataclass
+class WithInlineVariants:
+    """The unions of :class:`WithAliasedVariants` written inline, a variant that reads as an earlier one left out."""
+
+    num: int | float | bool = 0
+    maybe: int | str | None = "a"
+    same: int = 0
+    service: DbConfig | CacheConfig | None = None
+
+
 # ---------------------------------------------------------------------------
 # Dataclasses — flat
 # ---------------------------------------------------------------------------

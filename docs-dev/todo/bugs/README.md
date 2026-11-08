@@ -9,7 +9,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-278 — A union holding an aliased union reads nothing](BUG-278-a-union-holding-an-aliased-union-reads-nothing.md) | major |  | M | medium | behavior | PR-5 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |

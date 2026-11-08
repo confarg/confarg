@@ -13,7 +13,7 @@ introduced_by: [BUG-248]  # PR-460, which wrote _named with a __name__ fallback
 
 Since 3.14 `int | str` is an instance of `typing.Union`, whose `__name__` is `Union`, so every message that names a type by `getattr(tp, "__name__", repr(tp))` names a union `Union` there, where 3.12 and 3.13, finding no `__name__`, printed it as written.
 `_api._named` does, for the nesting refusal of a root union target; the other sites spelling a type that way are listed in [REF-97](../refactors/REF-97-how-a-message-names-a-type-is-spelled-by-hand.md), and any of them a union reaches says `Union` too *(inferred)*.
-`_construct._variant_name` names a union's variants, which typing flattens, so it meets a union only behind a type alias, the variant [BUG-278](BUG-278-a-union-holding-an-aliased-union-reads-nothing.md) flattens; it says `Union | bool` on 3.14 until then.
+`_construct._variant_name` names a union's variants, which `_types._union_args` reads flat since BUG-278, so it meets no union any more.
 Fix direction: name the type through `_types._spell_type`, which spells a union by its variants on every Python, as REF-97 plans for every site.
 Found while fixing BUG-252, whose refusal was routed through `_spell_type` for this reason.
 

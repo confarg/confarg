@@ -2,7 +2,7 @@
 
 All type knowledge is derived at runtime from ordinary annotations (`_types.py`), because confarg requires no base class, decorator or field marker ([design decisions](../design-decisions/no-custom-types-required.md#no-custom-types-required)).
 
-- `TypeAliasType`, `Annotated`, `Final` and `NewType` are unwrapped everywhere (`_resolve_type`; see [wrappers are transparent](#wrappers-are-transparent)).
+- `TypeAliasType`, `Annotated`, `Final` and `NewType` are unwrapped everywhere (`_resolve_type`; see [wrappers are transparent](#wrappers-are-transparent)), and a union variant that unwraps to a union is spread into its variants (`_union_args`; see [a union is read flat](#a-union-is-read-flat)).
 - Abstract collection types map to concrete ones: `Sequence`/`Iterable`/`Collection` → list, `AbstractSet`/`MutableSet` → set, `Mapping`/`MutableMapping` → dict, bare or parameterized ([design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-builtins-subclass-is-that-builtin)).
 - A subclass of `dict`, `list`, `set`, `frozenset`, `tuple`, `str`, `int` or `float` reads as that builtin and is built as the subclass, unless it is a dataclass, a namedtuple, an `Enum` or registered (`_builtin_read_as`); its item types are the ones a type checker gives it (`_builtin_args`, [design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-typed-as-a-type-checker-types-it)).
 - A bare collection annotation (`dict`, `list`, `set`, `frozenset`, `tuple`) reads as its `Any`-parameterized form, PEP 484's reading of it: `dict` is `dict[Any, Any]` — `_dict_kv`'s default for the unparameterized form — and `tuple` is `tuple[Any, ...]`, variadic (`_is_varlen_collection`, `_tuple_types`).
@@ -19,6 +19,7 @@ All type knowledge is derived at runtime from ordinary annotations (`_types.py`)
 
 `_resolve_type` unwraps `TypeAliasType`, `Annotated`, `Final` and `NewType` in a loop, so they nest in any order (`Annotated[Final[X], …]`, an alias of `Final[X]`, a `NewType` over an alias), and a bare `Final` reads as `Any`.
 What each wrapper adds — an alias name, metadata, "not reassigned", a distinct name for the type checker — is nothing a channel, the merge, construction or serialization acts on, so every walk asks the type underneath.
+`None` in an annotation is `NoneType`, as PEP 484 reads it: `get_type_hints` converts a field's `None`, but `type N = None` keeps the value `None`, which `_resolve_type` converts, so `N | int` reads the none word as `None | int` does.
 A `NewType`'s values are its supertype's at runtime, so it is its supertype to every walk, and no registration keys on it ([a NewType is its supertype](../design-decisions/a-registration-is-one-construction-reaches.md#a-newtype-is-its-supertype)).
 
 A class is none of the wrappers, so `_resolve_type` returns a class unchanged before it tests for any of them.
@@ -33,6 +34,28 @@ A wrapper is unwrapped in the one function every walk already calls, never at a 
 
 Precedents: the standard library's `dataclasses` makes a `Final`-annotated class attribute an ordinary instance field, and msgspec and cattrs both decode and encode `Final[T]` as `T`.
 pydantic instead reads a `Final` attribute with a default as a class variable, which suits a model with validation-time defaults but not a library whose targets are plain dataclasses.
+
+## A union is read flat
+
+Typing spreads a union written inline into its own variants (`int | float | bool`), but it cannot see behind a lazy `TypeAliasType`: with `type IntOrFloat = int | float`, `IntOrFloat | bool` has the two variants `IntOrFloat` and `bool`.
+`_types._union_args` reads a union's variants for every walk, and it spreads a variant that resolves to a union — an alias, an `Annotated` around a union — into that union's variants, in its place, so `IntOrFloat | bool` is `int | float | bool` to construction, the CLI walk, registration, completion, `--help`, the typed merge and serialization alike.
+Before (BUG-278), the alias was a variant no leaf rung read, so every value was refused; behind `| None` it made the union a one-variant `Optional` whose struct variants registered no flag and dumped with a tag the inline union leaves out.
+
+A variant that resolves to the type an earlier variant does is left out, the first kept as written: `MyInt | int` is `int`, as `int | int` is to typing, and `type MaybeInt = int | None` makes `MaybeInt | int` the `Optional[int]` that `int | None | int` is.
+A variant reading as `None` is kept as `NoneType` whatever wraps it, `Annotated[None, …]` or an alias, since every walk asks for `NoneType` by identity: kept as written, `Annotated[None, "m"] | None` would have read as a union allowing no `None`.
+Equality is the resolved types', since a wrapper is nothing a walk acts on; typing compares the variants as written, so it keeps both of `MyInt | int`, which would register a cast flag `--x.int` beside `--x` and refuse a token "to int | int".
+`_union_args_no_none` and `_union_branches` read through it; no walk reads a union's `get_args` itself.
+
+An alias whose union holds the alias, `type A = B | int` with `type B = A | str`, has no variants to read, and is refused, as mypy ("Invalid recursive alias: a union item of itself") and pyright refuse it; it recursed without end before.
+The refusal is a `TypeError`, as `register_leaf_type`'s is for a key no value reaches ([a registration is one construction reaches](../design-decisions/a-registration-is-one-construction-reaches.md#a-registration-is-one-construction-reaches)): an annotation no type checker accepts is a programming mistake, which an `except ConfargError` meant for configuration input must not catch.
+It lives in the reader, `_union_args`, so no walk can read a union without it and none has to remember a check of its own: registration, construction, the dump and completion all refuse alike.
+An alias recurring below a collection, `type Json = int | list[Json]`, is a type, and is read: the variants spread stop at `list[Json]`, and a walk descending into item types stops at an alias it is already inside (`_forbidden_literal_member`).
+The refusal names the alias the walk met again, which may be the cycle's other alias, since a field's own alias is resolved before its variants are read.
+
+Rejected: rebuilding the flat union in `_resolve_type`, so that every `get_args` saw it.
+`_resolve_type` unwraps and never builds; building a union per call costs on the path that returns a class at once, could not be cached under an `Annotated` holding unhashable metadata, and would change the identity of the field types the merge and the caches compare.
+
+Precedents: mypy spreads an alias's union when it expands it, and names `IntOrFloat | bool` as `int | float | bool`; pydantic validates the alias as a nested union, its error path reading `x.union[int,float].int`; cattrs refuses the annotation (`Unsupported type: IntOrFloat | bool`).
 
 ## Shape dispatch
 
