@@ -367,17 +367,12 @@ def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
     try:
         obj = _import_dotted(str(value))
     except SymbolNotFoundError as e:
-        msg = (
-            f"Cannot import class {str(value)!r} at '{path}': {e}."
-            f" Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'."
-        )
-        raise TypeCoercionError(msg) from e
+        raise TypeCoercionError.class_not_found(str(value), path, str(e)) from e
     except SymbolImportError as e:
         msg = f"Cannot import class {str(value)!r} at '{path}': {e}"
         raise SymbolImportError(msg) from e
     if not isinstance(obj, type):
-        msg = f"Cannot coerce {str(value)!r} at '{path}': expected a class, got {type(obj).__name__!r}."
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.not_a_class(str(value), path, type(obj).__name__)
     constraint = _type_ref_constraint(tp)
     if constraint is not object and not issubclass(obj, constraint):
         raise TypeCoercionError.not_a_subclass(str(value), dotted_name(constraint), path)

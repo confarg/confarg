@@ -223,6 +223,22 @@ class ConfargError(Exception):
     #: shape, where it says nothing else; a union's refusal gives no reason for it there.
     _plain: tuple[str, Any] | None = None
 
+    @classmethod
+    def _refusal(cls, message: str, *, reason: str | None = None, plain: tuple[str, Any] | None = None) -> Self:
+        """Return the error saying *message*, and what a union's refusal gives for it: its *reason*, none if *plain*.
+
+        The one way a factory marks its error for :func:`_variant_reason`. A refusal a union may
+        meet at its own position says its reason apart, or that it is *plain*, since its message
+        names the position the union's own line names already.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
+        """
+        error = cls(message)
+        error._reason = reason
+        error._plain = plain
+        return error
+
     def _with_none_remedy(self) -> Self:
         """Return an error of this type whose message ends with the none-word remedy.
 
@@ -542,9 +558,7 @@ class TypeCoercionError(ConfargError):
         among its variants: anywhere else the remedy would ask for the value just refused.
         """
         msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
-        error = cls(_append_none_remedy(msg) if none_sentinel else msg)
-        error._plain = (path, value)
-        return error
+        return cls._refusal(_append_none_remedy(msg) if none_sentinel else msg, plain=(path, value))
 
     @classmethod
     def cannot_coerce_to_union(  # noqa: PLR0913  # cannot_coerce's arguments, and the variants' reasons
@@ -569,7 +583,7 @@ class TypeCoercionError(ConfargError):
         """
         if not reasons:
             return cls.cannot_coerce(src, value, tp, path, none_sentinel=none_sentinel)
-        lines = [f"Cannot coerce {src} {value!r} to {tp} at '{path}':"]
+        lines = [f"{cls.cannot_coerce(src, value, tp, path)}:"]
         lines += [f"  {variant}: {reason}".replace("\n", "\n    ") for variant, reason in reasons]
         if none_sentinel:
             lines.append(_NONE_REMEDY)
@@ -594,9 +608,7 @@ class TypeCoercionError(ConfargError):
     @classmethod
     def cannot_coerce_because(cls, src: str, value: Any, tp: str, path: str, hint: str) -> TypeCoercionError:
         """Return :meth:`cannot_coerce`'s error followed by *hint*, what the type reads, after a colon."""
-        error = cls(f"{cls.cannot_coerce(src, value, tp, path)}: {hint}")
-        error._reason = hint
-        return error
+        return cls._refusal(f"{cls.cannot_coerce(src, value, tp, path)}: {hint}", reason=hint)
 
     @classmethod
     def wrong_shape(cls, src: str, value: Any, what: str, accepted: str, path: str) -> TypeCoercionError:
@@ -610,30 +622,37 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
-        error = cls(f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}")
-        error._plain = (path, value)
-        return error
+        message = f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}"
+        return cls._refusal(message, plain=(path, value))
 
     @classmethod
-    def wrong_length(cls, what: str, path: str, expected: int, got: int) -> TypeCoercionError:
-        """Return the error for *got* positions where the fixed-length sequence *what* holds *expected*.
+    def wrong_length(cls, what: str, path: str, expected: int, value: Sequence[Any]) -> TypeCoercionError:
+        """Return the error for the positions *value* where the fixed-length sequence *what* holds *expected*.
 
         The one spelling of an arity refusal, a fixed tuple's and a namedtuple's, their list
-        and the base a patch carries alike; *what* is the type as ``_spell_type`` spells it.
+        and the base a patch carries alike; *what* is the type as ``_spell_type`` spells it. A
+        length is the value's shape, so a union gives no reason for it.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
+            docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
         """
-        return cls(f"Cannot construct {what} at '{path}': expected {expected} elements, got {got}")
+        message = f"Cannot construct {what} at '{path}': expected {expected} elements, got {len(value)}"
+        return cls._refusal(message, plain=(path, value))
 
     @classmethod
-    def keys_not_indices(cls, what: str, path: str) -> TypeCoercionError:
-        """Return the error for a dict standing for the sequence *what*, whose keys name no position.
+    def keys_not_indices(cls, what: str, path: str, value: Any) -> TypeCoercionError:
+        """Return the error for the dict *value* standing for the sequence *what*, whose keys name no position.
+
+        Keys naming no position are the value's shape, so a union gives no reason for it.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
+            docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
         """
-        return cls(f"Cannot construct {what} at '{path}': dict keys must be integer indices")
+        return cls._refusal(
+            f"Cannot construct {what} at '{path}': dict keys must be integer indices", plain=(path, value)
+        )
 
     @classmethod
     def unknown_fields(cls, names: Any, what: str, path: str, valid: list[str]) -> TypeCoercionError:
@@ -647,9 +666,8 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
         unknown = sorted(str(name) for name in names)
-        error = cls(f"Unknown field(s) {unknown} for {what} at '{path}'. Valid fields: {valid}")
-        error._reason = f"unknown field(s) {unknown}. Valid fields: {valid}"
-        return error
+        reason = f"unknown field(s) {unknown}. Valid fields: {valid}"
+        return cls._refusal(f"Unknown field(s) {unknown} for {what} at '{path}'. Valid fields: {valid}", reason=reason)
 
     @classmethod
     def cast_not_held(cls, cast: str, field: str, path: str) -> TypeCoercionError:
@@ -731,17 +749,57 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
-        error = cls(f"Class {name!r} at '{path}' is not a subclass of {parent}.")
-        error._reason = f"class {name!r} is not a subclass of {parent}"
-        return error
+        reason = f"class {name!r} is not a subclass of {parent}"
+        return cls._refusal(f"Class {name!r} at '{path}' is not a subclass of {parent}.", reason=reason)
+
+    @classmethod
+    def class_not_found(cls, name: str, path: str, cause: str) -> TypeCoercionError:
+        """Return the error for the dotted path *name* of a ``type`` field, which nothing answers to, as *cause* says.
+
+        Dev Notes:
+            docs-dev/architecture/types/dotted-imports.md#a-path-names-nothing-or-a-module-fails
+        """
+        message = f"Cannot import class {name!r} at '{path}': {cause}."
+        message += " Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'."
+        return cls._refusal(message, reason=_as_clause(cause))
+
+    @classmethod
+    def not_a_class(cls, name: str, path: str, got: str) -> TypeCoercionError:
+        """Return the error for the dotted path *name* of a ``type`` field, which imports a *got*, no class."""
+        reason = f"expected a class, got {got!r}"
+        return cls._refusal(f"Cannot coerce {name!r} at '{path}': {reason}.", reason=reason)
+
+    @classmethod
+    def class_as_factory(cls, name: str, path: str, returns: str) -> TypeCoercionError:
+        """Return the error for the class *name* a Callable would call as a factory, its instances no *returns*."""
+        reason = (
+            f"class {name!r} would be used as a factory, but its instances are not {returns} (the Callable's"
+            f" declared return type). To use an instance of {name} as the callable, use the dict form: 'class: {name}'"
+        )
+        return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
+
+    @classmethod
+    def not_callable(cls, spec: Any, result: Any, path: str) -> TypeCoercionError:
+        """Return the error for the Callable spec *spec*, which resolved to *result*, nothing callable."""
+        reason = f"{spec!r} resolved to {result!r}, which is not callable"
+        return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
+
+    @classmethod
+    def openers_refused(cls, present: Sequence[str], openers: Sequence[str], path: str) -> TypeCoercionError:
+        """Return the error for a Callable spec dict holding the *present* openers, not exactly one of *openers*."""
+        if present:
+            rule = f"must not specify more than one of {list(openers)} (got: {list(present)})"
+        else:
+            *head, last = (repr(o) for o in openers)
+            rule = f"must specify one of {', '.join(head)} or {last}"
+        return cls._refusal(f"Callable dict at '{path}' {rule}", reason=f"a callable dict {rule}")
 
     @classmethod
     def not_a_member(cls, src: str, value: Any, enum: str, path: str, members: Sequence[str]) -> TypeCoercionError:
         """Return the error for a value that names no member of the Enum *enum*, its *members* as spelled."""
         listed = ", ".join(members)
-        error = cls(f"Cannot coerce {src} {value!r} to {enum} at '{path}'. Valid members: {listed}")
-        error._reason = f"valid members {listed}"
-        return error
+        message = f"Cannot coerce {src} {value!r} to {enum} at '{path}'. Valid members: {listed}"
+        return cls._refusal(message, reason=f"valid members {listed}")
 
     @classmethod
     def whole_root_beside_fields(cls, tp: str, root_key: str, fields: Sequence[Any]) -> TypeCoercionError:
@@ -762,9 +820,7 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
         """
-        error = cls(f"Unsupported leaf type {tp} at '{path}'")
-        error._reason = "no leaf type confarg reads"
-        return error
+        return cls._refusal(f"Unsupported leaf type {tp} at '{path}'", reason="no leaf type confarg reads")
 
     @classmethod
     def refused_empty_call(cls, name: Any, path: str, reason: str, beside: str) -> TypeCoercionError:

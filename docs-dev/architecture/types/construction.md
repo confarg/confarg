@@ -56,10 +56,18 @@ The walk used to drop each one as it tried the next variant, so a typo'd import,
 
 Which refusals give a line is the error's to say, read by `exceptions._variant_reason`:
 
-- **None, where it says only that the value is no value of the variant, or not of its shape** (`TypeCoercionError.cannot_coerce` and `wrong_shape` mark it `_plain` with the path and the value they refused).
-  `int` refusing `'x'` repeats the union's line, a `Literal` lists its members in its own spelling already, and a struct handed a string, or a scalar leaf a dict or a list (`_construct._variant_reasons`), refused a shape the user did not mean, whatever its message says: a `datetime`'s format hint, or the refusal of a `class` key it cannot take.
-- **Its own clause, where a factory says it apart** (`_reason`): an Enum's members, a registered leaf's format hint (`cannot_coerce_because`), the fields a struct does not declare, a class outside a `type[X]` bound, a branch confarg reads nothing as (`no leaf type confarg reads`, which the union used to append to its one line), and a missing field, named without the flag a remedy would spell, since only the front-end that parsed argv knows its `cli_prefix`.
-- **Its message as a clause otherwise**, which covers a refusal inside the value, at its own path (`list[int]: cannot coerce str 'x' to int at 'u[0]'`), an import that failed, and a Python exception's text.
+- **None, where it says only that the value is no value of the variant, or not of its shape** (`TypeCoercionError.cannot_coerce`, `wrong_shape`, `wrong_length` and `keys_not_indices` mark it `_plain` with the path and the value they refused).
+  `int` refusing `'x'` repeats the union's line, a `Literal` lists its members in its own spelling already, and a struct handed a string, a fixed tuple a list of another length, a list a dict whose keys name no index, or a scalar leaf a dict or a list (`_construct._variant_reasons`, a registered leaf a tag opens among them), refused a shape the user did not mean, whatever its message says: a `datetime`'s format hint, the refusal of a `class` key it cannot take, or the tag a `UUID` would be built from fields by.
+  A length is shape too, though it says how many: the union's line spells each tuple's arity, and a variant the length filter skips is never tried, so a line for some would be a line for a few.
+- **Its own clause, where a factory says it apart** (`_reason`): an Enum's members, a registered leaf's format hint (`cannot_coerce_because`), the fields a struct does not declare, a class outside a `type[X]` bound, a `type` path that imports nothing or no class, a Callable's class whose instances are not what it returns, its spec resolving to nothing callable or its dict holding no opener, a branch confarg reads nothing as (`no leaf type confarg reads`, which the union used to append to its one line), and a missing field, named without the flag a remedy would spell, since only the front-end that parsed argv knows its `cli_prefix`.
+- **Its message as a clause otherwise**, which covers a refusal inside the value, at its own path (`list[int]: cannot coerce str 'x' to int at 'u[0]'`), and a Python exception's text, a symbol's import failure among them, whose text names no path.
+
+A refusal a variant raises at the union's own position is therefore made by a factory, which marks it through `ConfargError._refusal`, the one place the two markers are set: its message names the position the union's line names already, and given whole, it would repeat it (`type: cannot import class 'x' at 'v': …`), as the import, Callable and registered-leaf refusals first did.
+The markers are relative to the value the union was handed, so `_plain` holds it and `_variant_reason` compares it: a refusal of another value at the same position, a base a patch carries, says more.
+
+Two refusals are no union's, deliberately.
+A struct the keys select alone (structural matching) fails as itself, its field named, since the keys chose it, as the tag would have.
+A dict carrying a merge base (`__base__`) that no variant takes fails as the sequence variant it patches ([below](#an-optional-field-fails-as-its-variant), BUG-200), since the union's line would print the merge's internal key.
 
 Where no line is left, the refusal is the one line it was; with lines, the none-word remedy closes them on one of its own.
 

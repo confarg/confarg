@@ -267,8 +267,7 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, union_tag: str, 
     else:
         raise TypeCoercionError.wrong_shape(_src_type(spec), spec, "Callable", "str or dict", where)
     if not callable(result):
-        msg = f"Callable at '{where}': {spec!r} resolved to {result!r}, which is not callable."
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.not_callable(spec, result, where)
     _check_callable_signature(result, tp, where)
     return result
 
@@ -287,13 +286,7 @@ def _import_target(path_str: str, path: str, callable_tp: Any) -> Any:
     if isinstance(obj, type):
         required = _unproducible_return(obj, callable_tp)
         if required is not None:
-            msg = (
-                f"Callable at '{path}': class {path_str!r} would be used as a factory,"
-                f" but its instances are not {required} (the Callable's declared return type)."
-                f" To use an instance of {path_str} as the callable, use the dict form:"
-                f" 'class: {path_str}'."
-            )
-            raise TypeCoercionError(msg)
+            raise TypeCoercionError.class_as_factory(path_str, path, required)
         return obj
     return _maybe_bind_method(obj, path_str, path)
 
@@ -548,12 +541,7 @@ def promote_bare_spec(spec: str) -> dict[str, Any]:
 
 def _refuse_openers(present: list[str], where: str) -> NoReturn:
     """Refuse a spec holding *present*, which is not exactly one opener."""
-    if present:
-        msg = f"Callable dict at '{where}' must not specify more than one of {list(_OPENERS)} (got: {present})"
-    else:
-        *head, last = (repr(o) for o in _OPENERS)
-        msg = f"Callable dict at '{where}' must specify one of {', '.join(head)} or {last}"
-    raise TypeCoercionError(msg)
+    raise TypeCoercionError.openers_refused(present, _OPENERS, where)
 
 
 def _spec_parts(spec: dict, where: str) -> tuple[str, dict]:

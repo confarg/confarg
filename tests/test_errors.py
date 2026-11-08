@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import enum
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NewType, Optional
+from uuid import UUID
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -388,6 +390,10 @@ class _Feat46Base:
     """A class a ``type[X]`` variant is bounded by."""
 
 
+class _Feat46Factory:
+    """A class a ``Callable[[], int]`` would call as a factory, whose instances are no int."""
+
+
 class TestAUnionRefusalNamesEachVariantsReason:
     """A union's refusal gives each variant's reason on a line of its own, where it says more than the union (FEAT-46).
 
@@ -493,6 +499,70 @@ class TestAUnionRefusalNamesEachVariantsReason:
         """Where every variant says only "not one", the refusal is the one line it was."""
         Target = make_target("n", int | float, default=0)
         assert self._refusal(Target, {"n": "abc"}) == "Cannot coerce str 'abc' to int | float at 'n'"
+
+    @pytest.mark.parametrize(
+        ("field_type", "value"),
+        [
+            pytest.param(tuple[int, int] | tuple[str, str, str], [1, 2, 3, 4], id="tuple-length"),
+            pytest.param(Point | int, [1, 2, 3], id="namedtuple-length"),
+            pytest.param(list[int] | int, {"b": 1}, id="keys-not-indices"),
+            pytest.param(Callable | int, 1.5, id="callable-shape"),
+        ],
+    )
+    def test_a_sequence_or_callable_refusing_the_shape_has_no_line(self, field_type: Any, value: Any) -> None:
+        """A length, keys naming no position or a value neither text nor a dict are the value's shape."""
+        Target = make_target("v", field_type, default=None)
+        refusal = self._refusal(Target, {"v": value})
+        assert "\n" not in refusal
+        assert refusal.startswith(f"Cannot coerce {type(value).__name__} {value!r} to ")
+
+    def test_a_leaf_built_from_fields_has_no_line_for_a_dict(self) -> None:
+        """A registered leaf a tag opens is still read from one value: a dict without the tag is no shape of it."""
+        Target = make_target("v", UUID | _Feat46Opts, default=None)
+        assert self._refusal(Target, {"v": {"b": 1}}) == (
+            "Cannot coerce dict {'b': 1} to UUID | _Feat46Opts at 'v':\n"
+            "  _Feat46Opts: unknown field(s) ['b']. Valid fields: ['level']"
+        )
+
+    @pytest.mark.parametrize(
+        ("field_type", "value", "line"),
+        [
+            pytest.param(
+                type | int,
+                "nope.Nothing",
+                "type: cannot import 'nope.Nothing': no importable module found in path",
+                id="type-import",
+            ),
+            pytest.param(type | int, "os.path", "type: expected a class, got 'module'", id="type-no-class"),
+            pytest.param(
+                Callable[[], int] | int,
+                f"{__name__}._Feat46Factory",
+                f"Callable[[], int]: class '{__name__}._Feat46Factory' would be used as a factory, but its"
+                " instances are not int (the Callable's declared return type). To use an instance of"
+                f" {__name__}._Feat46Factory as the callable, use the dict form: 'class: {__name__}._Feat46Factory'",
+                id="callable-factory",
+            ),
+            pytest.param(
+                Callable | int,
+                "math.pi",
+                f"Callable: 'math.pi' resolved to {math.pi!r}, which is not callable",
+                id="callable-not-callable",
+            ),
+            pytest.param(
+                Callable | int,
+                {"b": 1},
+                "Callable: a callable dict must specify one of 'bind', 'class', 'call' or 'classfn'",
+                id="callable-no-opener",
+            ),
+        ],
+    )
+    def test_a_refusal_at_the_unions_own_path_says_its_reason_alone(
+        self, field_type: Any, value: Any, line: str
+    ) -> None:
+        """A variant's line gives its reason, not its message again: the union's line names the path."""
+        Target = make_target("v", field_type, default=None)
+        refusal = self._refusal(Target, {"v": value})
+        assert refusal.splitlines()[1:] == [f"  {line}"]
 
 
 class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:
