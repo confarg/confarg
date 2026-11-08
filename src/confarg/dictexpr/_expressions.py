@@ -28,7 +28,7 @@ from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Sequence
+    from collections.abc import Callable, Container, Iterable, Iterator, Sequence
 
 from confarg._depth import Copies, positions_below
 from confarg._merge import ListOp, MergeDict, _holds_list_ops
@@ -531,8 +531,9 @@ def _refuse_normalized_names(body: str) -> None:
 
 
 #: How an expression reads a value: given the data, the position it is read at (one segment
-#: per key or list position, as the data names it) and the value held there, what it reads.
-type Reader = Callable[[MergeDict, Sequence[str | ListOp], Any], Any]
+#: per key or list position, as the data names it), the value held there and the positions
+#: whose expression has yet to resolve, what it reads.
+type Reader = Callable[[MergeDict, Sequence[str | ListOp], Any, Container[_Path]], Any]
 
 #: How a resolved expression is written: given what it evaluated to, what the data holds and
 #: an interpolation stringifies.
@@ -563,6 +564,8 @@ class _Namespace(dict[Any, Any]):
         self.spent = 0
         #: The copy budget of the configuration being resolved, which every read charges (:func:`_read_through`).
         self.copies = Copies() if copies is None else copies
+        #: The positions whose expression has yet to resolve, which a read can meet (:func:`_read_value`).
+        self.pending: set[_Path] = set()
 
 
 def resolve_expressions(
@@ -577,7 +580,8 @@ def resolve_expressions(
 
     Args:
         data: The merged configuration dict.
-        read: What an expression reads of the value at a position; the value itself when omitted.
+        read: What an expression reads of the value at a position, told which positions are
+            still pending; the value itself when omitted.
         write: What a resolved expression leaves in the data, and an interpolation stringifies;
             the value itself when omitted.
         settle: What a node holding a pending list op becomes once the last expression below
@@ -605,6 +609,7 @@ def resolve_expressions(
         return data
 
     data = _Namespace(data, read, write, copies)
+    data.pending.update(expr_fields)
     _copy_written_paths(data, expr_fields)
 
     # 2. Extract references and build dependency graph
@@ -630,6 +635,7 @@ def resolve_expressions(
         raw_str = expr_fields[path]
         result = _resolve_single(raw_str, data, path)
         _set_nested_by_path(data, path, result)
+        data.pending.discard(path)
         if settle is not None:
             _settle_pending(data, path, unresolved, settle)
 
@@ -1140,13 +1146,17 @@ def _eval_name(node: ast.Name, namespace: _Namespace) -> Any:
 def _read_value(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:
     """Return what an expression reads at the config path *parts*: the value there, as the namespace reads it.
 
+    The reader is told which positions are still pending: a read the dependency graph did not
+    order, as a subscript indexing its base, can hold an expression yet to resolve, the reading
+    one included, which no text tells apart from the literal an escape resolves to.
+
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
     value = _read_through(namespace, parts)
     if namespace.read is None:
         return value
-    return namespace.read(namespace, _scan_path(namespace, parts), value)
+    return namespace.read(namespace, _scan_path(namespace, parts), value, namespace.pending)
 
 
 def _read_through(namespace: _Namespace, parts: Sequence[str | ListOp]) -> Any:

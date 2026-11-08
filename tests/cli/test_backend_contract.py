@@ -5852,6 +5852,16 @@ class _TypedLeaves:
 
 
 @dataclass
+class _LiteralLeaves:
+    """A registered leaf set to the literal an escape resolves to, and the fields an expression writes it to."""
+
+    p: Path = Path()
+    home: Path = Path("${HOME}")
+    sub: Path = Path()
+    same: bool = False
+
+
+@dataclass
 class _UnionLeaves:
     """A union leaf an expression compares with an Enum field, and one only the str variant takes."""
 
@@ -5922,6 +5932,20 @@ class TestTypedLeafReadContract:
         cfg = loader.load(_TypedLeaves, argv=argv, env=env, env_prefix="X_")
         where = "/a" if source == "default" else "/b"
         assert (cfg.tag, cfg.copy, cfg.low, cfg.sub) == (f"red@{where}", "red", True, Path(where) / "sub")
+
+    @pytest.mark.parametrize("source", ["argv", "env", "file"])
+    def test_an_escaped_literal_reads_as_the_object(self, loader: ConfargLoader, tmp_yaml, source: str) -> None:
+        """`$${HOME}` builds `Path('${HOME}')`, and an expression reads that `Path`, not its text (BUG-310)."""
+        argv = ["--same", "${p == home}", "--sub", "${p / 'a'}"]
+        env: dict[str, str] = {}
+        if source == "argv":
+            argv += ["--p", "$${HOME}"]
+        elif source == "env":
+            env = {"X_P": "$${HOME}"}
+        else:
+            argv += ["--config", str(tmp_yaml("p: '$${HOME}'\n"))]
+        cfg = loader.load(_LiteralLeaves, argv=argv, env=env, env_prefix="X_")
+        assert (cfg.p, cfg.same, cfg.sub) == (Path("${HOME}"), True, Path("${HOME}") / "a")
 
     def test_merge_holds_the_tokens_as_written(self, loader: ConfargLoader) -> None:
         """``merge()`` keeps what was typed, as it keeps a file's string; ``build()`` reads the object."""
