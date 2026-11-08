@@ -33,7 +33,7 @@ from dataclasses import field as dataclasses_field
 from decimal import Decimal
 from enum import Enum, IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, NamedTuple, NewType
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, NamedTuple, NewType, Protocol, runtime_checkable
 from uuid import UUID
 
 import pytest
@@ -3707,6 +3707,40 @@ class _RefusingCallable:
     fn: Callable[[], int] | None = None
 
 
+class _GreeterProto(Protocol):
+    """A Protocol, which no key can make buildable (BUG-296)."""
+
+    def greet(self) -> str: ...
+
+
+class _LoudProto(_GreeterProto, Protocol):
+    """A sub-Protocol, refused as its parent is (BUG-296)."""
+
+    def shout(self) -> str: ...
+
+
+@dataclass
+class _ProtocolOpeners:
+    """An ``Any`` field and a Callable field, each reached by an opener naming a Protocol (BUG-296)."""
+
+    x: Any = None
+    fn: Callable[[], str] | None = None
+
+
+@runtime_checkable
+class _CheckableGreeterProto(Protocol):
+    """A runtime-checkable Protocol, which ``issubclass`` takes as its own implementer (BUG-296)."""
+
+    def greet(self) -> str: ...
+
+
+@dataclass
+class _ProtocolTagged:
+    """A field whose tag may name its own Protocol class (BUG-296)."""
+
+    g: _CheckableGreeterProto | None = None
+
+
 class TestUnionFieldTagContract:
     """A struct field whose type is a union dispatches on its tag identically everywhere."""
 
@@ -3792,6 +3826,43 @@ class TestUnionFieldTagContract:
         cfg = loader.load(_RefusingCallable, argv=[f"--fn.{opener}", f"{__name__}.{path}", "--fn.a", "4"], env={})
         assert cfg.fn is not None
         assert cfg.fn() == 4
+
+
+class TestAnOpenerNamingAProtocolContract:
+    """An opener naming a Protocol class is refused as one, before anything is called (BUG-296).
+
+    It was called like any class, so the refusal was Python's ``Protocols cannot be
+    instantiated``, read as an empty call the user could fix by supplying fields, and a field
+    supplied beside it was refused against the ``args`` and ``kwargs`` of ``typing``'s
+    placeholder constructor. No key makes a Protocol buildable.
+    """
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["--x.class", f"{__name__}._GreeterProto"], id="any-class"),
+            pytest.param(["--x.class", f"{__name__}._LoudProto"], id="any-class-sub-protocol"),
+            pytest.param(["--fn.class", f"{__name__}._GreeterProto"], id="callable-class"),
+            pytest.param(["--fn.classfn", f"{__name__}._GreeterProto.greet"], id="callable-classfn"),
+        ],
+    )
+    def test_argv(self, loader: ConfargLoader, argv: list[str]) -> None:
+        """Naming it alone on argv is refused as a Protocol, asking for an implementer."""
+        with pytest.raises(TypeCoercionError, match=r"is a Protocol, so it cannot be built: name a class that"):
+            loader.load(_ProtocolOpeners, argv=argv, env={})
+
+    def test_a_field_beside_it(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A key beside the opener changes nothing: the class is refused, not its keys."""
+        path = tmp_yaml(f"x:\n  class: {__name__}._GreeterProto\n  name: n\n")
+        with pytest.raises(TypeCoercionError, match=r"is a Protocol, so it cannot be built") as excinfo:
+            loader.load(_ProtocolOpeners, files=[path], argv=[], env={})
+        assert "args" not in str(excinfo.value)
+
+    def test_a_tag(self, loader: ConfargLoader) -> None:
+        """A tag naming the Protocol a runtime-checkable field holds is refused the same way, not called."""
+        argv = ["--g.class", f"{__name__}._CheckableGreeterProto"]
+        with pytest.raises(TypeCoercionError, match=r"is a Protocol, so it cannot be built: name a class that"):
+            loader.load(_ProtocolTagged, argv=argv, env={})
 
 
 # ---------------------------------------------------------------------------

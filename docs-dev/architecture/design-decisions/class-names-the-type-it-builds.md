@@ -2,7 +2,7 @@
 
 A `class:` spec builds exactly the class it names, whatever subclasses that class has, and so does a `classfn:` spec for the owner its path names.
 Both go through `typedload._construct.construct_named_class`.
-It builds a struct with `_construct_struct`, the route a union tag takes once it has selected its class, and it never asks the subclass dispatch of `_construct_struct_dispatch` which subclass to build.
+It builds through `_construct_named`, the constructor a union tag calls once it has selected its class, and it never asks the subclass dispatch of `_construct_struct_dispatch` which subclass to build.
 A union-tag key among the fields would name a second class, so it is refused as an unknown field, unless the named class declares a field of that spelling.
 The key only reaches construction when `union_tag` is not `class`: under the default, `class` is the opener itself.
 
@@ -26,3 +26,12 @@ Neither dispatches further once a class is named.
 
 Cost: with a custom `union_tag`, a tag key beside `class:` no longer selects a subclass of the named class.
 To build the subclass, name it under `class:`.
+
+## A Protocol class is refused before it is called
+
+A class a spec names must be buildable, and a `typing.Protocol` class never is: Python refuses to instantiate one whatever it is given, and its constructor is `typing`'s placeholder, whose parameters are `*args, **kwargs`.
+So `_construct_named`, the constructor openers and tags share, refuses a Protocol class (`_conformance.is_protocol`) before calling anything, under `Any`, under a Callable's `class:` or `classfn:`, and for a tag, which a `@runtime_checkable` Protocol field lets name its own Protocol: "is a Protocol, so it cannot be built: name a class that implements it".
+Calling it instead gave Python's `Protocols cannot be instantiated`, read as an empty call the user could fix by supplying fields, and a field supplied beside it was refused against `args` and `kwargs` (BUG-296).
+A plain-class field never meets one, since a Protocol may only inherit Protocols.
+
+Precedent: jsonargparse 4.53 refuses a `class_path` naming one wherever it meets it, `Expected an instantiatable class, but protomod.Greeter is a protocol`.

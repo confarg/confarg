@@ -28,6 +28,7 @@ from confarg._callable import (
     resolve_typed_call,
 )
 from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
+from confarg._conformance import is_protocol
 from confarg._import import dotted_name
 from confarg._merge import (
     MERGE_OP_KEYS,
@@ -916,12 +917,27 @@ def build_from_nothing(build: Callable[[], Any], tp: Any, path: FieldPath, namin
         raise TypeCoercionError.refused_empty_call(naming.name, _spell_field_path(path), str(e), naming.beside) from e
 
 
-def _construct_named_struct(cls: type, data: MergeDict, path: FieldPath, union_tag: str, naming: _Naming) -> Any:
-    """Build the struct *cls* a tag or an opener named, from the keys *data* holds beside it.
+def _construct_named(cls: Any, data: MergeDict, path: FieldPath, union_tag: str, naming: _Naming) -> Any:
+    """Build exactly the class *cls* a tag or an opener named, from the keys *data* holds beside it.
 
-    With none, the class builds from nothing, and its refusal is a coercion naming it
-    (:func:`build_from_nothing`, BUG-213, BUG-215).
+    The one constructor of a named class. A Protocol class is refused before anything is called,
+    since no key can make one buildable (BUG-296). A class that is no struct is built as
+    :func:`construct` builds it. A tag key in *data* would name a second class, so it is refused
+    as an unknown field, unless *cls* declares a field of that spelling; a tag's own key never
+    reaches here, its caller having taken it out. With no key, the class builds from nothing,
+    and its refusal is a coercion naming it (:func:`build_from_nothing`, BUG-213, BUG-215).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds
+        docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#a-protocol-class-is-refused-before-it-is-called
     """
+    if is_protocol(_class_of(cls)):
+        raise TypeCoercionError.names_a_protocol(naming.name, _spell_field_path(path))
+    if not _is_struct(cls):
+        return construct(cls, data, path=path, union_tag=union_tag)
+    flds = _struct_fields(cls)
+    if union_tag in data and union_tag not in flds:
+        raise TypeCoercionError.unknown_fields([union_tag], cls.__name__, _spell_field_path(path), sorted(flds))
     if data:
         return _construct_struct(cls, data, path, union_tag)
     return build_from_nothing(lambda: _construct_struct(cls, {}, path, union_tag), cls, path, naming)
@@ -1764,7 +1780,7 @@ def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath, union_t
         parent = repr(tp) if _generic_origin(tp) is not None else dotted_name(tp)
         raise TypeCoercionError.tag_not_a_subclass(tag, parent, _spell_field_path(path), call)
     cleaned = {k: v for k, v in data.items() if k != union_tag}
-    return _construct_named_struct(bound, cleaned, path, union_tag, _Naming(tag, "tag"))
+    return _construct_named(bound, cleaned, path, union_tag, _Naming(tag, "tag"))
 
 
 def _construct_bound_tag(bound: list[Any], data: MergeDict, path: FieldPath, union_tag: str, naming: _Naming) -> Any:
@@ -1779,10 +1795,10 @@ def _construct_bound_tag(bound: list[Any], data: MergeDict, path: FieldPath, uni
     """
     for candidate in bound[:-1]:
         try:
-            return _construct_named_struct(candidate, data, path, union_tag, naming)
+            return _construct_named(candidate, data, path, union_tag, naming)
         except (ConfargError, TypeError):
             continue
-    return _construct_named_struct(bound[-1], data, path, union_tag, naming)
+    return _construct_named(bound[-1], data, path, union_tag, naming)
 
 
 def construct_named_class(  # noqa: PLR0913  # the class, its keys, and how the spec named it
@@ -1798,18 +1814,11 @@ def construct_named_class(  # noqa: PLR0913  # the class, its keys, and how the 
 
     *cls* is the class a callable spec names: the one ``class:`` names, or the owner a
     ``classfn:`` path names. Subclass dispatch has nothing left to choose, as after a union
-    tag selected the class. A tag key in *data* would name a second class, so it is refused
-    as an unknown field, unless *cls* declares a field of that spelling. A class that is no
-    struct is built as :func:`construct` builds it. *name* is the class as the spec wrote it
-    and *opener* the key that named it, which a refused empty call quotes
-    (:func:`build_from_nothing`).
+    tag selected the class, and both are built by one constructor, :func:`_construct_named`.
+    *name* is the class as the spec wrote it and *opener* the key that named it, which a
+    refusal quotes.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#class-names-the-type-it-builds
     """
-    if not _is_struct(cls):
-        return construct(cls, data, path=path, union_tag=union_tag)
-    flds = _struct_fields(cls)
-    if union_tag in data and union_tag not in flds:
-        raise TypeCoercionError.unknown_fields([union_tag], cls.__name__, _spell_field_path(path), sorted(flds))
-    return _construct_named_struct(cls, data, path, union_tag, _Naming(name, f"{opener!r} opener"))
+    return _construct_named(cls, data, path, union_tag, _Naming(name, f"{opener!r} opener"))
