@@ -5876,6 +5876,23 @@ class _NumberLeaves:
     rb: Any = None
 
 
+@dataclass
+class _Spot:
+    """A registered leaf, built from one value or, under a class key, from its fields."""
+
+    x: int = 0
+
+
+@dataclass
+class _TaggedLeaf:
+    """A registered leaf an expression reads, spelled by its class key, and the fields it writes it to."""
+
+    spot: _Spot | None = None
+    other: _Spot | None = None
+    label: str = ""
+    same: bool = False
+
+
 _NUMBER_LEAF_EXPRESSIONS = {"--rf": "${str(f)}", "--rg": "${str(g)}", "--rx": "${x}", "--rb": "${b}"}
 
 _TYPED_LEAF_EXPRESSIONS = {"tag": "${colour}@${p}", "copy": "${colour}", "low": "${level == 1}", "sub": "${p / 'sub'}"}
@@ -5959,6 +5976,32 @@ class TestTypedLeafReadContract:
         cfg = loader.load(_NumberLeaves, argv=argv, env=env, env_prefix="X_")
         assert (cfg.f, cfg.g, cfg.x, cfg.b) == (1.0, 1.0, 5, True)
         assert (cfg.rf, cfg.rg, cfg.rx, cfg.rb) == ("1.0", "1.0", 5, True)
+
+    @pytest.mark.parametrize("source", ["argv", "env", "file"])
+    def test_a_tagged_leaf_reads_as_the_object_it_builds(
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        source: str,
+        leaf_registry: None,
+    ) -> None:
+        """A registered leaf spelled by its class key and fields reads as the leaf, as its value does (BUG-283).
+
+        `${spot}` reads the `_Spot` the tag builds, so it interpolates as its dump form and
+        compares equal to the same leaf spelled `3`, whichever channel wrote the fields.
+        """
+        confarg.register_leaf_type(_Spot, lambda v: _Spot(int(v)), serialize=lambda s: str(s.x))
+        tag = f"{__name__}._Spot"
+        argv = ["--label", "at ${spot}", "--same", "${spot == other}", "--other", "3"]
+        env: dict[str, str] = {}
+        if source == "argv":
+            argv += ["--spot.class", tag, "--spot.x", "3"]
+        elif source == "env":
+            env = {"X_SPOT__CLASS": tag, "X_SPOT__X": "3"}
+        else:
+            argv += ["--config", str(tmp_yaml(f"spot:\n  class: {tag}\n  x: 3\n"))]
+        cfg = loader.load(_TaggedLeaf, argv=argv, env=env, env_prefix="X_")
+        assert (cfg.spot, cfg.label, cfg.same) == (_Spot(3), "at 3", True)
 
 
 # ---------------------------------------------------------------------------

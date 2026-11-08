@@ -27,12 +27,36 @@ The merged dict holds an `Enum` or registered leaf as it was written, on every c
 - **The reader** (`_typed_read.TypedReading`) steps from the root to the position read by the typed merge's own walk (`TypedAt`, which reads the tag or spec each node holds), and coerces the value there with `_coerce.read_as_object` where that type, an optional included, is one `Enum`, registered or `Literal`-over-`Enum` type, or a number, a bool or `None`: a file's `1` at a `float` reads `1.0`, as construction builds it (BUG-154).
   A union of several variants reads as the variant construction picks (`_construct.read_union_leaf`), every variant but a Callable tried: `str | Color` reads `red` as the member, `hello` as written, and `int | str` reads the token `5` as the number it builds.
   `Any` and a base with untagged subclasses read as written, as do a value the type refuses and a pending op's items.
+  A dict whose class key names a registered leaf reads as the leaf construction builds from it, wherever construction takes the tag — at the leaf, a struct it subclasses, a union, an `Any` or a Callable — so `{class: pkg.Point, x: 3}` reads as `"3"` does (BUG-283); [a tagged leaf reads as the leaf it builds](#a-tagged-leaf-reads-as-the-leaf-it-builds) says where it does not.
   It applies to every read, a source's value, an earlier expression's result and each leaf of a subtree alike, so an expression never sees one leaf as text and another as the object.
 - **The writer** (`_serialize.written_form`) gives what an expression leaves behind — a pure result, an interpolated piece, a computed subscript key — in the form `dump()` writes: an `Enum` member's value, a registered type's serializer.
   `resolve()` rewrites only what expressions produced, so a source's `RED` comes out as `RED`.
 - **Without them**, `resolve_expressions` reads and writes values as they are: the engine knows no type ([resolution](resolution.md#resolution-algorithm)).
 
 Why objects inside and the dump form at the edges, and what was rejected: [design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object).
+
+### A tagged leaf reads as the leaf it builds
+
+[An explicit tag opts a leaf back in](../design-decisions/an-explicit-tag-opts-a-leaf-back-in.md#an-explicit-tag-opts-a-leaf-back-in): a dict whose class key names a registered leaf builds it from its fields.
+The reader (`_typed_read._read_tagged_leaf`) reads such a dict as what `construct` builds at the position, before walking it as a struct's fields, so a reference reads the built value whichever spelling the leaf was written in:
+
+| `origin: Point \| None`, `Point` registered and dumped as its `x` | `"at ${origin}"` | `other: Point = "${origin}"` | `a: Any = "${origin}"` |
+|---|---|---|---|
+| `origin: "3"` | `'at 3'` | `Point(x=3)` | `'3'` |
+| `origin: {class: pkg.Point, x: 3}` | `'at 3'` | `Point(x=3)` | `'3'` |
+
+- **The class the tag names decides**, not the field's type: a tag naming a registered `Leafy` under a `Base` struct field it subclasses, an `Any` or a Callable builds `Leafy`, which the reference reads.
+  The decision is construction's own, so the reader spells no variant choice of its own beside construction's.
+- **The class itself must be registered.**
+  A tag naming an unregistered subclass of a registered leaf builds a struct ([a registration is one construction reaches](../design-decisions/a-registration-is-one-construction-reaches.md#a-registration-is-one-construction-reaches)), which reads as its dict: reading it as the leaf would write it by its parent's serializer, so `other: Point = "${origin}"` would rebuild a `Point` and drop the subclass's own fields.
+- **What an expression leaves is the dump form**, as for any typed leaf: a pure `${origin}` leaves `'3'`, which an `Any` holds as text; the tagged spelling no longer escapes that cost.
+  Rejected: writing back the tagged dict a leaf was read from, which needs the reader to hand the writer its source spelling, and writes one object two ways.
+- **A dict construction refuses reads as written**, the constructor's own exception included, for construction to raise.
+- **A dict holding what is yet to be computed reads as written**: an expression, or a `call:` or `bind:` at any depth below the tag (`_typed_read._computes`).
+  An expression cannot read a call's result before construction ([calls and expressions share one graph](resolution.md#calls-and-expressions-share-one-graph)), and reading through construction would run the call once more per read; FEAT-35 lifts both together.
+- **A field below the tag** reads as the member the tagged dict holds: `${origin.x}` is the built `origin.x`.
+
+Until BUG-283 the reader walked every dict as a struct's fields before asking its type, so a tagged leaf interpolated as its dict's text and refused a whole-value reference into a `str` field, while the same leaf written as `"3"` read as `Point(x=3)`.
 
 ## Delimiting an expression
 

@@ -22,7 +22,7 @@ The channels disagreed on the **types they could reach**; fixing that, rather th
 - **`build()` and `resolve()`** read the leaf as its object (`_typed_read.TypedReading`, the read hook they give `resolve_expressions`): the type at a position is the one the typed merge steps to (`TypedAt`, reading the tag or spec each node holds), and `_coerce.read_as_object` coerces the value there where that type, an optional included, is one `Enum`, registered or `Literal`-over-`Enum` type, or a number, a bool or `None`, whose value construction may convert too: a file's `1` at a `float` builds and reads `1.0` (BUG-154).
   A union of several variants reads the value as the variant construction picks (`_construct.read_union_leaf`, the same ranked walk construction takes, a Callable variant skipped so the reading builds none): as the object, the number or the bool that variant builds, as written where it is `str`.
   Until BUG-154 the walk stopped above the numbers, so `${x}` read the token `5` as `'5'` where `x: int | str` built `5`.
-  `Any` and a base with untagged subclasses keep the value as written.
+  `Any` and a base with untagged subclasses keep the value as written, except a dict whose class key builds a registered leaf there, which reads as that leaf as it does at every position (BUG-283, [a tagged leaf reads as the leaf it builds](../expressions/values-and-references.md#a-tagged-leaf-reads-as-the-leaf-it-builds)).
   Until BUG-230 a union kept it as written too, the rule `_try_coerce` applies to tokens, so `${a == b}` was `False` for an `a: str | Color` built as the member `b` holds; the merge cannot pick a variant, but the reading runs at `build()`, where construction can.
   A value the type refuses is read as written, for construction to refuse.
   The reading applies on every read: a source's value, an earlier expression's result, every leaf of a subtree ([values and references](../expressions/values-and-references.md#a-typed-leaf-reads-as-its-object)).
@@ -56,7 +56,7 @@ There the object takes the form `dump()` writes, which is what a file holds and 
 - A plain `Enum` member compares equal to nothing a configuration can spell: `${c == 'red'}` is `False` on every channel.
   Two enum fields compare; a `StrEnum` or an `IntEnum` compares with its value ([limitations](../limitations.md#expressions)).
 - An expression's result is text in the resolved data: `v: Any = "${c}"` builds `'red'`, as it did from a file, where argv and the default used to give the member.
-- A registered type's coercer also runs when an expression reads its leaf, besides construction.
+- A registered type's coercer also runs when an expression reads its leaf, besides construction, and so does its constructor when the leaf is spelled by its class key and fields.
 - A subtree holding such a leaf is substituted as a copy, not as the live sub-dict ([values and references](../expressions/values-and-references.md#referencing-a-whole-subtree)).
 
 ## Precedents

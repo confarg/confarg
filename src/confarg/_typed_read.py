@@ -16,13 +16,18 @@ Dev Notes:
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, cast
 
+from confarg import _defaults
+from confarg._callable import _COMPUTATION_OPENERS
+from confarg._tags import class_named
 from confarg._typed_merge import TypedAt, merge_root
 from confarg._types import _is_union, _resolve_type, _union_args_no_none
 from confarg.dictexpr import contains_expression
-from confarg.typedload._coerce import read_as_object
-from confarg.typedload._construct import read_union_leaf
+from confarg.exceptions import ConfargWarning
+from confarg.typedload._coerce import _is_registered_leaf, read_as_object
+from confarg.typedload._construct import construct, read_union_leaf
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -60,9 +65,12 @@ class TypedReading:
 def _read(at: MergeAt, value: Any) -> Any:
     """Return *value*, held where the typed merge stands at *at*, each leaf read by :func:`read_as_object`.
 
-    A dict or a list is walked, and copied only where a leaf in it was read as an object.
+    A dict whose class key builds a registered leaf is that leaf (:func:`_read_tagged_leaf`).
+    Any other dict or a list is walked, and copied only where a leaf in it was read as an object.
     """
     if isinstance(value, dict):
+        if isinstance(at, TypedAt) and (leaf := _read_tagged_leaf(at.tp, value)) is not value:
+            return leaf
         items = {k: _read(at.child(k, value, None), v) for k, v in value.items()}
         return value if all(items[k] is v for k, v in value.items()) else items
     if isinstance(value, list):
@@ -84,3 +92,43 @@ def _read_leaf(ft: Any, value: Any) -> Any:
     if _is_union(tp) and len(_union_args_no_none(tp)) > 1 and not contains_expression(value):
         return read_union_leaf(tp, value)
     return read_as_object(tp, value)
+
+
+def _read_tagged_leaf(tp: Any, value: MergeDict) -> Any:
+    """Return what an expression reads of the dict *value* at a node of type *tp*: the leaf its class key builds.
+
+    A class key naming a registered leaf builds it from its fields wherever construction takes
+    the tag, at the leaf, a struct it subclasses, a union, an ``Any`` or a Callable alike, so
+    *value* reads as what :func:`construct` builds there. The class itself must be registered:
+    an unregistered subclass of one is a struct, which reads as its dict. *value* reads as
+    written where it names no registered leaf, where construction refuses it, and where it
+    holds what resolution or construction has yet to compute (:func:`_computes`). The reading
+    never warns: construction warns of what it builds.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
+    """
+    if _defaults.CLASS_KEY not in value or _computes(value):
+        return value
+    cls = class_named(value[_defaults.CLASS_KEY])
+    if cls is None or not _is_registered_leaf(cls):
+        return value
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ConfargWarning)
+            return construct(tp, value)
+    except Exception:  # noqa: BLE001  # a constructor may raise anything (BUG-269); construction reports it
+        return value
+
+
+def _computes(value: Any) -> bool:
+    """Return whether *value* holds, at any depth, an expression, a ``call:`` or a ``bind:``: a value no reading has.
+
+    An expression is resolution's to rewrite, and a call's result is construction's: an
+    expression reads none of them.
+    """
+    if isinstance(value, dict):
+        return any(k in _COMPUTATION_OPENERS for k in value) or any(_computes(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_computes(v) for v in value)
+    return contains_expression(value)
