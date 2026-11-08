@@ -10,8 +10,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict](BUG-283-a-reference-to-a-tagged-registered-leaf-reads-its-dict.md) | critical |  | M | high | config | BUG-16, BUG-246 |
-| [BUG-288 — An ambiguity inside a union variant lets the next variant take the value](BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md) | critical |  | M | high | config | PR-5 |
-| [BUG-304 — A required field built from nothing lets a fallback pick the first variant silently](BUG-304-a-required-field-built-from-nothing-lets-a-fallback-pick-silently.md) | critical |  | M | high | config | PR-5 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-306 — A C type reads as a struct on Python 3.15, where it gains a signature](BUG-306-a-c-type-reads-as-a-struct-where-python-gives-it-a-signature.md) | major |  | M | medium | config | BUG-280, BUG-276 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
@@ -32,6 +30,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-257 — A lone expression token on a list flag is one item, where the environment reads it as the whole list](BUG-257-a-lone-expression-token-on-a-list-flag-is-one-item.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-286 — A `class` flag on a type no tag selects imports its value from argv](BUG-286-a-class-flag-on-a-type-no-tag-selects-imports-its-value-from-argv.md) | minor |  | M | medium | behavior | BUG-6 |
 | [BUG-290 — A refusal at the root names its position as the empty string](BUG-290-a-refusal-at-the-root-names-its-position-as-the-empty-string.md) | minor |  | M | medium | behavior | PR-5 |
+| [BUG-307 — `dump()` picks a collection variant by its container class, and warns a value will not read back](BUG-307-dump-picks-a-collection-variant-by-its-container-class.md) | minor |  | M | medium | behavior | BUG-31, BUG-267 |
 | [BUG-269 — A constructor's own exception escapes construction raw, with no path](BUG-269-a-constructors-own-exception-escapes-construction-raw.md) | minor |  | L | high | api | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 | [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |

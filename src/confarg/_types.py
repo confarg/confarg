@@ -1392,12 +1392,6 @@ def _is_enum(tp: Any) -> bool:
     return isinstance(tp, type) and issubclass(tp, enum.Enum)
 
 
-def _all_have_defaults(tp: Any) -> bool:
-    """Check whether every field in a struct type has a default value."""
-    tp = _resolve_type(tp)
-    return _is_struct(tp) and not _struct_required(tp)
-
-
 _PLAIN_CLASS_BUILTINS = frozenset(
     {str, int, float, bool, bytes, bytearray, types.NoneType, list, dict, set, frozenset, tuple, Callable},
 )

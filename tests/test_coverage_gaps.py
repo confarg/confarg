@@ -60,7 +60,6 @@ from confarg._merge import (
 )
 from confarg._parse_cli import _handle_append_token, _ParseCtx, _resolve_field_type
 from confarg._types import (
-    _all_have_defaults,
     _allows_none,
     _init_fields,
     _is_plain_class,
@@ -80,7 +79,7 @@ from confarg.dictexpr._expressions import (
 )
 from confarg.exceptions import ConfargWarning, SymbolImportError, TypeCoercionError
 from confarg.typedload._coerce import _coerce_leaf, _coerce_type_ref, _try_coerce
-from confarg.typedload._construct import _value_matches_type, construct
+from confarg.typedload._construct import _value_matches_type, builds_from_nothing, construct
 from tests._cov_helpers import _COV_MOD, _ConstructAVariant, _ConstructBVariant
 from tests.conftest import WithDefaults, make_target
 
@@ -468,10 +467,10 @@ class TestCallableEdgeCases:
 class TestTypesEdgeCases:
     """Edge cases in type-inspection helpers."""
 
-    def test_all_have_defaults_non_struct(self) -> None:
-        """Non-struct types return False from _all_have_defaults."""
-        assert _all_have_defaults(int) is False
-        assert _all_have_defaults(str) is False
+    def test_a_leaf_builds_from_nothing_never(self) -> None:
+        """A leaf is never built from nothing: a missing one is missing."""
+        assert builds_from_nothing(int) is False
+        assert builds_from_nothing(str) is False
 
     def test_var_params_plain_class(self) -> None:
         """_var_params returns both the *args and the **kwargs name for plain classes."""

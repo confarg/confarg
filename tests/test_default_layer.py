@@ -97,6 +97,27 @@ class _HoldsBase:
 
 
 @dataclass
+class _NeedsBase:
+    """A required field whose class a tag selects."""
+
+    shape: _Base
+
+
+@dataclass
+class _NeedsInner:
+    """A required all-default struct, alone."""
+
+    inner: _Inner
+
+
+@dataclass
+class _NeedsNeedsInner:
+    """A required struct built from nothing only through its own required field."""
+
+    outer: _NeedsInner
+
+
+@dataclass
 class _Other:
     """A second struct, for a union."""
 
@@ -197,6 +218,16 @@ class TestWhereItIsLaid:
         data, untouched = _lay(_Outer, {})
         assert data == {"inner": {"port": 80}}
         assert untouched == {("inner",)}
+
+    def test_a_struct_built_from_nothing_through_its_own_required_field_is_laid_whole(self) -> None:
+        """Construction builds ``_NeedsInner`` from ``{}`` by building its own field, at any depth (BUG-304)."""
+        data, untouched = _lay(_NeedsNeedsInner, {})
+        assert data == {"outer": {"inner": {"port": 80}}}
+        assert untouched == {("outer",)}
+
+    def test_a_required_struct_demanding_its_tag_is_not_laid(self) -> None:
+        """Construction refuses it untagged rather than build the base from nothing, so nothing is laid (BUG-304)."""
+        assert _lay(_NeedsBase, {}) == ({}, set())
 
     def test_a_present_node_gets_its_classs_defaults(self) -> None:
         """Below a node the data holds, every absent field with a default is laid."""
