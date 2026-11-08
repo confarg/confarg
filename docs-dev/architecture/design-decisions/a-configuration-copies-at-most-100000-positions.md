@@ -43,6 +43,7 @@ The count is one budget, `_depth.Copies`, opened by each public call — `load()
 The merge carries it inside `_files.Reads`, what the configuration has read, which holds the budget and the locations read once; a read of a location only ever charges the budget of the configuration it was read for, and resolution takes the budget alone, since it reads no location.
 Every source, channel and resolution of one configuration share it, and `load()` shares it between its merge and its build, so a file's aliases and the references over them are counted together.
 A best-effort pass that reads before the merge, the tag scan and an adapter's registration, opens its own.
+A call's value opens its own too: construction, which computes it, carries no budget, and the function computing it is trusted code that could build any value anyway, so the bound there guards the walks after it rather than a few bytes expanding (BUG-297, [where it is counted](a-configuration-nests-at-most-64-levels.md#where-it-is-counted)).
 The tree resolution returns is not counted again: its shared parts are what the reads already charged.
 
 ## Why 100 000, fixed

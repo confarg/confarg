@@ -12,8 +12,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-298 — A union without `None` takes a file's `null`](BUG-298-a-union-without-none-takes-a-files-null.md) | critical |  | S | medium | config | PR-11 |
 | [BUG-283 — A reference to a registered leaf written as a tagged dict reads the dict](BUG-283-a-reference-to-a-tagged-registered-leaf-reads-its-dict.md) | critical |  | M | high | config | BUG-16, BUG-246 |
 | [BUG-288 — An ambiguity inside a union variant lets the next variant take the value](BUG-288-an-ambiguity-inside-a-union-variant-lets-the-next-variant-take-the-value.md) | critical |  | M | high | config | PR-5 |
-| [BUG-297 — A call whose value is the same call, or holds itself, recurses to a raw `RecursionError`](BUG-297-a-call-whose-value-is-the-same-call-or-holds-itself-recurses-raw.md) | critical (via BUG-293) |  | M | medium | config | FEAT-28 |
-| [BUG-293 — A `call:` result is taken unchecked when its outer class matches](BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md) | critical | BUG-297, FEAT-60 | L | high | config | FEAT-28 |
+| [BUG-293 — A `call:` result is taken unchecked when its outer class matches](BUG-293-a-call-result-is-taken-unchecked-when-its-outer-class-matches.md) | critical | FEAT-60 | L | high | config | FEAT-28 |
 | [BUG-295 — A union offers an untagged value to a variant that demands its tag](BUG-295-a-union-offers-an-untagged-value-to-a-variant-that-demands-its-tag.md) | major (via FEAT-57) |  | M | high | config | PR-63 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |

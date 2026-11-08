@@ -88,6 +88,7 @@ A `call:` spec also fills a field whose annotation is not a Callable: an `int`, 
 The function is called with the arguments under `args`, and its value is the field.
 A value the annotation already accepts is taken as it is; any other is built as the annotation, so a wrong type fails the way a wrong literal does.
 A `bind:` beside it is a second opener, and any other key beside it is refused, as in a Callable spec.
+The value is bounded where it enters, as `build()` data is: it nests at most 64 levels from the root and never holds itself, and a value that is a call again at the node is made in its place, a chain bounded on its own ([a chain of calls is bounded on its own](design-decisions/a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own)).
 `dump()` writes the value, not the spec ([the object dump writes state](design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
 
 The key stops being a spec where the annotation could hold it as data: a `dict` type, a Callable (which has its own rules), and a struct with a member named `call`.
