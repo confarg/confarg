@@ -1152,14 +1152,18 @@ class TestAFileWritesAKeyAsItsFormatHoldsIt:
         """``1`` and ``'1'`` would both be written ``"1"``: refused, naming both keys and the path."""
         out = tmp_path / f"c{suffix}"
         fmt = _FORMAT_NAMES[suffix]
-        with pytest.raises(ConfargError, match=rf"keys 1 and '1' at 'a' to {fmt}"):
+        with (
+            pytest.warns(ConfargWarning, match="Key '1' at 'a' will not read back as int"),
+            pytest.raises(ConfargError, match=rf"keys 1 and '1' at 'a' to {fmt}"),
+        ):
             confarg.dump_file(_AnyHolder({1: 5, "1": 6}), out)
         assert not out.exists()
 
     def test_a_yaml_key_is_written_quoted(self, tmp_path: Path) -> None:
         """PyYAML quotes text another YAML reader would type, so every reader reads the key confarg does."""
         out = tmp_path / "c.yaml"
-        confarg.dump_file(_AnyHolder({1: 6, None: 7}), out)
+        with pytest.warns(ConfargWarning, match="will not read back"):
+            confarg.dump_file(_AnyHolder({1: 6, None: 7}), out)
         assert out.read_text() == "a:\n  '1': 6\n  'null': 7\n"
 
     @pytest.mark.parametrize("suffix", _FORMATS)

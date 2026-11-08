@@ -9,7 +9,7 @@ Until BUG-202 a delete reached the writer, which raised its own error.
   A struct field whose type demands its tag tags an instance of its own class too, which construction builds only through the tag; until BUG-302 it was written `{}`, which the reload refused.
   One function writes the tag, `_write_tag`, for a struct field and a union alike.
 - Which union variant an instance belongs to is `_variant_holds`, asked once per variant in declaration order, `Any` last: it holds every instance, so it is asked after every other variant, as construction offers it a value only after every other variant refused it ([construction](construction.md#an-any-variant-is-tried-last)).
-  It dispatches on the same `_type_kind` as `_serialize_by_type` ([shape dispatch](introspection.md#shape-dispatch)), so the variant it picks is the one that then serializes the value, and each shape answers with the concrete class construction builds for it — `list` for `Sequence[X]`, `dict` for `Mapping[K, V]` — before a second pass widens it to what a type checker accepts ([below](#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)).
+  It dispatches on the same `_type_kind` as `_serialize_by_type` ([shape dispatch](introspection.md#shape-dispatch)), so the variant it picks is the one that then serializes the value, and each shape answers with the concrete class construction builds for it — `list` for `Sequence[X]`, `dict` for `Mapping[K, V]` — before a second pass widens it to what a type checker accepts ([below](#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)), and among the variants those two passes name, the first holding the value whole is taken ([below](#a-collection-variant-is-picked-by-what-it-holds)).
   A bare `isinstance` cannot ask the question at all: a parameterized generic and a `Literal` both refuse to be its second argument, so every union holding one — `list[str] | str`, `Literal["fast", "slow"] | str` — used to raise a `TypeError` out of `dump()` while loading fine (BUG-31, closed).
   A `Literal` answers by membership on the member's own type, so `True` is not a value of `Literal[1]`; its members are plain values, and `_serialize_leaf` already writes them as such, reading the value rather than the declared type.
 - A **leaf** union member is written as `{__cast__, __value__}` when the bare scalar would be read back as another variant, under either policy ([casting a stolen leaf](stealing-rule.md#casting-a-stolen-leaf)).
@@ -75,12 +75,53 @@ A plain class's `*args` member is typed as the tuple Python hands the constructo
 Before, each shape answered differently, and none warned: a struct field read its declared fields off whatever it held, so a field-less one wrote `{}` for any value and a `tuple[int, int]` holding three items wrote two; a union handed the value back untouched, a live object that only `dump_file()` refused; a leaf was written as it was.
 Refusing at `dump()` was rejected for the forensic reason above; a field-less struct's `{}` is what a descriptor-typed dataclass field dumped as, read as its descriptor class.
 
-## A union key another variant reads is written with a warning
+## A key that does not read back is written with a warning
 
-A dict keyed by a union writes each key as its variant does, and a key reads back as every key does: from its text, as a token, ranked by the union ([which keys are one key](../pipeline/deep-merge.md#which-keys-are-one-key)).
+A key reads back from its text, as a token, as its key type reads every key ([which keys are one key](../pipeline/deep-merge.md#which-keys-are-one-key)).
 So most keys round-trip, `1` and `'a'` of a `dict[int | str, V]`, `None` of a `dict[int | None, V]` (written `null`), but the text `'1'`, which only code builds, reads back as the int.
-No `__cast__` spells a key, so `dump()` writes it and warns, `Key '1' at 'u' will not read back as str: int, another variant of int | str, takes its text.` (`_serialize._warn_a_key_read_as_another`), as it writes a leaf no cast can pin with a warning: the dump is forensic ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
-Refusing the key, as two keys spelled alike are refused, was weighed and not taken: the dict holds the state the object has, and the merged dict that produced it keeps its text (maintainer-chosen).
+No `__cast__` spells a key, so `dump()` writes it and warns (`_serialize._warn_an_unread_key`), as it writes a leaf no cast can pin with a warning: the dump is forensic ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
+`Key '1' at 'm' will not read back as str: int reads its text as 1.` says what comes back, and `Key 'x' at 'm' will not read back as str: int refuses its text.` that nothing does; one sentence serves every key type.
+
+A key reads back when its key type holds it (`_holding._holds`) and reads its text as an equal value (maintainer-chosen).
+Both halves are needed: `1` of a `dict[bool, V]` reads as `True`, which equals it, though `bool` does not hold it, and `True` of a `dict[int, V]` is held, though no text reads as it.
+So a `str` subclass, an `IntEnum` member of a `dict[int, V]` and an int of a `dict[float, V]` are silent, as the same values are in a field.
+Pydantic warns of the same keys and spares the same ones; cattrs and msgspec write them silently.
+
+A key with no key type is asked the same, on a `dict[Any, V]`, a bare `dict` and a dict an `Any` node holds: every file writes a key as its text, so `{1: 'a'}` loads as `{'1': 'a'}` and `d[1]` is gone (maintainer-chosen).
+Sparing the keys JSON spells, because the merge treats `1` and `"1"` as one key, was rejected: that is what the merge meets, not what the program reads back.
+A dict `_serialize_foreign` writes has already warned as a whole, so its keys are not asked, and a raw `dump_file(merge(...))` dict has no type to ask.
+
+Until BUG-314 only a union key type was asked, and by `type(read) is type(key)`, so a `str` subclass of a `dict[int | str, V]` warned though nothing was lost.
+
+Refusing a key that does not read back, as two keys written alike are refused, was weighed and not taken: the dict holds the state the object has, and the merged dict that produced it keeps its text (maintainer-chosen).
 
 A union holding a variant no key is read as, `int | tuple[int, int]`, is refused both ways, as such a key type alone is: construction refuses the key type (`_construct.read_key`) and `dump()` the dict.
 Until BUG-261 every union key type was: each key went through the leaf coercion, which takes no union.
+
+## Two keys written as one are refused
+
+Two keys of one dict that are written alike, `Path('a')` and `'a'` of a `dict[Path, V]`, or `Color.RED` and `'red'`, are refused by `dump()`, naming both (`_serialize._written_dict`, BUG-314, maintainer-chosen).
+The written dict cannot hold both, so the dump could only record one of them, and before this it kept the last with no sign of it.
+A dict's own two keys that stay apart in Python, `1` and `'1'`, are kept by `dump()`, and refused by the writer of a file that spells them alike ([a key is written as the text it is met by](../design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-key-is-written-as-the-text-it-is-met-by)).
+A warning that keeps the last was rejected: it would still lose state a forensic dump exists to record.
+A dict `_serialize_foreign` writes falls back to the untyped form on this refusal as on any other, its keys kept as they stand.
+
+## A collection variant is picked by what it holds
+
+A collection's class does not tell `list[int]` from `list[str]`, so among the variants holding a value by its class, `first_holding_variant` takes the first holding it whole (`_holding._holds_whole`), and otherwise the first by its class, whose items then warn where they are.
+So `list[int] | list[str]` writes `['a']` by its `list[str]` where it used to warn of `f[0]`, though the dump read back equal (BUG-307).
+The answer covers every container kind at every depth: items, a dict's keys and values, a tuple's positions, a generic struct's members (maintainer-chosen).
+Every variant holding the value by its class competes, a widened one and `Any` included, in the order they are asked, so `tuple[int, ...] | Sequence[str]` writes `('a',)` by the `Sequence` and `list[int] | Any` writes `['a']` by the `Any`.
+An int counts as held by a `float` item, as a type checker reads it, so `list[float] | list[int]` writes `[1]` as `[1.0]`: preferring the exact item would need a second predicate and gains nothing, since `[1]` reads back as `[1.0]` either way, the list's first variant taking it (maintainer-chosen).
+
+`_holds` stays by the class: a plain `list[int]` holding `['a']` still warns of `f[0]` rather than of the whole list, and construction of a built instance is unchanged ([a built instance is taken as it is](construction.md#a-built-instance-is-taken-as-it-is)).
+The walk runs only where two variants hold the value, so `type Json = int | str | list[Json] | dict[str, Json]` costs nothing.
+It treats a value it is already inside, or one past `MAX_DEPTH`, as held, so the dump's own refusal is what such a value meets, and it does not walk a one-shot iterator, whose items the dump still has to write.
+
+Precedents: pydantic's union serializer tries each variant strictly over the whole value before warning, and writes `['a']` silently; msgspec refuses such a union at definition (`Type unions may not contain more than one array-like`).
+
+## A widened value reads back as its variant reads it
+
+A value a union variant holds only widened, an int in a `float`, a tuple in a `Sequence`, a `frozenset` in an `AbstractSet`, reads back as that variant reads the dump, as a float or a list.
+`_serialize_union` therefore expects what a field of that variant reads (`_serialize._variant_reading`), as it does of an `Any` variant, and warns only if the union reads something else.
+Until BUG-307 it demanded the value's own class, so `float | str` holding `1` warned that another variant took the float, though none had, while `float | None` was silent, returning before the question.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import enum
 import inspect
+import math
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
@@ -66,8 +67,8 @@ from confarg.typedload._coerce import (
     _type_kind,
     _TypeKind,
 )
-from confarg.typedload._construct import _disambiguate_struct, construct, read_key
-from confarg.typedload._holding import _find_variant_type, _holds, _holds_anything, _literal_holds
+from confarg.typedload._construct import _disambiguate_struct, _spell_key, construct, read_key
+from confarg.typedload._holding import _find_variant_type, _holds, _holds_anything, _literal_holds, _variant_holds
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -316,9 +317,9 @@ def _serialize_any(
     *checked*, each value is kept only when an ``Any`` node reads it back as the value it
     came from (:func:`_reads_back`), an object compared by the state it holds; any other is
     written untyped (:func:`_serialize_untyped`), with a :class:`ConfargWarning` saying why.
-    A dict holding an opener key, which reads back as a spec, and a tuple or a set, which
-    reads back as a list, warn too. Unchecked, the form is returned as it is, and a value no
-    spec can write raises.
+    A dict holding an opener key, which reads back as a spec, a key that does not read back
+    (:func:`_warn_an_unread_key`), and a tuple or a set, which reads back as a list, warn too.
+    Unchecked, the form is returned as it is, and a value no spec can write raises.
 
     Dev Notes:
         docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
@@ -347,10 +348,7 @@ def _serialize_any_form(
 ) -> Any:
     """Return what :func:`_serialize_any` writes *instance* as, each item written by *item*."""
     if isinstance(instance, dict):
-        out = {
-            _data_key(_serialize_leaf(None, k, opts.native_types), (*path, str(k))): item(v, str(k))
-            for k, v in instance.items()
-        }
+        out = _written_dict(Any, instance, path, opts, item, checked=checked)
         if checked and holds_an_opener(out):
             _warn_unread_any(instance, path, "it holds an opener key, so it reads back as the spec it spells")
         return out
@@ -640,7 +638,8 @@ def _serialize_union(
     # The Any variant already wrote what a bare Any field reads back, or warned that nothing
     # does: the union must read the dump back as that Any reading, its cast the dump's own type.
     holds_anything = _holds_anything(variant_tp)
-    expected = _any_reading(serialized) if holds_anything else instance
+    reads_its_own = holds_anything or not _variant_holds(variant_tp, instance)
+    expected = _variant_reading(variant_tp, serialized) if reads_its_own else instance
 
     def dumps_as(back: Any) -> Any:
         if holds_anything:
@@ -695,7 +694,8 @@ def _reads_back(
     Args:
         tp: The declared type the value would be read back as.
         expected: What reading *data* back must produce: the value that produced it, or, for
-            an ``Any`` variant, what a bare ``Any`` field reads *data* back as.
+            an ``Any`` variant or one holding the value only widened, what a field of that
+            variant reads *data* back as.
         data: The serialized form to read back.
         dumps_as: Serializes a value read back that does not compare equal: an object built
             from a spec, a bound method or a partial is the same value when it holds the same
@@ -732,14 +732,14 @@ def _same_value(back: Any, expected: Any, data: Any, dumps_as: Callable[[Any], A
         return False
 
 
-def _any_reading(data: Any) -> Any:
-    """Return what a bare ``Any`` field reads *data* back as, *data* itself when it reads none.
+def _variant_reading(variant_tp: Any, data: Any) -> Any:
+    """Return what a field of the union variant *variant_tp* reads *data* back as, *data* itself when it reads none.
 
     Dev Notes:
-        docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
+        docs-dev/architecture/types/serialization.md#a-widened-value-reads-back-as-its-variant-reads-it
     """
     try:
-        return construct(Any, data)
+        return construct(variant_tp, data)
     except (ConfargError, TypeError, ValueError):
         return data
 
@@ -764,13 +764,11 @@ def _serialize_dict(
     path: FieldPath,
     opts: _DumpOptions,
 ) -> dict[Any, Any]:
-    """Serialize a typed dict.
-
-    A union key type writes each key as its variant does, and warns of one another variant
-    reads its text back as (:func:`_warn_a_key_read_as_another`).
+    """Serialize a typed dict, warning of a key that does not read back (:func:`_written_dict`).
 
     Raises:
-        ConfargError: If it holds a key, and its key type is one construction does not coerce a key to.
+        ConfargError: If it holds a key, and its key type is one construction does not coerce a
+            key to, or two keys that are written alike.
 
     Dev Notes:
         docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
@@ -785,41 +783,73 @@ def _serialize_dict(
             " so the dict would not load back."
         )
         raise ConfargError(msg)
-    written = {}
+    return _written_dict(kt, instance, path, opts, lambda v, k: _serialize(vt, v, (*path, k), opts))
+
+
+def _written_dict(  # noqa: PLR0913  # the one walk both dict writers share
+    kt: Any,
+    instance: Any,
+    path: FieldPath,
+    opts: _DumpOptions,
+    item: Callable[[Any, str], Any],
+    *,
+    checked: bool = True,
+) -> dict[Any, Any]:
+    """Return *instance*, a dict keyed by *kt*, as the dict ``dump()`` writes, each value written by *item*.
+
+    *checked*, a key that does not read back warns (:func:`_warn_an_unread_key`).
+
+    Raises:
+        ConfargError: If two keys are written alike, or one is a key ``_defaults.RESERVED_KEYS`` lists.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#two-keys-written-as-one-are-refused
+    """
+    written: dict[Any, Any] = {}
+    spelled_by: dict[Any, Any] = {}
     for k, v in instance.items():
         key = _serialize_leaf(kt, k, opts.native_types)
-        if union:
-            _warn_a_key_read_as_another(kt, k, key, path)
-        written[_data_key(key, (*path, str(k)))] = _serialize(vt, v, (*path, str(k)), opts)
+        if checked:
+            _warn_an_unread_key(kt, k, key, path)
+        if key in spelled_by:
+            where = _spell_field_path(path) or _defaults.ROOT_KEY
+            raise ConfargError.keys_serialized_alike(spelled_by[key], k, key, where)
+        spelled_by[key] = k
+        written[_data_key(key, (*path, str(k)))] = item(v, str(k))
     return written
 
 
-def _warn_a_key_read_as_another(kt: Any, key: Any, written: Any, path: FieldPath) -> None:
-    """Warn that the key *key* of a dict keyed by the union *kt*, at *path*, will not read back as itself.
+def _warn_an_unread_key(kt: Any, key: Any, written: Any, path: FieldPath) -> None:
+    """Warn that the key *key* of a dict keyed by *kt*, at *path*, will not read back as itself.
 
-    A key is read back from the text a file writes it as (:func:`_key_spelling`), as a token,
-    so the text ``'1'`` of a ``dict[int | str, V]`` reads back as the int: no ``__cast__``
+    A key is read back from the text a file writes it as (:func:`_key_spelling`), as a token;
+    it reads back when *kt* holds it and reads that text as an equal value. No ``__cast__``
     spells a key, so the dump writes it and warns, as it does a value no cast can pin
     (:func:`_warn_unpinnable_leaf`).
 
     Dev Notes:
-        docs-dev/architecture/types/serialization.md#a-union-key-another-variant-reads-is-written-with-a-warning
+        docs-dev/architecture/types/serialization.md#a-key-that-does-not-read-back-is-written-with-a-warning
     """
     text = written if isinstance(written, str) else _key_spelling(written)
     try:
         read = read_key(kt, text, path)
-    except ConfargError:
-        taker = f"no variant of {_spell_type(kt)} takes its text"
+    except (ConfargError, TypeError, ValueError):
+        reading = "refuses its text"
     else:
-        if type(read) is type(key) and read == key:
+        if _holds(_resolve_type(kt), key) and (read == key or (_is_nan(read) and _is_nan(key))):
             return
-        taker = f"{_spell_type(type(read))}, another variant of {_spell_type(kt)}, takes its text"
+        reading = f"reads its text as {_spell_key(read)}"
     warnings.warn(
         f"Key {text!r} at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
-        f" {_spell_type(type(key))}: {taker}.",
+        f" {_spell_type(type(key))}: {_spell_type(kt)} {reading}.",
         ConfargWarning,
         stacklevel=2,
     )
+
+
+def _is_nan(value: Any) -> bool:
+    """Return whether *value* is a float NaN, which compares equal to nothing it reads back as."""
+    return isinstance(value, float) and math.isnan(value)
 
 
 def _data_key(key: Any, path: FieldPath) -> Any:

@@ -338,6 +338,15 @@ class ConfargError(Exception):
         )
 
     @classmethod
+    def keys_serialized_alike(cls, first: Any, second: Any, written: Any, path: str) -> ConfargError:
+        """Return the error for two keys of the dict at *path* that ``dump()`` writes as one key, *written*.
+
+        Dev Notes:
+            docs-dev/architecture/types/serialization.md#two-keys-written-as-one-are-refused
+        """
+        return cls(f"Cannot serialize the keys {first!r} and {second!r} at '{path}': both are written {written!r}.")
+
+    @classmethod
     def include_siblings_need_a_dict(cls, include_key: str, included: Any) -> ConfargError:
         """Return an error for sibling keys beside an include that produced a non-mapping."""
         return cls(

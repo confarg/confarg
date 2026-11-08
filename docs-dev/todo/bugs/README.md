@@ -9,9 +9,9 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-314 — `dump()` writes a dict key its key type does not hold without a warning](BUG-314-dump-writes-a-dict-key-its-key-type-does-not-hold-without-a-warning.md) | critical |  | S | medium | behavior | BUG-267 |
 | [BUG-309 — `dump()` writes a registered leaf's unregistered subclass by its parent's serializer, silently](BUG-309-dump-writes-a-registered-leafs-subclass-by-the-parents-serializer.md) | critical |  | M | medium | behavior | BUG-11 |
 | [BUG-313 — A document's duplicate key keeps the last, silently](BUG-313-a-documents-duplicate-key-keeps-the-last-silently.md) | critical |  | M | medium | config | PR-5 |
+| [BUG-317 — `dump()` writes a value its type holds but construction refuses without a warning](BUG-317-dump-writes-a-value-its-type-holds-but-construction-refuses-without-a-warning.md) | critical |  | M | medium | behavior | PR-5, FEAT-51 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
@@ -34,7 +34,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-257 — A lone expression token on a list flag is one item, where the environment reads it as the whole list](BUG-257-a-lone-expression-token-on-a-list-flag-is-one-item.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-286 — A `class` flag on a type no tag selects imports its value from argv](BUG-286-a-class-flag-on-a-type-no-tag-selects-imports-its-value-from-argv.md) | minor |  | M | medium | behavior | BUG-6 |
 | [BUG-290 — A refusal at the root names its position as the empty string](BUG-290-a-refusal-at-the-root-names-its-position-as-the-empty-string.md) | minor |  | M | medium | behavior | PR-5 |
-| [BUG-307 — `dump()` picks a collection variant by its container class, and warns a value will not read back](BUG-307-dump-picks-a-collection-variant-by-its-container-class.md) | minor |  | M | medium | behavior | BUG-31, BUG-267 |
 | [BUG-269 — A constructor's own exception escapes construction raw, with no path](BUG-269-a-constructors-own-exception-escapes-construction-raw.md) | minor |  | L | high | api | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 | [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |
