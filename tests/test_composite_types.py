@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import collections
+import collections.abc
 import enum
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Optional, TypedDict, Union
 
 import pytest
@@ -242,6 +244,85 @@ class TestCollections:
         WithTuple = make_target("pair", tuple, default=())
         result = confarg.load(WithTuple, argv=["--pair", "a", "b"], env={})
         assert result.pair == ("a", "b")
+
+
+@dataclass
+class _Item:
+    """An item a list of structs builds from a dict."""
+
+    x: int = 0
+
+
+class _Ints(list[int]):
+    """A list subclass, read as the list it is."""
+
+
+@dataclass
+class _Sequences:
+    """List-kind fields, alone and in a union beside a scalar."""
+
+    xs: list[int] = field(default_factory=lambda: [9])
+    seq: collections.abc.Sequence[int] = field(default_factory=list)
+    own: _Ints = field(default_factory=_Ints)
+    items: list[_Item] = field(default_factory=list)
+    xs_or_n: list[int] | int = 0
+    pair_or_n: tuple[int, int] | int = 0
+    set_or_n: set[int] | int = 0
+    xs_or_day: list[int] | date = date(2000, 1, 1)
+
+
+def _a_pair() -> tuple[int, int]:
+    """A function whose value is a tuple, for a ``call:`` to compute."""
+    return (1, 2)
+
+
+class TestATupleReadsWhereAListReads:
+    """A list-kind node reads a tuple as the sequence it spells, as a tuple node reads a list (FEAT-60).
+
+    No channel spells a tuple; a caller's ``build()`` data and a ``call:`` value do.
+    """
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("xs", [1, 2]),
+            ("seq", [1, 2]),
+            ("own", _Ints([1, 2])),
+            ("xs_or_n", [1, 2]),
+            ("pair_or_n", (1, 2)),
+            ("set_or_n", {1, 2}),
+        ],
+    )
+    def test_a_tuple_builds_the_nodes_value(self, name: str, expected: Any) -> None:
+        """The node builds its own value from the tuple's items, in a union too."""
+        built = getattr(confarg.build(_Sequences, {name: (1, 2)}), name)
+        assert built == expected
+        assert type(built) is type(expected)
+
+    def test_a_tuples_items_are_read(self) -> None:
+        """Each item is built as the element type, a dict as a struct."""
+        assert confarg.build(_Sequences, {"items": ({"x": 1}, {"x": 2})}).items == [_Item(1), _Item(2)]
+
+    def test_a_tuples_items_are_refused_at_their_position(self) -> None:
+        """An item the element type refuses is named by its index."""
+        with pytest.raises(TypeCoercionError, match=r"'xs\[1\]'"):
+            confarg.build(_Sequences, {"xs": (1, "a")})
+
+    def test_a_set_stays_refused_under_a_list(self) -> None:
+        """A set has no positions, so it spells no sequence."""
+        refusal = r"at 'xs': expected list, tuple, or dict with integer keys, got set"
+        with pytest.raises(TypeCoercionError, match=refusal):
+            confarg.build(_Sequences, {"xs": {1, 2}})
+
+    def test_a_union_refuses_a_tuple_as_it_refuses_a_list(self) -> None:
+        """A scalar variant refuses a tuple on its shape, so its reason is left out, as for a list."""
+        with pytest.raises(TypeCoercionError) as info:
+            confarg.build(_Sequences, {"xs_or_day": ("a",)})
+        assert str(info.value).splitlines()[1:] == ["  list[int]: cannot coerce str 'a' to int at 'xs_or_day[0]'"]
+
+    def test_a_tuple_from_a_call_builds_a_list(self) -> None:
+        """A call's value reads as the same value in ``build()`` data."""
+        assert confarg.build(_Sequences, {"xs": {"call": f"{__name__}._a_pair"}}).xs == [1, 2]
 
 
 class TestDict:

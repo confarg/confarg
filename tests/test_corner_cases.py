@@ -1463,8 +1463,8 @@ class TestSilentFailureFixes:
     @pytest.mark.parametrize(
         ("tp", "bad_value", "match"),
         [
-            (list[int], "1 2 3", "expected list or dict"),
-            (list[int], 42, "expected list or dict"),
+            (list[int], "1 2 3", "expected list, tuple, or dict"),
+            (list[int], 42, "expected list, tuple, or dict"),
             (dict[str, int], "key=val", "expected dict"),
             (dict[str, int], [1, 2, 3], "expected dict"),
             (set[int], "1 2 3", "expected sequence or dict"),

@@ -6683,6 +6683,26 @@ class TestACallsValueIsBoundedContract:
         assert loader.load(_BoundedCallConfig, argv=[*argv, "63"], env={}).node is not None
 
 
+@dataclass
+class _ListCallConfig:
+    """A list-kind field a call fills."""
+
+    xs: list[int] = dataclasses_field(default_factory=list)
+
+
+def _a_pair() -> tuple[int, int]:
+    """A function whose value is a tuple."""
+    return (1, 2)
+
+
+class TestATupleReadsWhereAListReadsContract:
+    """A call's tuple value fills a list-kind field as the list it spells, in every front-end (FEAT-60)."""
+
+    def test_a_tuple_builds_the_list(self, loader: ConfargLoader) -> None:
+        """``list[int]`` refused it."""
+        assert loader.load(_ListCallConfig, argv=["--xs.call", f"{__name__}._a_pair"], env={}).xs == [1, 2]
+
+
 class TestCallOnTheCliRegistrationContract:
     """A typed call's and a nested target spec's flags are discovered from the signatures they name (FEAT-32)."""
 
