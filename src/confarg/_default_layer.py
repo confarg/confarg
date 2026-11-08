@@ -72,14 +72,14 @@ from confarg.typedload._construct import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Hashable, Sequence
 
     from confarg._merge import MergeDict
     from confarg.dictexpr._expressions import Settler
 
-#: A position in the data, one segment per step: a dict key (a pending op's marker included)
-#: or a list index.
-DataPath = tuple["str | int | ListOp", ...]
+#: A position in the data, one segment per step: a dict key as the data holds it (a pending
+#: op's marker included) or a list index.
+DataPath = tuple["Hashable", ...]
 
 # A default that is not laid: anything but a leaf value, a tuple of them, or None.
 _NOT_LAID: Any = object()
@@ -163,7 +163,7 @@ def settle_pending(target: Any) -> Settler:
     root = merge_root(target)
     walk = _Walk(for_resolution=False)
 
-    def settle(data: MergeDict, path: Sequence[str | ListOp], node: MergeDict) -> Any:
+    def settle(data: MergeDict, path: Sequence[Hashable], node: MergeDict) -> Any:
         at = _at_path(root, data, path)
         spelled = _spelled(tuple(path))
         if ListOp.BASE in node and not contains_expression(node[ListOp.BASE]):
@@ -178,7 +178,7 @@ def settle_pending(target: Any) -> Settler:
     return settle
 
 
-def _at_path(root: MergeAt, data: MergeDict, path: Sequence[str | ListOp]) -> MergeAt:
+def _at_path(root: MergeAt, data: MergeDict, path: Sequence[Hashable]) -> MergeAt:
     """Return where the merge stands at *path* of *data*, each node read as the data holds it.
 
     An op's own key names no field: an item it holds is typed as an element of the list.

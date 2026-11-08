@@ -40,7 +40,7 @@ from confarg.typedload._coerce import _type_kind, _TypeKind
 from confarg.typedload._construct import read_key, reads_as_new_value, tag_reading
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Hashable, Iterable
 
 
 def merge_root(target: Any) -> MergeAt:
@@ -92,7 +92,7 @@ class TypedAt(MergeAt):
             return promote_bare_spec(below)
         return below
 
-    def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:
+    def child(self, key: Hashable, below: Any, over: Any) -> MergeAt:
         """Return where the merge stands at *key*, read from the spec or the tag *below* and *over* hold."""
         return _child(self.tp, str(key), _node_view(below, over))
 
@@ -183,7 +183,7 @@ class _RootAt(MergeAt):
         """Return False: the dict holding the root key is no value of the target's."""
         return False
 
-    def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the root key only
+    def child(self, key: Hashable, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # the root key only
         """Return the target's node under the root key, the shape rule elsewhere."""
         return TypedAt(self.tp) if key == _defaults.ROOT_KEY else MergeAt()
 
@@ -202,7 +202,7 @@ class _MixedRootAt(TypedAt):
 
     __slots__ = ()
 
-    def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:
+    def child(self, key: Hashable, below: Any, over: Any) -> MergeAt:
         """Return the whole value's node under the root key, else a field's as the struct-like root types it."""
         return TypedAt(self.tp) if key == _defaults.ROOT_KEY else super().child(key, below, over)
 
@@ -234,7 +234,7 @@ class _ArgsAt(MergeAt):
         """Return False: the mapping's keys are the target's parameters, never an opener."""
         return False
 
-    def child(self, key: str | ListOp, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # one parameter each
+    def child(self, key: Hashable, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # one parameter each
         """Return the node of the parameter *key*, the shape rule for one with no annotation."""
         return merge_at(self.params.get(str(key)))
 

@@ -29,9 +29,9 @@ from confarg.typedload._coerce import _is_registered_leaf, read_as_object
 from confarg.typedload._construct import construct, read_union_leaf
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Hashable, Sequence
 
-    from confarg._merge import ListOp, MergeAt, MergeDict
+    from confarg._merge import MergeAt, MergeDict
 
 
 class TypedReading:
@@ -46,7 +46,7 @@ class TypedReading:
     def __init__(self, target: Any) -> None:
         self._root = merge_root(target)
 
-    def __call__(self, data: MergeDict, path: Sequence[str | ListOp], value: Any) -> Any:
+    def __call__(self, data: MergeDict, path: Sequence[Hashable], value: Any) -> Any:
         """Return what an expression reads of *value*, which *data* holds at *path*.
 
         *path* is named as the data names it, a list element by its position, so each step
