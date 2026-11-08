@@ -720,14 +720,11 @@ class TestAFileSpellsAnOpInItsValue:
         cfg = _load_ops(tmp_yaml, "data: {'1': 5, a: 6}\n", "data: {'1': {__unset__: true}}\n")
         assert cfg.data == {"a": 6}
 
-    def test_root_value_beside_a_key_takes_a_delete(self, tmp_yaml) -> None:
-        """At a document root, ``__root__`` is a key like any other: its delete cuts off the root value below.
-
-        A key stands beside it because a lone ``__root__`` is unwrapped at a root file (BUG-242).
-        """
+    def test_root_value_takes_a_delete(self, tmp_yaml) -> None:
+        """At a document root, ``__root__`` is a key like any other: its delete cuts off the root value below."""
         files = [
-            tmp_yaml("locals: {}\n__root__: {a: 1}\n", "low.yaml"),
-            tmp_yaml("locals: {}\n__root__: {__unset__: true, b: 2}\n", "top.yaml"),
+            tmp_yaml("__root__: {a: 1}\n", "low.yaml"),
+            tmp_yaml("__root__: {__unset__: true, b: 2}\n", "top.yaml"),
         ]
         assert confarg.load(dict[str, int], files=files, argv=[], env={}) == {"b": 2}
 

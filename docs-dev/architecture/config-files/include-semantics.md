@@ -17,6 +17,9 @@ So do the other two mount routes, which read their value with the same parser ([
   `--config.items+ rows.yaml` is the first of those, in the CLI channel.
 - A fragment whose whole content is one value names it under `__root__`.
   TOML has no list or scalar root, so that is the only way a TOML fragment carries one; only a lone `__root__` unwraps, and a *document* root never does, because there `__root__` is a non-struct target's value and `build()` is what reads it.
+  A document root is wherever a file lands at the configuration root: one `files=`, `--config` or the environment's pointer names, and one included at the root of such a file; the include layering they all go through (`_files._load_includes`) unwraps only where its caller says the include lands below that root.
+  An include under a root-level `__append__` or `__base__` lands below it, at the items of the list the op makes, though the path that types it, which leaves the op key out, is empty: so the caller decides from the path as written, not from that one.
+  It unwrapped every file it layered until BUG-242, so `__root__: 5` in a root file was refused as a non-mapping root and a dict lost the key `build()` reads.
 - `__include__` with a value it cannot use (`null`) raises in a dict node and in a list item alike: one key, one rule.
 - Cycle detection: `seen` grows **per entry**, not across a list.
   Sibling entries are sequential layers, not nesting, so naming the same file twice is legal while a genuine cycle still raises.

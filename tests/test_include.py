@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 import pytest
 
 import confarg
+from confarg import ListOp
 from confarg._files import INCLUDE_KEY, Reads
 from confarg._files import _load_file as _load_file_in
 from confarg.exceptions import ConfargError, InvalidConfigFileError
@@ -322,6 +323,23 @@ class TestPureIncludeNonDict:
         # top-level pure include of a scalar must error (root must be dict)
         with pytest.raises(ConfargError):
             _load_file(tmp_path / "config.json")
+
+
+class TestWhereAnIncludeLandsDecidesItsRootKey:
+    """An include's lone ``__root__`` is unwrapped below the configuration root, and kept at it (BUG-242)."""
+
+    def test_an_include_at_the_root_of_a_root_file_keeps_it(self, tmp_path: Path) -> None:
+        """At the root, ``__root__`` is the key ``build()`` reads, and the locals beside it merge on top."""
+        write(tmp_path, "frag.toml", "__root__ = [1, 2]\n")
+        write(tmp_path, "config.yaml", "__include__: ./frag.toml\nlocals: {}\n")
+        assert _load_file(tmp_path / "config.yaml") == {"__root__": [1, 2], "locals": {}}
+
+    @pytest.mark.parametrize(("op", "key"), [("__append__", ListOp.APPEND), ("__base__", ListOp.BASE)])
+    def test_an_include_under_a_root_level_op_is_unwrapped(self, tmp_path: Path, op: str, key: ListOp) -> None:
+        """The op's value is the items of the list it makes, a node, though no field names it."""
+        write(tmp_path, "frag.toml", "__root__ = [1, 2]\n")
+        write(tmp_path, "config.yaml", f"{op}:\n  {INCLUDE_KEY}: ./frag.toml\n")
+        assert _load_file(tmp_path / "config.yaml") == {key: [1, 2]}
 
 
 # ---------------------------------------------------------------------------

@@ -405,7 +405,10 @@ def _unwrap_root_key(value: Any) -> Any:
 
     A *document* root is never unwrapped -- there ROOT_KEY carries a non-struct target's value
     and ``build()`` is what reads it -- which is why this sits on the include path rather than
-    in :func:`_load_any`.
+    in :func:`_load_any`, and why :func:`_load_includes` calls it only for an include its
+    caller says lands below the configuration root: a file mounted at the root, by ``files=``,
+    ``--config`` or the environment's pointer, or included at the root of one, is a document
+    root (BUG-242).
 
     Dev Notes:
         docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
@@ -422,6 +425,7 @@ def _load_includes(  # noqa: PLR0913  # the walk's state: entries, location, cyc
     root: MergeAt = _SHAPE,
     mount: tuple[str, ...] = (),
     *,
+    at_root: bool,
     relative: bool = False,
     reads: Reads,
 ) -> Any:
@@ -441,7 +445,10 @@ def _load_includes(  # noqa: PLR0913  # the walk's state: entries, location, cyc
     ``None`` for the channel routes, which have no including document and resolve against the
     process working directory instead. *mount* is where the result lands in the configuration
     (see :func:`_load_any`), and *relative* says that a list op holds it, so no absolute path
-    reaches it yet.
+    reaches it yet. *at_root* says the entries land at the configuration root, where an
+    entry's lone ``__root__`` is kept for ``build()``; below it, they are unwrapped
+    (:func:`_unwrap_root_key`). The caller says so, since *mount* types the node and leaves
+    out an op key, so an include under a root-level ``__append__`` has an empty *mount*.
 
     Dev Notes:
         docs-dev/architecture/config-files/include-semantics.md#include-semantics
@@ -454,9 +461,11 @@ def _load_includes(  # noqa: PLR0913  # the walk's state: entries, location, cyc
         if key in seen:
             msg = f"Circular include detected: {inc_loc}"
             raise ConfargError(msg)
-        loaded = _unwrap_root_key(
-            _load_any(inc_loc, seen | {key}, options=options, root=root, mount=mount, relative=relative, reads=reads),
+        loaded = _load_any(
+            inc_loc, seen | {key}, options=options, root=root, mount=mount, relative=relative, reads=reads
         )
+        if not at_root:
+            loaded = _unwrap_root_key(loaded)
         is_data = _sources._suffix(inc_loc) in _DATA_SUFFIXES
         result = loaded if i == 0 or is_data else _written_within_source(result, loaded, at=root.at_path(mount))
     return result
@@ -595,7 +604,8 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     entries = _parse_include_val(data[INCLUDE_KEY])
     here = _typed_path((*mount, *path_in_file))
     under_an_op = relative or (read_ops and any(segment in MERGE_OP_KEYS for segment in path_in_file))
-    included = _load_includes(entries, base, seen, root, here, relative=under_an_op, reads=reads)
+    at_root = not (*mount, *path_in_file)
+    included = _load_includes(entries, base, seen, root, here, at_root=at_root, relative=under_an_op, reads=reads)
     siblings = {k: v for k, v in data.items() if k != INCLUDE_KEY}
     if not siblings:
         return included
@@ -842,7 +852,8 @@ def _load_mount_value(  # noqa: PLR0913  # the walk's state: value, location, ro
         docs-dev/architecture/config-files/mounting.md#mounting
         docs-dev/architecture/design-decisions/mount-keyword-per-channel.md#the-mount-keyword-is-spelled-per-channel
     """
-    return _load_includes(_parse_mount_value(value), base, frozenset(), root, mount, relative=relative, reads=reads)
+    entries = _parse_mount_value(value)
+    return _load_includes(entries, base, frozenset(), root, mount, at_root=not mount, relative=relative, reads=reads)
 
 
 def _load_mount(

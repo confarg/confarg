@@ -11206,3 +11206,47 @@ class TestAUnionKeyReadsAsATokenContract:
         base = tmp_yaml("u: {1: 5, a: 6}\nn: {null: 1}\n")
         cfg = loader.load(_UnionKeyed, argv=["--u.1", "9", "--n.none", "2"], env={}, files=[base])
         assert (cfg.u, cfg.n) == ({1: 9, "a": 6}, {None: 2})
+
+
+class TestALoneRootKeyInARootFileContract:
+    """A root configuration file's lone ``__root__`` holds a non-struct target's value (BUG-242).
+
+    The file was layered as an include, which unwraps a fragment's lone ``__root__``, so a scalar
+    or a list was refused as a non-mapping root and a dict lost the key ``build()`` reads.
+    """
+
+    @pytest.mark.parametrize(
+        ("target", "text", "expected"),
+        [
+            pytest.param(int, "__root__: 5\n", 5, id="scalar"),
+            pytest.param(dict[str, int], "__root__: {a: 1}\n", {"a": 1}, id="dict"),
+            pytest.param(list[int], "__root__: [1, 2]\n", [1, 2], id="list"),
+        ],
+    )
+    def test_files_and_the_config_flag(
+        self, loader: ConfargLoader, tmp_yaml, target: Any, text: str, expected: Any
+    ) -> None:
+        """``files=`` and ``--config`` read the value under the key, as the environment's pointer does."""
+        path = tmp_yaml(text)
+        assert loader.load(target, files=[path], argv=[], env={}) == expected
+        assert loader.load(target, argv=["--config", str(path)], env={}) == expected
+        assert loader.load(target, argv=[], env={"APP_CONFIG": str(path)}, env_prefix="APP_") == expected
+
+    def test_a_toml_root_file(self, loader: ConfargLoader, tmp_toml) -> None:
+        """TOML, whose document root is a table, carries a scalar or a list root only under the key."""
+        assert loader.load(int, files=[tmp_toml("__root__ = 5\n")], argv=[], env={}) == 5
+        assert loader.load(list[int], files=[tmp_toml("__root__ = [1, 2]\n")], argv=[], env={}) == [1, 2]
+
+    def test_an_include_at_the_root_of_a_root_file(self, loader: ConfargLoader, tmp_yaml, tmp_toml) -> None:
+        """An include at a root file's top lands at the root too, and the locals beside it merge on top."""
+        tmp_toml("__root__ = [1, 2]\n", "frag.toml")
+        path = tmp_yaml("__include__: ./frag.toml\nlocals:\n  n: 3\n")
+        assert loader.load(list[int], files=[path], argv=[], env={}) == [1, 2]
+        assert loader.merge(list[int], files=[path], argv=[], env={}) == {"__root__": [1, 2], "locals": {"n": 3}}
+
+    def test_a_fragment_mounted_at_a_node_is_still_unwrapped(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A mounted fragment's lone ``__root__`` is its whole content, as before."""
+        path = tmp_yaml("__root__: [1, 2]\n")
+        target = make_target("xs", list[int], default_factory=list)
+        assert loader.load(target, argv=[], env={"APP_CONFIG__XS": str(path)}, env_prefix="APP_").xs == [1, 2]
+        assert loader.load(target, argv=["--config.xs", str(path)], env={}).xs == [1, 2]
