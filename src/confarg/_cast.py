@@ -35,6 +35,8 @@ from confarg.exceptions import ConfargError, TypeCoercionError
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from confarg._types import RootKind
+
 JSON_CAST_NAME = "json"
 
 SCALAR_CAST_TYPES: dict[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
@@ -143,6 +145,27 @@ def holds_the_cast(field_tp: Any, cast_tp: Any) -> bool:
     return field_tp is Any or field_tp == cast_tp or _registered_class(field_tp) is cast_tp
 
 
+def root_cast_folds(kind: RootKind, value: Any, flag: str) -> bool:
+    """Return True if a root ``json`` cast's decoded *value* folds in as fields, False if it sets the root whole.
+
+    A root of *kind* with fields takes an object as its fields, folded in below the flags
+    beside it (:func:`fold_root_json`); a root set whole, a mixed one handed no object
+    included, takes the value whole, under ``__root__``. The one answer the CLI and the
+    environment give to their root cast, each writing the value where it writes.
+
+    Raises:
+        ConfargError: If a struct root's cast, *flag*, decoded no object.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+    """
+    if kind.has_fields and isinstance(value, dict):
+        return True
+    if not kind.sets_whole:
+        raise ConfargError.root_cast_not_object(flag, value)
+    return False
+
+
 def fold_root_json(data: MergeDict, root_json: list[MergeDict], root: MergeAt) -> MergeDict:
     """Fold the objects root ``json`` casts decoded in as a base under *data*.
 
@@ -150,8 +173,8 @@ def fold_root_json(data: MergeDict, root_json: list[MergeDict], root: MergeAt) -
     adapters' and the environment's ``<PREFIX>JSON``: the fields *data* holds refine the
     injected objects, and of several objects the later wins.  The objects and the fields
     are one source, so a field's delete stays in the result and deletes in the layers below
-    as well.  Only a struct-like root folds; a scalar root's cast writes the value itself,
-    by each channel's own rule.
+    as well.  Only the objects :func:`root_cast_folds` folds are here; a root set whole is
+    written the value itself, by each channel's own rule.
 
     Args:
         data: The values the channel collected at fields.

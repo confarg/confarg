@@ -620,8 +620,8 @@ class TestConfargWarning:
         warns = [str(w.message) for w in caught if issubclass(w.category, confarg.exceptions.ConfargWarning)]
         assert warns == [
             (
-                f"Environment variable {var!r} has no matching field: the bare {env_prefix} variable carries a value"
-                f" only for a scalar root, and the root has fields; set one of them ({env_prefix}<FIELD>) instead."
+                f"Environment variable {var!r} has no matching field: the bare {env_prefix} variable sets a root"
+                f" whole, and this root is set field by field; set one of its fields ({env_prefix}<FIELD>) instead."
                 " The variable will be ignored."
             ),
         ]
@@ -652,6 +652,13 @@ class TestConfargWarning:
                 "APP_-",
                 "the root has fields, so nothing deletes from it; delete one of them (APP_<FIELD>-) instead",
                 id="delete-struct",
+            ),
+            pytest.param(
+                list[int] | WithDefaults,
+                "APP_-",
+                "the root is set whole or by field, so nothing deletes from it; delete one of its fields"
+                " (APP_<FIELD>-), or spell its whole value with APP_JSON",
+                id="delete-mixed",
             ),
         ],
     )

@@ -45,6 +45,7 @@ from typing import (
     is_typeddict,
 )
 
+from confarg import _defaults
 from confarg._registry import LEAF_COERCIONS
 from confarg.dictexpr._expressions import _list_index
 
@@ -223,6 +224,61 @@ def _is_struct_like(tp: Any) -> bool:
     if _is_union(tp):
         return any(_is_struct(b) for b in _union_branches(tp))
     return False
+
+
+class RootKind(enum.Enum):
+    """How a configuration's root is set: field by field, whole, or either (:func:`_root_kind`).
+
+    A root set whole is held under ``__root__``, set by the bare prefix, the root cast and a
+    root file's ``__root__``; a root with fields is patched by ``--<prefix>.<field>``.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+    """
+
+    STRUCT = "struct"  # a struct, or a union of structs alone: field by field
+    WHOLE = "whole"  # no struct variant: whole
+    MIXED = "mixed"  # a union of a struct and another variant, None included: either
+
+    @property
+    def has_fields(self) -> bool:
+        """True if a field flag or variable patches the root, as :func:`_is_struct_like` says."""
+        return self is not RootKind.WHOLE
+
+    @property
+    def sets_whole(self) -> bool:
+        """True if ``__root__`` holds the root's value, set by the bare prefix and the root cast."""
+        return self is not RootKind.STRUCT
+
+    def held_whole(self, data: Any) -> bool:
+        """True if *data*, a merged configuration of this root, holds it whole under ``__root__``.
+
+        A root that is no struct always does; a mixed one where a channel set it whole, and
+        is otherwise built from its fields, as a struct root always is.
+        """
+        return self is RootKind.WHOLE or (
+            self is RootKind.MIXED and isinstance(data, dict) and _defaults.ROOT_KEY in data
+        )
+
+
+def _root_kind(tp: Any) -> RootKind:
+    """Return how a root of type *tp* is set: field by field, whole, or either.
+
+    The one answer to "does ``__root__`` hold this root's value?" and "does a field patch it?",
+    for every channel, registration, the merge and ``build()``. A union is mixed when a variant
+    is no struct, ``None`` included: :func:`_is_struct_like` drops ``None`` to ask whether the
+    union has fields, but ``None`` is a value the root can be set to whole, so ``A | None`` is
+    mixed while ``A | B`` is a struct root.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
+    """
+    tp = _resolve_type(tp)
+    if not _is_struct_like(tp):
+        return RootKind.WHOLE
+    if _is_union(tp) and not all(_is_struct(v) for v in _union_args(tp)):
+        return RootKind.MIXED
+    return RootKind.STRUCT
 
 
 def _is_dc(tp: Any) -> bool:

@@ -579,3 +579,27 @@ class TestAPendingOpIsReadAsItsList:
         raw = {"anything": {ListOp.APPEND: [1, 2, 3]}, "count": "${len(anything)}"}
         with pytest.raises(confarg.exceptions.MissingReferenceError, match=r"anything.*list op"):
             confarg.resolve(_Pending, raw)
+
+
+@dataclasses.dataclass
+class _Bug266A:
+    a: int = 0
+
+
+class TestAMixedRootBuildsFromRootOrFields:
+    """``build()`` reads a mixed root's whole value from ``__root__``, or its struct from its fields (BUG-266)."""
+
+    def test_the_whole_value(self) -> None:
+        """``__root__`` holds the value of a variant that is no struct."""
+        assert confarg.build(int | _Bug266A, {"__root__": 5}) == 5
+        assert confarg.build(int | _Bug266A, {"a": 3}) == _Bug266A(a=3)
+
+    @pytest.mark.parametrize("entry", [confarg.build, confarg.from_dict], ids=["build", "from_dict"])
+    def test_both_are_refused(self, entry: Any) -> None:
+        """No flag or variable leaves both; a dict that holds them says nothing of which was written last."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            entry(int | _Bug266A, {"__root__": 5, "a": 3})
+        assert str(exc_info.value) == (
+            "Cannot build int | _Bug266A at the root from both '__root__' and the field(s) ['a']:"
+            " '__root__' sets the whole value, so no field can be set beside it."
+        )

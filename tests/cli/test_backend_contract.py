@@ -47,7 +47,7 @@ from confarg._merge import (
     ListOp,
 )
 from confarg.cli import FieldMeta, FlagSpec
-from confarg.cli._build import _scalar_root_spec, build_dynamic_flags, build_static_flags
+from confarg.cli._build import _whole_root_spec, build_dynamic_flags, build_static_flags
 from confarg.cli.argparse import make_parser
 from confarg.exceptions import (
     ConfargError,
@@ -3162,7 +3162,7 @@ class TestCliPrefixContract:
         loop took one, so a collection root's flag never took the run its field takes.
         """
         [field_spec] = [s for s in build_static_flags(make_target("x", root), config_flag="") if s.name == "x"]
-        root_spec = _scalar_root_spec(root)
+        root_spec = _whole_root_spec(root)
         shape = ("nargs", "whole_value", "stands_bare", "refuses_bare", "usage")
         assert {a: getattr(root_spec, a) for a in shape} == {a: getattr(field_spec, a) for a in shape}
 
@@ -11250,3 +11250,155 @@ class TestALoneRootKeyInARootFileContract:
         target = make_target("xs", list[int], default_factory=list)
         assert loader.load(target, argv=[], env={"APP_CONFIG__XS": str(path)}, env_prefix="APP_").xs == [1, 2]
         assert loader.load(target, argv=["--config.xs", str(path)], env={}).xs == [1, 2]
+
+
+@dataclass
+class _MixedRootA:
+    a: int = 0
+    b: int = 0
+
+
+@dataclass
+class _MixedRootB:
+    c: int = 0
+
+
+class TestAMixedRootIsSetWholeOrByFieldContract:
+    """A root union of a struct and another variant is set whole, as a non-struct root is, or by field (BUG-266).
+
+    A union with a struct variant was patched field by field only, so nothing set its other
+    variants: the bare prefix and the root cast were refused, and a root file had to be a mapping.
+    """
+
+    def _load(  # the loader and the target, then each channel
+        self,
+        loader: ConfargLoader,
+        target: Any = int | _MixedRootA,
+        *,
+        argv: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        files: list[Any] | None = None,
+    ) -> Any:
+        return loader.load(
+            target, argv=argv or [], env=env or {}, files=files or [], cli_prefix="app", env_prefix="APP_"
+        )
+
+    def test_every_channel_sets_it_whole(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The bare flag, the root cast, the bare variable, its cast and a root file's ``__root__``."""
+        assert self._load(loader, argv=["--app", "5"]) == 5
+        assert self._load(loader, argv=["--app.json", "5"]) == 5
+        assert self._load(loader, env={"APP_": "5"}) == 5
+        assert self._load(loader, env={"APP_JSON": "5"}) == 5
+        assert self._load(loader, files=[tmp_yaml("__root__: 5\n")]) == 5
+
+    def test_the_struct_variant_is_still_patched_by_field(self, loader: ConfargLoader) -> None:
+        """``--app.a`` and ``APP_A`` set a field of the struct variant, as before."""
+        assert self._load(loader, argv=["--app.a", "3"]) == _MixedRootA(a=3)
+        assert self._load(loader, env={"APP_A": "3"}) == _MixedRootA(a=3)
+        assert self._load(loader, argv=["--app.json", '{"a": 3}']) == _MixedRootA(a=3)
+
+    def test_within_argv_the_last_written_wins(self, loader: ConfargLoader) -> None:
+        """A field after the whole value replaces it, and the whole value after a field, as at a field."""
+        assert self._load(loader, argv=["--app", "5", "--app.a", "3"]) == _MixedRootA(a=3)
+        assert self._load(loader, argv=["--app.a", "3", "--app", "5"]) == 5
+
+    def test_the_environment_applies_the_broader_variable_first(self, loader: ConfargLoader) -> None:
+        """The bare variable is broader than a field's, so the field refines past it."""
+        assert self._load(loader, env={"APP_": "5", "APP_A": "3"}) == _MixedRootA(a=3)
+
+    def test_a_higher_layer_wins(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A whole value over a file's fields replaces them; a field over a file's whole value replaces it."""
+        assert self._load(loader, argv=["--app", "5"], files=[tmp_yaml("a: 3\n")]) == 5
+        assert self._load(loader, argv=["--app.b", "4"], files=[tmp_yaml("__root__: 5\n")]) == _MixedRootA(b=4)
+
+    def test_an_optional_struct_root_is_nulled(self, loader: ConfargLoader) -> None:
+        """``None`` is a variant set whole as ``int`` is; with nothing supplied the struct is built."""
+        target = _MixedRootA | None
+        assert self._load(loader, target, argv=["--app", "none"]) is None
+        assert self._load(loader, target, argv=["--app.json", "null"]) is None
+        assert self._load(loader, target, env={"APP_": "none"}) is None
+        assert self._load(loader, target, env={"APP_JSON": "null"}) is None
+        assert self._load(loader, target) == _MixedRootA()
+
+    def test_the_root_cast_meets_the_fields_as_the_bare_flag_does(self, loader: ConfargLoader) -> None:
+        """A cast to a value is a whole value: after a field it replaces it, and a field after it replaces it."""
+        assert self._load(loader, argv=["--app.json", "5", "--app.a", "3"]) == _MixedRootA(a=3)
+        assert self._load(loader, argv=["--app.a", "3", "--app.json", "5"]) == 5
+        assert self._load(loader, env={"APP_JSON": "5", "APP_A": "3"}) == _MixedRootA(a=3)
+
+    def test_a_cast_object_folds_in_below_a_whole_value(self, loader: ConfargLoader) -> None:
+        """An object the cast decodes is the fields it holds, folded in below the flags beside it, in either order."""
+        assert self._load(loader, argv=["--app", "5", "--app.json", '{"a": 3}']) == 5
+        assert self._load(loader, argv=["--app.json", '{"a": 3}', "--app", "5"]) == 5
+        assert self._load(loader, env={"APP_": "5", "APP_JSON": '{"a": 3}'}) == 5
+
+    def test_the_tag_is_written_as_a_field(self, loader: ConfargLoader) -> None:
+        """The tag picks the struct variant: it replaces a whole value before it, and a whole value after it wins."""
+        tag = f"{__name__}._MixedRootA"
+        assert self._load(loader, argv=["--app", "5", "--app.class", tag]) == _MixedRootA()
+        assert self._load(loader, argv=["--app.class", tag, "--app", "5"]) == 5
+
+    def test_a_sequence_variant_takes_a_run(self, space_sep_loader: ConfargLoader) -> None:
+        """``list[int] | A`` takes a field's run of its type: the cast ends it, and a run after the cast wins."""
+        target = list[int] | _MixedRootA
+        assert self._load(space_sep_loader, target, argv=["--app", "1", "2"]) == [1, 2]
+        assert self._load(space_sep_loader, target, argv=["--app", "1", "--app.a", "3", "--app", "2"]) == [1, 2]
+        assert self._load(space_sep_loader, target, argv=["--app", "1", "2", "--app.json", "[3]"]) == [3]
+        assert self._load(space_sep_loader, target, argv=["--app.json", "[3]", "--app", "4"]) == [4]
+        assert self._load(space_sep_loader, target, argv=["--app", "1", "--app.a", "3"]) == _MixedRootA(a=3)
+
+    def test_a_sequence_variant_joins_repeated_flags(self, repeated_loader: ConfargLoader) -> None:
+        """Where a list is spelled by repeating its flag, the bare flag repeated is one run, as a field's is."""
+        target = list[int] | _MixedRootA
+        assert self._load(repeated_loader, target, argv=["--app", "1", "--app", "2"]) == [1, 2]
+        assert self._load(repeated_loader, target, argv=["--app", "1", "--app.a", "3"]) == _MixedRootA(a=3)
+
+    def test_a_root_file_holds_the_struct_whole(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A root file's lone ``__root__`` may hold the struct variant's fields: the root is then set whole to it."""
+        assert self._load(loader, files=[tmp_yaml("__root__:\n  a: 3\n")]) == _MixedRootA(a=3)
+
+    def test_a_field_delete_drops_the_whole_value(self, loader: ConfargLoader) -> None:
+        """A delete is a field write: the struct is then built from nothing, as a field falls back to its default."""
+        assert self._load(loader, argv=["--app", "5", "--app.a-"]) == _MixedRootA()
+        assert self._load(loader, argv=["--app.a-", "--app", "5"]) == 5
+        assert self._load(loader, env={"APP_": "5", "APP_A-": ""}) == _MixedRootA()
+
+    def test_the_locals_stand_beside_either(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """The locals namespace is neither the whole value nor a field, so neither drops it."""
+        declares = tmp_yaml("locals:\n  x: 1\na: ${locals.x}\n")
+        assert self._load(loader, argv=["--app", "5", "--app.locals.x", "2"], files=[declares]) == 5
+        assert self._load(loader, argv=["--app.locals.x", "2", "--app", "5"], files=[declares]) == 5
+        assert self._load(loader, argv=["--app.locals.x", "2"], files=[declares]) == _MixedRootA(a=2)
+
+    def test_a_root_file_nulls_an_optional_struct_root(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A root file's ``__root__: null`` sets an ``A | None`` root whole, as ``--app none`` does."""
+        assert self._load(loader, _MixedRootA | None, files=[tmp_yaml("__root__: null\n")]) is None
+
+    def test_a_root_file_holding_both_is_refused(self, loader: ConfargLoader, tmp_yaml) -> None:
+        """A mapping is not ordered, so nothing in it says which of the two was written last."""
+        with pytest.raises(TypeCoercionError, match=re.escape("from both '__root__' and the field(s) ['a']")):
+            self._load(loader, files=[tmp_yaml("__root__: 5\na: 3\n")])
+
+    def test_a_union_of_structs_alone_is_set_by_field(self, loader: ConfargLoader) -> None:
+        """``A | B`` has no variant set whole: the bare flag and a cast to no object are refused, the variable warns."""
+        target = _MixedRootA | _MixedRootB
+        # Vanilla raises UnknownArgumentError; adapters raise SystemExit or their equivalent.
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            self._load(loader, target, argv=["--app", "5"])
+        with pytest.raises(ConfargError, match=re.escape("--app.json for a structured target must be a JSON object")):
+            self._load(loader, target, argv=["--app.json", "5"])
+        with pytest.warns(ConfargWarning, match=re.escape("this root is set field by field")):
+            assert loader.merge(target, argv=[], env={"APP_": "5"}, env_prefix="APP_") == {}
+
+    def test_the_bare_flag_registers_as_a_field_of_its_type(self) -> None:
+        """The bare flag is the whole-value flag a field of the root's type registers: one JSON token, or a run."""
+        for target, shape in (
+            (int | _MixedRootA, ("JSON", None)),
+            (_MixedRootA | None, ("JSON", None)),
+            (list[int] | _MixedRootA, None),
+        ):
+            field = {s.name: s for s in build_static_flags(make_target("x", target, default=None))}["x"]
+            root = {s.name: s for s in build_static_flags(target, cli_prefix="app")}["app"]
+            assert (root.metavar, root.nargs) == (field.metavar, field.nargs)
+            if shape is not None:
+                assert (root.metavar, root.nargs) == shape

@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
+    from confarg._types import RootKind
+
 from confarg import _defaults
 from confarg._callable import (
     _COMPUTATION_OPENERS,
@@ -42,6 +44,7 @@ from confarg._cast import (
     fold_root_json,
     holds_the_cast,
     resolve_forced_value,
+    root_cast_folds,
 )
 from confarg._depth import refuse_long_path
 from confarg._merge import (
@@ -82,6 +85,7 @@ from confarg._types import (
     _is_varlen_collection,
     _namedtuple_fields,
     _resolve_type,
+    _root_kind,
     _spell_type,
     _StrToken,
     _struct_fields,
@@ -1364,7 +1368,7 @@ class _ParseCtx:
     union_tag: str
     #: Where ``data`` stands, which reads the identity of each key a flag writes (BUG-244).
     at: MergeAt = field(default_factory=MergeAt)
-    #: Where the merge stands at the root of the real target, whose value a non-struct root's flag writes.
+    #: Where the merge stands at the root of the real target, whose whole value the bare flag writes.
     root_at: MergeAt = field(default_factory=MergeAt)
     data: MergeDict = field(default_factory=dict)
     multi_tokens: dict[tuple[str, ...], list[str]] = field(default_factory=dict)
@@ -1385,10 +1389,11 @@ class _ParseCtx:
     root_json: list[MergeDict] = field(default_factory=list)
 
     def write(self, path: list[str], value: Any) -> None:
-        """Write *value* at *path*; the empty path is a non-struct root's, whose value ``__root__`` holds.
+        """Write *value* at *path*; the empty path is a root set whole, whose value ``__root__`` holds.
 
-        A non-struct root's bare flag consumes its value as a field flag of its type does
-        (BUG-177), through the same handlers, so the one write they make lands it there.
+        The bare flag of a root set whole, a non-struct or a mixed one (:class:`RootKind`),
+        consumes its value as a field flag of its type does (BUG-177), through the same
+        handlers, so the one write they make lands it there.
 
         Dev Notes:
             docs-dev/architecture/cli-parsing/cli-prefix.md#cli_prefix
@@ -1607,24 +1612,25 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str, at: Sequence[str | 
     return [_StrToken(t) for t in tokens]
 
 
-def _handle_root_cast(ctx: _ParseCtx, i: int, token: str, *, is_struct: bool, cast_name: str) -> int:
+def _handle_root_cast(ctx: _ParseCtx, i: int, token: str, *, kind: RootKind, cast_name: str) -> int:
     """Consume the value for a root-level ``--json`` cast. Returns new arg index.
 
-    For a struct/union root the decoded object must be a JSON object; it is collected
-    into ``root_json`` and folded in as a base (so per-field CLI flags win) once the
-    whole argv is parsed by :func:`~confarg._cast.fold_root_json`.  For a scalar root the
-    decoded value is stored under ``__root__``, written in argv order like the bare
-    ``--<cli_prefix>`` flag, so of the two the last typed wins: it ends the run the bare
-    flag accumulated, as a field's cast ends its flag's.  Invalid JSON raises via
+    Where the decoded value goes at a root of *kind* is :func:`~confarg._cast.root_cast_folds`'s
+    to answer. An object it folds is collected into ``root_json`` and folded in as a base (so
+    per-field CLI flags win) once the whole argv is parsed by :func:`~confarg._cast.fold_root_json`.
+    A value that sets the root whole is stored under ``__root__``, written in argv order like
+    the bare ``--<cli_prefix>`` flag, so of the two the last typed wins: it ends the run the
+    bare flag accumulated, as a field's cast ends its flag's.  Invalid JSON raises via
     :func:`resolve_forced_value`.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/cli-prefix.md#a-mixed-root-is-set-whole-or-by-field
     """
     args = ctx.argv
     i += 1
     _require_value(args, i, token, "'<json>'")
     value = resolve_forced_value(cast_name, args[i], flag=token)
-    if is_struct:
-        if not isinstance(value, dict):
-            raise ConfargError.root_cast_not_object(token, value)
+    if root_cast_folds(kind, value, token):
         ctx.root_json.append(value)
     else:
         ctx.multi_tokens.pop((), None)  # the root's own run; the locals beside it are no part of its value
@@ -2142,7 +2148,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     config_files: list[tuple[str, str]] = []
     root_json = ctx.root_json  # objects from root `--json`, folded in below fields
     target_r = _resolve_type(target)
-    is_struct = _is_struct_like(target_r)
+    kind = _root_kind(target_r)
     i = 0
 
     while i < len(argv):
@@ -2164,7 +2170,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
                 suffix,
                 JSON_CAST_NAME,
                 deletes=suffix == DELETE_SUFFIX,
-                struct=is_struct,
+                kind=kind,
             )
 
         if _addresses_key(key, config_flag):
@@ -2204,12 +2210,11 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             _forget_tokens_below(ctx, path[:-1])
 
         if force_cast is not None and not path:  # root-level `--json`: inject the whole config
-            i = _handle_root_cast(ctx, i, token, is_struct=is_struct, cast_name=force_cast)
+            i = _handle_root_cast(ctx, i, token, kind=kind, cast_name=force_cast)
             continue
 
-        if is_struct and not path:
-            # The bare --<prefix> flag is a scalar root's only CLI spelling; on a
-            # struct-like root its value would be written at the empty path, a no-op.
+        if not kind.sets_whole and not path:
+            # The bare --<prefix> flag sets a root whole; a struct root is set field by field.
             raise UnknownArgumentError.bare_prefix_on_struct_root(token, cli_prefix)
 
         if path:
@@ -2219,7 +2224,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
                 continue
             ft = _resolve_type(ft)
         else:
-            # A non-struct root takes what a field flag of its type takes (BUG-177).
+            # A root set whole takes what a field flag of its type takes (BUG-177).
             ft = target_r
         i += 1
 

@@ -154,8 +154,8 @@ class TestCliPrefix:
         with pytest.raises(confarg.exceptions.UnknownArgumentError, match="'--app'") as exc:
             confarg.load(WithDefaults, argv=["--app", "val"], env={}, cli_prefix="app")
         assert str(exc.value) == (
-            "Unknown argument: '--app'. The bare --app flag carries a value only for a scalar root,"
-            " and the root has fields; set one of them (--app.<field>) instead."
+            "Unknown argument: '--app'. The bare --app flag sets a root whole, and this root is set field by field;"
+            " set one of its fields (--app.<field>) instead."
         )
 
     @pytest.mark.parametrize(
@@ -190,6 +190,13 @@ class TestCliPrefix:
                 ["--app-"],
                 "The root has fields, so nothing deletes from it; delete one of them (--app.<field>-) instead",
                 id="delete-struct",
+            ),
+            pytest.param(
+                list[int] | WithDefaults,
+                ["--app+", "1"],
+                "The root is set whole or by field, so nothing appends onto it; append onto one of its fields"
+                " (--app.<field>+), or spell its whole value with --app.json <json>",
+                id="append-mixed",
             ),
         ],
     )
