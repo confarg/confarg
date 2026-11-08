@@ -3,6 +3,7 @@ filed: 2026-10-22
 where:
   - src/confarg/typedload/_construct.py::_call_struct
   - src/confarg/typedload/_construct.py::build_from_nothing  # wraps the empty build only
+  - src/confarg/typedload/_construct.py::_first_constructible  # a struct variant's ValueError ends the union walk
 effort: L  # the design pass: which exceptions are wrapped, and whether a __post_init__ validation error is one
 needs_design: true
 risk: high
@@ -18,6 +19,9 @@ Only a class asked to build from nothing gets its refusal read ([a class built f
 
 Fix direction, for the design pass: whether `_call_struct` wraps what the constructor raises in a `TypeCoercionError` naming the path and the class, its cause chained, and which exceptions that covers — a `ValueError` from a `__post_init__` check is the user's own validation, which a caller may be catching by type.
 Precedents to run then: cattrs wraps them in `ClassValidationError`, pydantic only a validator's `ValueError` and `AssertionError`, dacite lets them through *(inferred, from their documentation)*.
+
+Inside a union the escape also ends the walk, and by exception type: `_first_constructible`, which tries the struct, fixed-sequence and collection variants, catches `ConfargError` and `TypeError`, while the scalar walk catches `ValueError` too.
+So `Checked | int` handed `{b: -1}`, where `Checked.__post_init__` raises `ValueError("b must be >= 0")`, leaves `build()` as that `ValueError`, while a scalar variant's `ValueError` is one variant's refusal, which a union's refusal now names on a line of its own ([a union refusal names each variant's reason](../../architecture/types/construction.md#a-union-refusal-names-each-variants-reason)); the design pass settles both rungs at once.
 
 `re.Pattern` and `re.Match` used to reach this too, with `cannot create 're.Pattern' instances`; since BUG-268 they are unsupported leaves, refused before any call.
 
