@@ -88,7 +88,7 @@ It is what `type.__call__` does: when `__init__` is `object`'s, the call's argum
 A class whose signature does not read at all, as `zoneinfo.ZoneInfo`'s, is not a struct: an unsupported leaf, which `register_leaf_type` makes a supported one, as confarg does for `datetime.date` ([the date and time types are built-in leaves](the-date-and-time-types-are-built-in-leaves.md#the-date-and-time-types-are-built-in-leaves)).
 
 Rejected: `inspect.signature(cls)` throughout.
-It reads a metaclass `__call__` or a `__new__` before `__init__`, so a class with a forwarding `__new__(cls, *args, **kwargs)` beside `__init__(self, x)`, or any class of a metaclass defining `__call__(cls, *args, **kwargs)`, reads as `(*args, **kwargs)` on 3.12, 3.13 and 3.14.
+It reads a metaclass `__call__` or a `__new__` before `__init__`, so a class with a forwarding `__new__(cls, *args, **kwargs)` beside `__init__(self, x)`, or any class of a metaclass defining `__call__(cls, *args, **kwargs)`, reads as `(*args, **kwargs)` on 3.12 to 3.15.
 
 Also rejected: reading `__init__` alone, with an inherited `object.__init__` taking nothing, which made `P`'s `x` unreachable and every C value type (`date`, `Decimal`, `Fraction`) a struct with no fields that `dump()` wrote as `{}`; and making a class that overrides `__new__` while inheriting `object.__init__` a leaf, which left `P` and `Fraction` unusable until registered.
 

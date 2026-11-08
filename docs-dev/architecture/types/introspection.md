@@ -117,7 +117,7 @@ A struct's members are read with the type parameters of the class declaring each
   The first subscript the MRO meets wins.
 - `_bind_hints` substitutes them into each annotation by the class that declares it: the first in the MRO annotating a dataclass field, the class defining a handwritten `__init__`.
   A TypeVar one class reuses for a parameter of its own (`class LegacyWrap(LegacyBase[list[T]])` with the same legacy `T`) is bound apart in each.
-- A method names its class's PEP 695 parameters in a postponed annotation (`from __future__ import annotations`) that `get_type_hints` resolves in no namespace it reads, on 3.12 to 3.14 alike, so `_type_hints` hands it the defining class's `__type_params__`; a handwritten `__init__(self, item: T)` read `T` as `Any` before.
+- A method names its class's PEP 695 parameters in a postponed annotation (`from __future__ import annotations`) that `get_type_hints` resolves in no namespace it reads, on 3.12 to 3.15 alike, so `_type_hints` hands it the defining class's `__type_params__`; a handwritten `__init__(self, item: T)` read `T` as `Any` before.
 - `_substitute` lets Python's own subscription do it (`list[T][int]`), so a TypeVarTuple splices its arguments and a ParamSpec takes its list.
 - A parameter nothing binds — a bare `Box`, a base a class does not subscript — reads its PEP 696 default where it declares one, else `Any`: what mypy, pyright and ty read it as (`_param_default`).
   A bound is not read, as none of them reads it: a `T: Locator` reads `Any`, and its words stay as written.
