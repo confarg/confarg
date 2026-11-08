@@ -2,6 +2,7 @@
 filed: 2026-10-15
 where:
   - src/confarg/_types.py::_is_struct
+  - src/confarg/_types.py::_tagged_struct  # issubclass on a TypedDict variant
   - src/confarg/_parse_cli.py::_advance_field_type
   - src/confarg/typedload/_construct.py::construct
 effort: L
@@ -17,3 +18,7 @@ A `TypedDict` field is read as a plain class whose constructor is `dict.__init__
 A `TypedDict` is a mapping whose keys are named and typed, so the walk could list its keys as a struct's fields, and construction would build a plain `dict` checked against the declared keys (`total`, `Required`, `NotRequired`).
 Precedents: pydantic and msgspec accept a `TypedDict` as a model field, building a `dict`; cattrs structures one since 23.1.
 Found while checking delete spellings on struct-like types.
+
+As a union's variant beside a struct with subclasses, it fails with a raw `TypeError: TypedDict does not support instance and class checks` from `_types._tagged_struct`'s `issubclass` once a class key names a subclass (`v: A | T` given `{class: pkg.B}` or `--v.class pkg.B`, run on 3.12), instead of a confarg error.
+
+The design pass also decides what a key spelled `class` means in one, `TypedDict("T", {"class": str})` being the only struct that can own the class key ([the class key is `class`](../plans/the-class-key-is-class.md#the-shadowed-tag-machinery-goes-with-it)): refused, as Hydra and jsonargparse reserve their key everywhere, or the member's, which brings back the real-field-wins rule REF-121 deletes.
