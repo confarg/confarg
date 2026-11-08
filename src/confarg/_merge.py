@@ -568,10 +568,10 @@ def _refuse_a_position_list_delete(val: MergeDict, fixed: Any, key: str) -> None
     Raises:
         TypeCoercionError: If *val* holds ``ListOp.DELETE`` or ``ListOp.DELETE_AFTER``.
     """
-    from confarg._types import _is_namedtuple  # noqa: PLC0415  # import cycle: _types reads _list_index
+    from confarg._types import _is_namedtuple, _spell_type  # noqa: PLC0415  # import cycle: _types reads _list_index
 
     if op := next((k for k in (ListOp.DELETE, ListOp.DELETE_AFTER) if k in val), None):
-        what = f"namedtuple {fixed.__name__}" if _is_namedtuple(fixed) else f"{fixed}"
+        what = f"namedtuple {_spell_type(fixed)}" if _is_namedtuple(fixed) else _spell_type(fixed)
         raise TypeCoercionError.position_list_delete(str(op), _defaults.UNSET_KEY, what, key)
 
 

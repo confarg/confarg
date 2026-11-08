@@ -926,12 +926,12 @@ class TestDumpForeignValue:
         ("field_type", "spelled"),
         [
             pytest.param(_SubBase, "_SubBase", id="class"),
-            pytest.param(Optional[_SubBase], repr(Optional[_SubBase]), id="optional"),
-            pytest.param(int | _SubBase, f"int | {_MOD}._SubBase", id="union"),
+            pytest.param(Optional[_SubBase], "_SubBase | None", id="optional"),
+            pytest.param(int | _SubBase, "int | _SubBase", id="union"),
         ],
     )
     def test_the_warning_spells_the_declared_type(self, field_type: Any, spelled: str) -> None:
-        """A class by its name, any other type as it reads, never ``Optional`` alone."""
+        """A class by its name, a union by its variants, the same on every Python (REF-97)."""
         Target = make_target("x", field_type, default=None)
         with pytest.warns(ConfargWarning, match=re.escape(f"is no value of {spelled}, the type it is declared as")):
             confarg.dump(Target(x=_Foreign(b=1)))
@@ -1763,8 +1763,12 @@ class TestDumpRefusesAnUnsupportedLeaf:
             confarg.dump(held)
 
     def test_a_pattern_field_is_refused(self) -> None:
-        """A compiled pattern takes nothing and holds C storage, so it is refused as a lock is (BUG-268)."""
-        with pytest.raises(ConfargError, match=r"Cannot serialize Pattern at 'pattern'.*register_leaf_type"):
+        """A compiled pattern takes nothing and holds C storage, so it is refused as a lock is (BUG-268).
+
+        The remedy registers the class, whose registration reads every parameterization of it.
+        """
+        match = r"Cannot serialize re\.Pattern\[str\] at 'pattern'.*register_leaf_type\(Pattern, \.\.\.\)"
+        with pytest.raises(ConfargError, match=match):
             confarg.dump(_StatePattern())
 
     def test_construction_refuses_the_same_type(self) -> None:

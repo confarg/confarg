@@ -68,8 +68,10 @@ from confarg._types import (
     _literal_values,
     _namedtuple_defaults,
     _namedtuple_fields,
+    _registered_class,
     _resolve_struct,
     _resolve_type,
+    _spell_type,
     _struct_defaults,
     _struct_fields,
     _struct_subclasses,
@@ -310,7 +312,7 @@ def _leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
 
     if _is_varlen_collection(core):
         et = _resolve_type(_elem_type(core))
-        return dataclasses.replace(base, metavar=metavar or getattr(et, "__name__", "ITEM").upper())
+        return dataclasses.replace(base, metavar=metavar or _class_name(et, "ITEM").upper())
 
     if _is_tuple(core) or _is_namedtuple(core):
         # _is_varlen_collection above absorbed tuple[X, ...], so a tuple here is fixed-length.
@@ -332,8 +334,18 @@ def _leaf_spec(  # noqa: PLR0911 PLR0913 PLR0917
         return dataclasses.replace(base, metavar=metavar or "DOTTED.CLASS.PATH")
 
     # Generic scalar (str, int, float, Path, …)
-    type_name = getattr(core, "__name__", "VALUE").upper()
+    type_name = _class_name(core, "VALUE").upper()
     return dataclasses.replace(base, metavar=metavar or type_name)
+
+
+def _class_name(tp: Any, generic: str) -> str:
+    """Return the name a metavar gives *tp*: its class's, a registered parameterized form's class's, else *generic*.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-message-names-a-type-by-what-confarg-reads.md#a-message-names-a-type-by-what-confarg-reads
+    """
+    cls = _registered_class(tp) or tp
+    return cls.__name__ if isinstance(cls, type) else generic
 
 
 # An index spelling's own segment: ``0``, ``-1`` — either sign, digits only.
@@ -495,7 +507,7 @@ def _argument_specs_from_signature(
         help_parts = []
         ann = param.annotation
         if ann is not inspect.Parameter.empty:
-            help_parts.append(getattr(ann, "__name__", repr(ann)))
+            help_parts.append(_spell_type(ann))
         if param.default is not inspect.Parameter.empty:
             help_parts.append(f"default: {param.default!r}")
         with contextlib.suppress(Exception):
@@ -553,7 +565,7 @@ def _collect_callable_factory_specs(
             continue
         core_ft = _resolve_type(ft)
         help_parts: list[str] = []
-        type_name = getattr(core_ft, "__name__", repr(core_ft))
+        type_name = _spell_type(core_ft)
         if type_name and type_name != "Any":
             help_parts.append(type_name)
         if param_name in defaults:
@@ -1291,7 +1303,7 @@ def _holds_a_fragment(tp: Any) -> tuple[bool, bool]:
     resolved = _resolve_type(tp)
     core = _unwrap_optional(resolved)
     if core is None:
-        return all(_is_struct(_resolve_type(v)) for v in _union_args_no_none(resolved)), True
+        return all(_is_struct(b) for b in _union_branches(resolved)), True
     return _is_struct(core) or _is_dict(core), False
 
 

@@ -134,6 +134,7 @@ A decision lands here when a ticket closes and the answer turns out to be "we wi
 |---|---|
 | [Shared reserved key names live in `_defaults.py`](shared-reserved-key-names.md) | any literal the five front-ends must agree on, not only the keyword defaults |
 | [A user-facing message lives on the exception that raises it](messages-live-on-exceptions.md) | a message raised from more than one site is a classmethod factory |
+| [A message names a type by what confarg reads](a-message-names-a-type-by-what-confarg-reads.md) | `_spell_type`: wrappers unwrapped, a class by `__name__`, a union by its variants, the same on every Python; an echoed argument as written |
 | [Look-alike code that behaves differently stays apart](look-alike-code-that-behaves-differently-stays-apart.md) | a collapse that has to take every difference as a parameter is declined; the scalar coercions and the two anchor rewrites stay as written |
 
 ## Repository

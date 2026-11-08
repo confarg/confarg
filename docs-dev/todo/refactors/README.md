@@ -26,7 +26,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-85 — `api-seams.md`'s round-trip paragraphs sit under the option-set heading](REF-85-api-seams-round-trip-paragraphs-sit-under-the-option-set-heading.md) | trivial |  | S | low | none |
 | [REF-94 — Construction reads a sequence's index keys in two places](REF-94-construction-reads-a-sequences-index-keys-in-two-places.md) | trivial |  | S | medium | none |
 | [REF-95 — The tag-collision tests leave their warnings uncaptured](REF-95-the-tag-collision-tests-leave-their-warnings-uncaptured.md) | trivial |  | S | low | none |
-| [REF-97 — How a message names a type is spelled by hand in a dozen places](REF-97-how-a-message-names-a-type-is-spelled-by-hand.md) | trivial |  | S | low | none |
 | [REF-98 — `_typed_read._read` and `_serialize.written_form` are one walk spelled twice](REF-98-typed_read-read-and-written-form-are-one-walk.md) | trivial |  | S | low | none |
 | [REF-99 — `read_union_leaf` reads a union's variants under the default `union_tag`](REF-99-read_union_leaf-spells-the-default-union-tag.md) | trivial |  | S | low | none |
 | [REF-101 — `_coerce_type_ref` repeats the class-tag import step for step](REF-101-coerce-type-ref-repeats-the-class-tag-import.md) | trivial |  | S | low | none |

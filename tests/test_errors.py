@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NewType, Optional
 
 if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
@@ -19,6 +20,8 @@ import pytest
 
 import confarg
 from confarg._merge import ListOp
+from confarg._types import _spell_type
+from confarg.exceptions import ConfargWarning
 from tests.conftest import (
     AppConfig,
     Color,
@@ -601,3 +604,122 @@ class TestListOpOnMessage:
         """The reserved key, what the field is, and where."""
         err = confarg.exceptions.TypeCoercionError.list_op_on("__append__", what, "a.b")
         assert str(err) == f"Cannot apply '__append__' to the {what} at 'a.b': it is an operation on a list."
+
+
+type _MyInt = int
+type _IntOrFloat = int | float
+_UserId = NewType("_UserId", int)
+
+
+class _Colorish(enum.Enum):
+    """An enum no ``__cast__`` names, whose dumped str a registered leaf beside it takes back."""
+
+    RED = "red"
+
+
+class _Word:
+    """A registered leaf, which ranks above an enum when a union reads a str."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+type _AliasedColorish = _Colorish
+
+
+@dataclass
+class _ColorishOrWord:
+    c: _AliasedColorish | _Word = _Colorish.RED
+
+
+class TestAMessageNamesATypeByWhatConfargReads:
+    """A message names an annotation as confarg reads it, the same on every Python (REF-97, BUG-277).
+
+    Since 3.14 a union's ``__name__`` is ``Union``: a spelling falling back on ``__name__`` named
+    every union so.
+    """
+
+    @pytest.mark.parametrize(
+        ("field_type", "spelled"),
+        [
+            pytest.param(_IntOrFloat | bool, "int | float | bool", id="aliased-union-variant"),
+            pytest.param(_MyInt | bytes, "int | bytes", id="aliased-class-variant"),
+            pytest.param(list[int] | bool, "list[int] | bool", id="generic-variant"),
+        ],
+    )
+    def test_a_union_refusal_names_its_variants(self, field_type: Any, spelled: str) -> None:
+        """Each variant by the type it stands for, a generic one with its arguments."""
+        Target = make_target("x", field_type, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=re.escape(f"to {spelled} at 'x'")):
+            confarg.build(Target, {"x": "abc"})
+
+    def test_a_too_deep_root_union_is_named_by_its_variants(self) -> None:
+        """The nesting refusal of a root union names it as written, not ``Union``."""
+        deep: Any = "leaf"
+        for _ in range(70):
+            deep = {"k": deep}
+        with pytest.raises(
+            confarg.exceptions.ConfargError, match=re.escape("Cannot build int | dict[str, typing.Any]:")
+        ):
+            confarg.build(int | dict[str, Any], {"__root__": deep})
+
+    def test_an_append_refusal_names_an_optional_by_its_variants(self) -> None:
+        """``Optional[int]`` reads ``int | None``, where 3.12's repr wrote ``typing.Optional[int]``."""
+        Target = make_target("x", Optional[int], default=None)
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("field 'x' has type int | None, which")):
+            confarg.load(Target, argv=["--x+", "1"], env={})
+
+    def test_an_unsupported_leaf_is_named_by_its_class_name(self) -> None:
+        """A class reads ``complex``, not ``<class 'complex'>``."""
+        Target = make_target("x", Optional[complex], default=None)
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError, match=re.escape("Unsupported leaf type complex at 'x'")
+        ):
+            confarg.load(Target, argv=["--x", "1j"], env={})
+
+    def test_a_registration_refusal_echoes_its_argument(self) -> None:
+        """A refused argument is named as the caller wrote it: a NewType by its own name, a union by its variants."""
+        with pytest.raises(TypeError, match=re.escape("register_leaf_type(_UserId): _UserId is a NewType")):
+            confarg.register_leaf_type(_UserId, int)  # ty: ignore[invalid-argument-type]  # refused on purpose
+        with pytest.raises(TypeError, match=re.escape("register_leaf_type(int | str): int | str is no class")):
+            confarg.register_leaf_type(int | str, str)  # ty: ignore[invalid-argument-type]  # refused on purpose
+
+    def test_native_types_names_a_union_as_written(self) -> None:
+        """``native_types`` echoes a union by its variants."""
+        flat = Flat(name="n", count=1, rate=1.0, verbose=False)
+        with pytest.raises(
+            TypeError, match=re.escape("native_types names int | str, which is no registered leaf type")
+        ):
+            confarg.dump(flat, native_types=(int | str,))  # ty: ignore[invalid-argument-type]  # refused on purpose
+
+    @pytest.mark.parametrize(
+        ("root", "spelled"),
+        [
+            pytest.param(str | float, "str | float", id="union"),
+            pytest.param(Literal["a", "b"], "typing.Literal['a', 'b']", id="literal"),
+        ],
+    )
+    def test_a_variable_below_a_value_root_names_the_root(self, root: Any, spelled: str) -> None:
+        """The environment's warning names a non-struct root by its spelling, never ``Union`` or ``Literal``."""
+        with pytest.warns(ConfargWarning, match=re.escape(f"is below the {spelled} root")):
+            confarg.load(root, argv=[], env={"P_X": "1", "P_": "a"}, env_prefix="P_")
+
+    def test_an_unpinnable_variant_is_named_as_it_reads(self, leaf_registry: None) -> None:
+        """The dump's warning names an aliased enum variant by the enum, unquoted, as every message names a class."""
+        confarg.register_leaf_type(_Word, _Word, serialize=lambda w: w.text)
+        with pytest.warns(ConfargWarning, match=re.escape("will not read back as _Colorish: another union variant")):
+            confarg.dump(_ColorishOrWord())
+
+    @pytest.mark.parametrize(
+        ("tp", "read", "written"),
+        [
+            pytest.param(type(None), "None", "NoneType", id="none-type"),
+            pytest.param(int | None, "int | None", "int | None", id="optional"),
+            pytest.param(Any, "Any", "Any", id="any"),
+            pytest.param(_UserId, "int", "_UserId", id="newtype"),
+            pytest.param(_MyInt, "int", "_MyInt", id="alias"),
+        ],
+    )
+    def test_the_two_spellings(self, tp: Any, read: str, written: str) -> None:
+        """A message names what confarg reads; a refusal echoing an argument names it as written."""
+        assert (_spell_type(tp), _spell_type(tp, as_written=True)) == (read, written)

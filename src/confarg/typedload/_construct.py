@@ -568,7 +568,7 @@ def _takes_typed_call(tp: Any, key: str = _defaults.CALL_KEY) -> bool:
         docs-dev/architecture/callables.md#a-callable-beside-another-variant
     """
     tp = _resolve_type(tp)
-    members = [_resolve_type(arg) for arg in _union_args_no_none(tp)] if _is_union(tp) else [tp]
+    members = _union_branches(tp)
     reads_specs = len(members) > 1 and any(_reads_specs(m) for m in members)
     for member in members:
         if not reads_specs and _type_kind(member) in (_TypeKind.DICT, _TypeKind.CALLABLE):
@@ -669,7 +669,7 @@ def reads_as_new_value(data: MergeDict, tp: Any, union_tag: str) -> bool:  # noq
         case _TypeKind.CALLABLE | _TypeKind.ANY:
             return _names_a_target(data, _OPENERS)
         case _TypeKind.UNION:
-            members = [_resolve_type(m) for m in _union_args_no_none(tp)]
+            members = _union_branches(tp)
             if len(members) == 1:
                 return reads_as_new_value(data, members[0], union_tag)
             if union_tag in data and not _union_tag_shadowed(tp, union_tag):
@@ -1428,7 +1428,7 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
     if any_vars:
         return construct(any_vars[0], data, path=path, union_tag=union_tag)
 
-    variant_names = " | ".join(_variant_name(v) for v in all_args)
+    variant_names = " | ".join(_spell_type(v) for v in all_args)
     if isinstance(data, dict) and ListOp.BASE in data:
         # A patch the merge deferred with its base ({__base__: base, **patch}) is a sequence
         # patch; every variant refused it above, so the first sequence variant tried has its
@@ -1442,16 +1442,9 @@ def _construct_union_leaf(all_args: list[Any], non_none: list[Any], data: Any, p
         data,
         variant_names,
         _spell_field_path(path),
-        unread=[_variant_name(v) for v in scalar_leaf_vars if _reads_nothing(v)],
+        unread=[_spell_type(v) for v in scalar_leaf_vars if _reads_nothing(v)],
         none_sentinel=_reads_none_word(all_args, data),
     )
-
-
-def _variant_name(variant: Any) -> str:
-    """Return how a union refusal names *variant*: its class name, ``None``, or the type as written."""
-    if variant is types.NoneType:
-        return "None"
-    return getattr(_resolve_type(variant), "__name__", repr(variant))
 
 
 def _reads_nothing(variant: Any) -> bool:

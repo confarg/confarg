@@ -8366,7 +8366,7 @@ class TestUnionPathWalkContract:
             loader.merge(_WalkUnions, argv=[token, "1"], env={})
         assert not isinstance(excinfo.value, UnknownArgumentError)
         assert str(excinfo.value) == (
-            f"Cannot use + (append) syntax on {token!r}: field {path!r} has type typing.Any,"
+            f"Cannot use + (append) syntax on {token!r}: field {path!r} has type Any,"
             " which is not a list, set, or frozenset."
         )
 
@@ -10834,6 +10834,23 @@ class _HoldsItself:
     x: _SelfHeld = 0
 
 
+@dataclasses.dataclass
+class _ItemsOfAUnion:
+    xs: list[int | str] = dataclasses_field(default_factory=list)
+
+
+class TestAMetavarNamesAClassOnly:
+    """A metavar is a class's name or the generic word, on every Python (REF-97).
+
+    Since 3.14 a union's ``__name__`` is ``Union``, which a ``__name__`` fallback wrote ``UNION``.
+    """
+
+    def test_a_union_item_is_an_item(self) -> None:
+        """``list[int | str]`` reads ``[ITEM ...]``."""
+        spec = next(s for s in build_static_flags(_ItemsOfAUnion) if s.name == "xs")
+        assert spec.metavar == "ITEM"
+
+
 class TestAnAliasedUnionVariantContract:
     """A union variant behind an alias reads as the union written inline, on every front-end (BUG-278)."""
 
@@ -10860,6 +10877,12 @@ class TestAnAliasedUnionVariantContract:
         """Every front-end refuses ``type A = B | int; type B = A | str``, wherever its walk first reads the union."""
         with pytest.raises(TypeError, match="is a union holding itself"):
             loader.load(_HoldsItself, argv=["--x", "3"], env={})
+
+    def test_a_parameterized_registered_class_takes_a_token(self, loader: ConfargLoader, leaf_registry: None) -> None:
+        """``re.Pattern[str]`` reads ``--p a+`` through the registration of ``re.Pattern``, on every front-end."""
+        confarg.register_leaf_type(re.Pattern, re.compile, serialize=lambda p: p.pattern)
+        target = make_target("p", re.Pattern[str], default=re.compile("a"))
+        assert loader.load(target, argv=["--p", "b+"], env={}).p == re.compile("b+")
 
     def test_the_flags_are_the_inline_unions(self, populating_loader: ConfargLoader) -> None:
         """Each field registers the flags of its inline twin: casts, members and tag, none for a duplicate."""

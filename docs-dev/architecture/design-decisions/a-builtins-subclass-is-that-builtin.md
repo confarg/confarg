@@ -53,7 +53,7 @@ It writes any instance of a `str`, `int` or `float` subclass so, read off the va
 ## A defaultdict's factory is its value type's class
 
 A `defaultdict`'s factory is no data, so no channel spells it and no dump writes it: it is derived from the annotation, so that a round trip rebuilds the same object (`_coerce._default_factory`).
-It is the class a value is built as: `list` for `list[int]`, `dict` for a mapping, the class itself for a struct, a scalar or a registered leaf.
+It is the class a value is built as: `list` for `list[int]`, `dict` for a mapping, the class itself for a struct, a scalar or a registered leaf, and a parameterized one's class: `Box` for `Box[int]`, `re.Pattern` for `re.Pattern[str]` once `re.Pattern` is registered.
 Where no one class builds a value from nothing (`Any`, a union, a `Literal`, an `Enum`, a type reference, a callable), it is `None`, and the `defaultdict` behaves as a dict.
 
 ## A registration wins

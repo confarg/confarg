@@ -31,7 +31,7 @@ from confarg._parse_cli import (
 from confarg._pipeline import _merge_sources
 from confarg._serialize import _check_native_types, _DumpOptions, _serialize, _serialize_untyped, written_form
 from confarg._typed_read import TypedReading
-from confarg._types import _MISSING, TagPolicy, _is_struct_like, _resolve_type
+from confarg._types import _MISSING, TagPolicy, _is_struct_like, _resolve_type, _spell_type
 from confarg.dictexpr import resolve_expressions
 from confarg.exceptions import MissingFieldError
 from confarg.typedload import construct as _tc
@@ -188,7 +188,7 @@ def _build(target: Any, data: dict[Any, Any], union_tag: str, copies: Copies) ->
         docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#one-budget-per-configuration
     """
     target_r = _resolve_type(target)
-    refuse_overflow(data, f"build {_named(target)}", copies=copies)
+    refuse_overflow(data, f"build {_spell_type(target)}", copies=copies)
     resolved = _strip_locals(_resolve_over_defaults(target_r, data, union_tag, copies), target_r, union_tag)
     return _construct_resolved(target_r, resolved, union_tag)
 
@@ -212,13 +212,8 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, union_tag: str, copie
     resolved = drop_untouched(resolved, laid.untouched)
     # An expression standing for a value copies it where it is written, so the tree can be deeper
     # now; a default nothing touched is left out, as construction never walks it.
-    refuse_overflow(resolved, f"resolve the expressions of {_named(target_r)}")
+    refuse_overflow(resolved, f"resolve the expressions of {_spell_type(target_r)}")
     return resolved
-
-
-def _named(target: Any) -> str:
-    """Return the name a refusal calls *target* by: a class's own name, any other type as it prints."""
-    return getattr(target, "__name__", str(target))
 
 
 def _construct_resolved(target_r: Any, resolved: MergeDict, union_tag: str) -> Any:
@@ -300,7 +295,7 @@ def resolve(
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
     """
     copies = Copies()
-    refuse_overflow(data, f"resolve {_named(target)}", copies=copies)
+    refuse_overflow(data, f"resolve {_spell_type(target)}", copies=copies)
     return _resolve_over_defaults(_resolve_type(target), data, union_tag, copies)
 
 
@@ -335,7 +330,7 @@ def from_dict[T](
             copying more than 100 000 positions.
     """
     target_r = _resolve_type(target)
-    refuse_overflow(data, f"construct {_named(target)}", copies=Copies())
+    refuse_overflow(data, f"construct {_spell_type(target)}", copies=Copies())
     laid = lay_defaults(target_r, data, union_tag, for_resolution=False).data
     return _construct_resolved(target_r, _strip_locals(laid, target_r, union_tag), union_tag)
 

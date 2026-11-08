@@ -9,13 +9,14 @@ from __future__ import annotations
 import math
 import re
 import warnings
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal, NamedTuple, NewType
+from typing import Annotated, Any, Literal, NamedTuple, NewType, Optional
 from uuid import UUID
 
 import pytest
@@ -23,7 +24,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import confarg
-from confarg._types import _StrToken
+from confarg._types import _registered_class, _StrToken
+from confarg.cli._build import build_static_flags
 from confarg.exceptions import ConfargWarning, MissingFieldError, TypeCoercionError
 from confarg.typedload._coerce import (
     _LEAF_COERCIONS,
@@ -155,6 +157,13 @@ class TestRegisterLeafType:
         with pytest.raises(TypeError, match=re.escape(reason)):
             confarg.register_leaf_type(key, lambda v: v)
         assert key not in _LEAF_COERCIONS
+
+    def test_a_parameterized_class_names_the_class_to_register(self) -> None:
+        """``re.Pattern[str]`` is no class, but its class is, and that registration reads it."""
+        with pytest.raises(
+            TypeError, match=re.escape("re.Pattern[str] is no class; the registration of Pattern reads it")
+        ):
+            confarg.register_leaf_type(re.Pattern[str], re.compile)
 
     def test_the_refusal_names_the_key_as_written(self) -> None:
         """A class is named by its name, anything else as Python writes it."""
@@ -293,6 +302,95 @@ class TestConstructCustomType:
         """construct() returns None for an Optional[registered] field when data is None."""
         result = construct(UUID | None, None)
         assert result is None
+
+
+@dataclass
+class _Patterns:
+    s: re.Pattern[str] = re.compile("a")
+    either: re.Pattern[str] | int = 0
+
+
+@dataclass
+class _PatternsByName:
+    d: defaultdict[str, re.Pattern[str]] = field(default_factory=lambda: defaultdict(re.Pattern))
+
+
+class TestAParameterizedClassReadsThroughItsRegistration:
+    """``re.Pattern[str]`` reads through the registration of ``re.Pattern``, in both directions."""
+
+    @pytest.fixture(autouse=True)
+    def _register(self) -> None:
+        confarg.register_leaf_type(re.Pattern, re.compile, serialize=lambda p: p.pattern)
+
+    def test_a_file_value_is_coerced(self) -> None:
+        """The class's coercion builds the value; it never sees the type arguments."""
+        assert confarg.build(_Patterns, {"s": "b+"}).s == re.compile("b+")
+
+    def test_the_value_dumps_and_reads_back(self) -> None:
+        """The dump writes the class's serialized form, which builds the value back."""
+        obj = _Patterns(s=re.compile("c"), either=re.compile("d"))
+        assert confarg.dump(obj) == {"s": "c", "either": "d"}
+        assert confarg.build(_Patterns, confarg.dump(obj)) == obj
+
+    def test_a_cast_naming_the_class_is_held(self) -> None:
+        """A field reading through ``Pattern``'s registration holds a ``Pattern`` cast."""
+        data = {"either": {"__cast__": "Pattern", "__value__": "e+"}}
+        assert confarg.build(_Patterns, data).either == re.compile("e+")
+
+    def test_native_types_names_the_registration_a_parameterized_form_reads_through(self) -> None:
+        """``native_types=(re.Pattern[str],)`` keeps a pattern as ``native_types=(re.Pattern,)`` does."""
+        obj = _Patterns(s=re.compile("c"))
+        assert confarg.dump(obj, native_types=(re.Pattern[str],)) == confarg.dump(obj, native_types=(re.Pattern,))
+        assert confarg.dump(obj, native_types=(re.Pattern[str],))["s"] == re.compile("c")
+
+    def test_a_defaultdict_of_a_parameterized_form_builds_with_its_class(self) -> None:
+        """The factory is the class the registration reads through, as for the bare class."""
+        assert confarg.build(_PatternsByName, {"d": {"k": "a"}}).d.default_factory is re.Pattern
+
+    def test_the_metavar_names_the_registered_class(self) -> None:
+        """``re.Pattern[str]`` registers ``--s PATTERN``, as a bare ``re.Pattern`` field does."""
+        spec = next(s for s in build_static_flags(_Patterns) if s.name == "s")
+        assert spec.metavar == "PATTERN"
+
+
+class TestNoUnionIsARegistrationKey:
+    """A union's origin is ``typing.Union``, a class since 3.14: no registration is keyed on it."""
+
+    @pytest.mark.parametrize("tp", [int | str, Optional[int]])
+    def test_a_union_reads_through_no_registration(self, tp: Any) -> None:
+        """Neither the leaf lookup nor a registration refusal takes the union's origin for a class."""
+        assert _registered_class(tp) is None
+        with pytest.raises(TypeError) as exc_info:
+            confarg.register_leaf_type(tp, int)
+        assert "registration of" not in str(exc_info.value)
+
+    def test_the_refusal_names_the_argument_once(self) -> None:
+        """``Optional[int]`` is spelled one way in the whole refusal, the same on every Python."""
+        with pytest.raises(TypeError, match=re.escape("register_leaf_type(int | None): int | None is no class;")):
+            confarg.register_leaf_type(Optional[int], int)  # ty: ignore[invalid-argument-type]  # refused on purpose
+
+    def test_none_is_read_by_confarg_itself(self) -> None:
+        """``None``, as an annotation spells the None type, is refused as ``type(None)`` is."""
+        with pytest.raises(TypeError, match=re.escape("register_leaf_type(None): confarg reads None itself")):
+            confarg.register_leaf_type(None, int)  # ty: ignore[invalid-argument-type]  # refused on purpose
+
+
+@dataclass
+class _Box[T]:
+    item: T | None = None
+
+
+@dataclass
+class _BoxesByName:
+    d: defaultdict[str, _Box[int]] = field(default_factory=lambda: defaultdict(_Box))
+
+
+class TestADefaultdictOfAGenericStruct:
+    """A parameterized struct builds a ``defaultdict``'s missing values with its class, as the bare struct does."""
+
+    def test_the_factory_is_the_class(self) -> None:
+        """``defaultdict[str, _Box[int]]`` builds with ``_Box``."""
+        assert confarg.build(_BoxesByName, {"d": {"k": {"item": 1}}}).d.default_factory is _Box
 
 
 # ---------------------------------------------------------------------------

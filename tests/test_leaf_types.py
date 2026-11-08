@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
 
 import pytest
+import typing_extensions
 
 import confarg
 from confarg._types import _allows_none, _resolve_type, _union_args
@@ -1331,6 +1332,16 @@ class TestAnAliasedUnionVariant:
         """The walk meets the alias again, not the ``Annotated`` around it, and names the alias."""
         with pytest.raises(TypeError, match=r"^_AnnotatedCycle is a union holding itself"):
             _union_args(_AnnotatedCycle)
+
+
+class TestATypingExtensionsAlias:
+    """An alias ``typing_extensions`` builds is a wrapper too, whatever its class (its own before 3.15)."""
+
+    def test_its_union_is_read(self) -> None:
+        """``TypeAliasType("IntOrFloat", int | float)`` reads as the alias ``type`` statement writes."""
+        IntOrFloat = typing_extensions.TypeAliasType("IntOrFloat", int | float)  # noqa: UP040  # the class under test
+        Target = make_target("x", IntOrFloat | bool, default=0)
+        assert confarg.load(Target, argv=["--x", "2.5"], env={}).x == 2.5
 
 
 class TestARecursiveAlias:

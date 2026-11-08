@@ -29,6 +29,7 @@ from confarg._types import (
     _PositionalGapError,
     _PositionalParams,
     _resolve_type,
+    _spell_type,
     _src_type,
     _union_args,
 )
@@ -914,7 +915,7 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
 
     required = _fillable_params(sig.parameters, required=True)
     if len(required) != len(param_types):
-        type_names = [getattr(_resolve_type(t), "__name__", repr(t)) for t in param_types]
+        type_names = [_spell_type(t) for t in param_types]
         msg = (
             f"Callable at '{path}': annotation expects {len(param_types)} parameter(s)"
             f" {type_names}, but {obj!r} has {len(required)} required"

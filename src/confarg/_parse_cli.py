@@ -82,6 +82,7 @@ from confarg._types import (
     _is_varlen_collection,
     _namedtuple_fields,
     _resolve_type,
+    _spell_type,
     _StrToken,
     _struct_fields,
     _struct_member_names,
@@ -1055,8 +1056,7 @@ def _check_reserved_key_conflict(target: Any, name: str, detail: str) -> None:
 
     def _check_struct(tp: Any) -> None:
         if name in _struct_fields(tp):
-            tp_name = getattr(tp, "__name__", repr(tp))
-            msg = f"{name!r} is a reserved name but {tp_name} has a field named {name!r}. {detail}"
+            msg = f"{name!r} is a reserved name but {_spell_type(tp)} has a field named {name!r}. {detail}"
             raise ConfargError(msg)
 
     tp = _resolve_type(target)
@@ -1263,13 +1263,13 @@ def _mount_owner(tp: Any) -> tuple[str, Sequence[str] | None]:
     """
     tp = _resolve_type(tp)
     if _is_struct(tp):
-        return tp.__name__, tuple(_struct_fields(tp))
+        return _spell_type(tp), tuple(_struct_fields(tp))
     if _is_namedtuple(tp):
-        return tp.__name__, tuple(_namedtuple_fields(tp))
+        return _spell_type(tp), tuple(_namedtuple_fields(tp))
     if _is_union(tp):
         names = sorted({n for v in _union_args_no_none(tp) for n in (_mount_owner(v)[1] or ())})
-        return str(tp), tuple(names) or None
-    return getattr(tp, "__name__", str(tp)), None
+        return _spell_type(tp), tuple(names) or None
+    return _spell_type(tp), None
 
 
 def _check_mount_subpath(target: Any, subpath: str, union_tag: str, spelling: str) -> None:
@@ -1522,7 +1522,7 @@ def _appended_element_type(  # noqa: PLR0913  # the walk, then what the message 
     if et is None:
         msg = (
             f"Cannot use + (append) syntax on {spelling!r}:"
-            f" field '{'.'.join(path)}' has type {ft!r}, which is not a list, set, or frozenset."
+            f" field '{'.'.join(path)}' has type {_spell_type(ft)}, which is not a list, set, or frozenset."
         )
         raise ConfargError(msg)
     return et

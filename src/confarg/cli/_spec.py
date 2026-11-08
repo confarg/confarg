@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Final, NamedTuple, get_args, g
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from confarg._types import _allows_none, _per_class_cache, _resolve_type, _union_args_no_none
+from confarg._types import _allows_none, _is_type_alias, _per_class_cache, _resolve_type, _union_args_no_none
 from confarg.exceptions import ConfargError
 
 
@@ -223,7 +223,7 @@ def _get_field_meta(raw_type: Any) -> FieldMeta | None:
             tp = get_args(tp)[0]
         elif get_origin(tp) is Final:
             tp = get_args(tp)[0]
-        elif type(tp).__name__ == "TypeAliasType":
+        elif _is_type_alias(tp):
             tp = tp.__value__
         else:
             return None

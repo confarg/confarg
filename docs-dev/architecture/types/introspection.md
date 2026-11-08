@@ -22,6 +22,8 @@ What each wrapper adds — an alias name, metadata, "not reassigned", a distinct
 `None` in an annotation is `NoneType`, as PEP 484 reads it: `get_type_hints` converts a field's `None`, but `type N = None` keeps the value `None`, which `_resolve_type` converts, so `N | int` reads the none word as `None | int` does.
 A `NewType`'s values are its supertype's at runtime, so it is its supertype to every walk, and no registration keys on it ([a NewType is its supertype](../design-decisions/a-registration-is-one-construction-reaches.md#a-newtype-is-its-supertype)).
 
+An alias is told by its class's name (`_types._is_type_alias`), not by `isinstance`: `typing_extensions.TypeAliasType` is a class of its own before 3.15, distinct from `typing.TypeAliasType`, and an alias a library builds through it is a wrapper all the same.
+
 A class is none of the wrappers, so `_resolve_type` returns a class unchanged before it tests for any of them.
 Every struct question passes through `_resolve_type`, so this early return saves time on every subclass scan (REF-92).
 A parameterized generic is not a class and still goes through the loop.

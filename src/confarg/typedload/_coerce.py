@@ -26,6 +26,7 @@ from confarg._import import _import_dotted, dotted_name
 from confarg._registry import LEAF_COERCIONS, LEAF_SERIALIZERS
 from confarg._types import (
     _builtin_read_as,
+    _class_of,
     _dict_kv,
     _forbidden_literal_member,
     _is_callable,
@@ -43,8 +44,11 @@ from confarg._types import (
     _is_union,
     _literal_members,
     _literal_values,
+    _registered_class,
+    _registration_key,
     _resolve_type,
     _scalar_read_as,
+    _spell_type,
     _src_type,
     _StrToken,
     _subclassed_builtin,
@@ -608,8 +612,8 @@ def _enum_choices(tp: Any) -> list[str]:
 
 
 def _is_registered_leaf(tp: Any) -> bool:
-    """True if tp was registered via register_leaf_type and should be treated as a leaf."""
-    return tp in _LEAF_COERCIONS
+    """True if a ``register_leaf_type`` registration reads *tp*, bare or parameterized (:func:`_registered_class`)."""
+    return _registered_class(tp) is not None
 
 
 def _registered_leaf_of(value: Any) -> type | None:
@@ -724,7 +728,7 @@ def _is_coercible_leaf(tp: Any) -> bool:
         or _scalar_read_as(tp) is not None
         or (_is_literal(tp) and bool(_literal_values(tp)) and _forbidden_literal_member(tp) is None)
         or _is_enum(tp)
-        or tp in _LEAF_COERCIONS
+        or _is_registered_leaf(tp)
     )
 
 
@@ -755,11 +759,14 @@ def _registration_refusal(tp: Any) -> str | None:  # noqa: PLR0911  # one return
     """
     if isinstance(tp, NewType):
         supertype = _resolve_type(tp)
-        return f"{tp.__name__} is a NewType, which confarg reads as {getattr(supertype, '__name__', supertype)}"
-    if tp is Any or _is_none_type(tp) or tp in _SCALAR_COERCIONS or _is_enum(tp) or tp is type:
-        return f"confarg reads {getattr(tp, '__name__', tp)} itself"
+        return f"{tp.__name__} is a NewType, which confarg reads as {_spell_type(supertype)}"
+    if tp is None or tp is Any or _is_none_type(tp) or tp in _SCALAR_COERCIONS or _is_enum(tp) or tp is type:
+        return f"confarg reads {_spell_type(tp, as_written=True)} itself"
     if not isinstance(tp, type):
-        return f"{tp!r} is no class"
+        key = _registration_key(tp)
+        if isinstance(key, type) and _registration_refusal(key) is None:
+            return f"{_spell_type(tp, as_written=True)} is no class; the registration of {key.__name__} reads it"
+        return f"{_spell_type(tp, as_written=True)} is no class"
     if tp is object:
         return "every value is an object, so the registration would take every value as its own"
     if _subclassed_builtin(tp) is not None:
@@ -802,7 +809,8 @@ def _default_factory(tp: Any) -> Any:
     """Return the factory a ``defaultdict`` typed *tp* is built with: the class its values are built as.
 
     ``list`` for ``list[int]``, ``dict`` for a mapping, the class itself for a struct, a scalar
-    or a registered leaf. None where no one class builds a value from nothing: ``Any``, a
+    or a registered leaf, a parameterized one's class (``Box`` for ``Box[int]``, ``re.Pattern``
+    for a registered ``re.Pattern[str]``). None where no one class builds a value from nothing: ``Any``, a
     union, a ``Literal``, an ``Enum``, a type reference, a callable.
 
     Dev Notes:
@@ -821,8 +829,9 @@ def _default_factory(tp: Any) -> Any:
         cls = value_tp if isinstance(value_tp, type) else get_origin(value_tp)
         return cls if _builtin_read_as(value_tp) is not None else concrete[kind]
     if kind in (_TypeKind.STRUCT, _TypeKind.TAGGABLE_LEAF, _TypeKind.NAMEDTUPLE, _TypeKind.LEAF):
-        plain = isinstance(value_tp, type) and not _is_none_type(value_tp) and not _is_enum(value_tp)
-        return value_tp if plain and not _is_type_ref(value_tp) else None
+        cls = _registered_class(value_tp) or _class_of(value_tp)
+        plain = isinstance(cls, type) and not _is_none_type(cls) and not _is_enum(cls)
+        return cls if plain and not _is_type_ref(value_tp) else None
     return None
 
 
@@ -849,17 +858,22 @@ def _refuse_a_forbidden_literal(tp: Any, path: str) -> None:
 def _coerce_registered(tp: Any, value: Any, path: str) -> Any:
     """Coerce value to a type registered in _LEAF_COERCIONS, passing its own instances through.
 
-    An instance passes through when *tp* is its most specific registered type
-    (:func:`_registered_leaf_of`), so a ``datetime`` meets the ``date`` coercion, which refuses it.
+    The registration is the one *tp* reads through, keyed on its class, a parameterized form's
+    class (:func:`_registration_key`); the caller has found it registered. An instance passes
+    through when that class is its most specific registered type (:func:`_registered_leaf_of`),
+    so a ``datetime`` meets the ``date`` coercion, which refuses it.
     """
-    if _registered_leaf_of(value) is tp:
+    cls = _registration_key(tp)
+    if _registered_leaf_of(value) is cls:
         return value
     try:
-        return _LEAF_COERCIONS[tp](value)
+        return _LEAF_COERCIONS[cls](value)
     except _LeafRefusal as exc:
-        raise TypeCoercionError.cannot_coerce_because(_src_type(value), value, tp.__name__, path, exc.hint) from None
+        raise TypeCoercionError.cannot_coerce_because(
+            _src_type(value), value, _spell_type(tp), path, exc.hint
+        ) from None
     except (TypeError, ValueError, OSError):
-        raise TypeCoercionError.cannot_coerce(_src_type(value), value, tp.__name__, path) from None
+        raise TypeCoercionError.cannot_coerce(_src_type(value), value, _spell_type(tp), path) from None
 
 
 def _reads_as_object(tp: Any) -> bool:
@@ -876,7 +890,7 @@ def _reads_as_object(tp: Any) -> bool:
     """
     return (
         _is_enum(tp)
-        or tp in _LEAF_COERCIONS
+        or _is_registered_leaf(tp)
         or (_is_literal(tp) and any(isinstance(v, enum.Enum) for v in _literal_values(tp)))
     )
 
@@ -976,7 +990,7 @@ def _coerce_leaf(tp: Any, value: Any, path: str = "") -> Any:  # noqa: PLR0911  
     tp = _resolve_type(tp)
     _refuse_a_forbidden_literal(tp, path)
     if not _is_coercible_leaf(tp):
-        msg = f"Unsupported leaf type {tp} at '{path}'"
+        msg = f"Unsupported leaf type {_spell_type(tp)} at '{path}'"
         raise TypeCoercionError(msg)
     if tp is Any:
         return _held_by_any(value)

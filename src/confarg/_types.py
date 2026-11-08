@@ -94,17 +94,46 @@ def _src_type(value: Any) -> str:
     return "str" if isinstance(value, _StrToken) else type(value).__name__
 
 
-def _spell_type(tp: Any) -> str:
-    """Return how a message names the annotation *tp*.
+def _spell_type(tp: Any, *, as_written: bool = False) -> str:
+    """Return how a message names the annotation *tp*: as the type confarg reads it as.
 
-    A class by its name, a union by its variants joined by ``|``, anything else as written. A
-    union reads ``int | str`` on every Python: since 3.14 its ``__name__`` is ``Union``.
+    Its wrappers are unwrapped, an alias, a ``NewType`` and an ``Annotated`` named by the type
+    they stand for, since a message names what confarg tried; then a class by its
+    ``__name__``, ``None`` as ``None``, a union by its variants (:func:`_union_args`) joined by
+    ``|``, anything else as written. A union reads ``int | str`` on every Python, though its
+    ``__name__`` is ``Union`` since 3.14.
+
+    *as_written* names an argument a refusal echoes back to its caller: nothing is unwrapped,
+    an alias and a ``NewType`` named by their own name, ``NoneType`` passed alone as the class
+    it is, a union by its variants as written.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-message-names-a-type-by-what-confarg-reads.md#a-message-names-a-type-by-what-confarg-reads
     """
-    if tp is None or tp is types.NoneType:
+    if not as_written:
+        tp = _resolve_type(tp)
+    if tp is None or (tp is types.NoneType and not as_written):
         return "None"
-    if _is_union(tp):
-        return " | ".join(_spell_type(v) for v in _union_args(tp))
-    return tp.__name__ if isinstance(tp, type) else repr(tp)
+    if _is_union_origin(get_origin(tp)):
+        variants = get_args(tp) if as_written else _union_args(tp)
+        return " | ".join("None" if v is types.NoneType else _spell_type(v, as_written=as_written) for v in variants)
+    # ``typing.Any`` is a class since 3.11, so it reads ``Any`` here, not ``typing.Any``.
+    if isinstance(tp, type | NewType) or _is_type_alias(tp):
+        return tp.__name__
+    return repr(tp)
+
+
+def _is_type_alias(tp: Any) -> bool:
+    """True if *tp* is a ``TypeAliasType``, the ``type X = ...`` statement's or ``typing_extensions``'s.
+
+    Tested by the class's name: before 3.15, ``typing_extensions.TypeAliasType`` is a class of
+    its own, not ``typing.TypeAliasType``, so ``isinstance`` would miss every alias a library
+    builds through it.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#wrappers-are-transparent
+    """
+    return type(tp).__name__ == "TypeAliasType"
 
 
 def _per_class_cache[R](fn: Callable[[Any], R]) -> Callable[[Any], R]:
@@ -149,7 +178,7 @@ def _resolve_type(tp: Any) -> Any:
     if isinstance(tp, type):
         return tp  # a class is never one of the wrappers
     while True:
-        if type(tp).__name__ == "TypeAliasType":
+        if _is_type_alias(tp):
             tp = tp.__value__
         elif get_origin(tp) is Annotated or get_origin(tp) is Final:
             tp = get_args(tp)[0]
@@ -169,7 +198,7 @@ def _is_struct_like(tp: Any) -> bool:
     if _is_struct(tp):
         return True
     if _is_union(tp):
-        return any(_is_struct(_resolve_type(v)) for v in _union_args_no_none(tp))
+        return any(_is_struct(b) for b in _union_branches(tp))
     return False
 
 
@@ -262,8 +291,16 @@ def _is_union(tp: Any) -> bool:
     Returns:
         True if tp is a Union type.
     """
-    o = get_origin(_resolve_type(tp))
-    return o is Union or o is types.UnionType
+    return _is_union_origin(get_origin(_resolve_type(tp)))
+
+
+def _is_union_origin(origin: Any) -> bool:
+    """True if *origin*, what ``get_origin`` returns, is a union's: ``typing.Union`` or ``types.UnionType``.
+
+    Both are classes, ``typing.Union`` since 3.14, so a test for the class a parameterized form
+    is of asks this first: no registration or factory is keyed on a union's origin.
+    """
+    return origin is Union or origin is types.UnionType
 
 
 def _union_args(tp: Any) -> list[Any]:
@@ -309,10 +346,10 @@ def _spread_variants(
     """
     for arg in args:
         resolved = _resolve_type(arg)
-        if get_origin(resolved) in (Union, types.UnionType):
+        if _is_union_origin(get_origin(resolved)):
             if arg in spreading:
                 msg = (
-                    f"{arg!r} is a union holding itself, which has no variants to read;"
+                    f"{_spell_type(arg, as_written=True)} is a union holding itself, which has no variants to read;"
                     " an alias may recur only below a collection, as in `type Json = int | list[Json]`."
                 )
                 raise TypeError(msg)
@@ -419,10 +456,38 @@ def _builtin_read_as(tp: Any) -> type | None:
         docs-dev/architecture/design-decisions/a-builtins-subclass-is-that-builtin.md#a-builtins-subclass-is-that-builtin
     """
     tp = _resolve_type(tp)
-    cls = tp if isinstance(tp, type) else get_origin(tp)
-    if cls in LEAF_COERCIONS:
+    if _registered_class(tp) is not None:
         return None
-    return _subclassed_builtin(cls)
+    return _subclassed_builtin(tp if isinstance(tp, type) else get_origin(tp))
+
+
+def _registered_class(tp: Any) -> type | None:
+    """Return the class whose ``register_leaf_type`` registration reads *tp*, None if none does.
+
+    The one answer to "which registration reads this annotation?": the class itself, or the
+    class a parameterized form is of, so ``re.Pattern[str]`` reads through the registration of
+    ``re.Pattern``. The coercion never sees the arguments, which are the type checker's, as a
+    ``NewType`` reads as its supertype.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-registration-is-one-construction-reaches.md#a-parameterized-class-reads-through-its-registration
+    """
+    key = _registration_key(tp)
+    return key if isinstance(key, type) and key in LEAF_COERCIONS else None
+
+
+def _registration_key(tp: Any) -> Any:
+    """Return what a registration reading *tp* is keyed on: *tp*'s class, *tp* itself when it has none.
+
+    The class itself, or the class a parameterized form is of (``re.Pattern`` for
+    ``re.Pattern[str]``); a remedy naming the registration to make names it. A union is its own
+    key, which no registration takes, though its origin is a class too.
+    """
+    tp = _resolve_type(tp)
+    origin = get_origin(tp)
+    if isinstance(tp, type) or not isinstance(origin, type) or _is_union_origin(origin):
+        return tp
+    return origin
 
 
 def _builtin_args(tp: Any) -> tuple[Any, ...]:
@@ -803,7 +868,7 @@ def _through_descriptor(hint: Any, read: Callable[[Any], Any]) -> Any:
     """
     if _descriptor_class(hint) is None:
         return hint
-    if type(hint).__name__ == "TypeAliasType":
+    if _is_type_alias(hint):
         return _through_descriptor(hint.__value__, read)
     if get_origin(hint) is Annotated:
         inner, *metadata = get_args(hint)
@@ -1084,7 +1149,7 @@ def _union_has_varlen_variant(tp: Any) -> bool:
     an empty list can build nothing valid for it.
     """
     tp = _resolve_type(tp)
-    return _is_union(tp) and any(_is_varlen_collection(_resolve_type(v)) for v in _union_args_no_none(tp))
+    return _is_union(tp) and any(_is_varlen_collection(b) for b in _union_branches(tp))
 
 
 def _union_has_scalar_variant(tp: Any) -> bool:

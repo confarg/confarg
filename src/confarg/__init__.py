@@ -22,7 +22,7 @@ from confarg._files import JSON_NATIVE_TYPES, TOML_NATIVE_TYPES, YAML_NATIVE_TYP
 from confarg._merge import ListOp
 from confarg._sources import register_scheme as _register_scheme
 from confarg._sources import unregister_scheme as _unregister_scheme
-from confarg._types import TagPolicy
+from confarg._types import TagPolicy, _spell_type
 from confarg.typedload._coerce import _LEAF_COERCIONS, _LEAF_SERIALIZERS, _registration_refusal
 
 
@@ -78,7 +78,7 @@ def register_leaf_type(
     """
     refusal = _registration_refusal(tp)
     if refusal is not None:
-        name = tp.__name__ if isinstance(tp, type) else repr(tp)
+        name = _spell_type(tp, as_written=True)
         msg = f"register_leaf_type({name}): {refusal}; register a class confarg does not read itself"
         raise TypeError(msg)
     _LEAF_COERCIONS[tp] = coerce
