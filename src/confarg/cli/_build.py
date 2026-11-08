@@ -49,6 +49,7 @@ from confarg._types import (
     RootKind,
     _base_declares_path,
     _class_of,
+    _demands_tag,
     _direct_struct_subclasses,
     _elem_type,
     _fixed_seq_types,
@@ -1234,10 +1235,9 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
             ),
         )
 
-    # Handle inheritance-based dispatch: if this struct has subclasses, register
+    # Handle inheritance-based dispatch: if this struct demands its tag, register
     # a --<union_tag> selector and the union of all subclass fields.
-    direct_subs = _direct_struct_subclasses(tp)
-    if direct_subs:
+    if _demands_tag(tp):
         all_subs = _struct_subclasses(tp)  # recursive, for tab-completion paths
         tag_name = f"{prefix}.{union_tag}" if prefix else union_tag
         by_name: dict[str, FlagSpec] = {s.name: s for s in result}
@@ -1258,7 +1258,7 @@ def _collect_struct_specs(  # noqa: C901, PLR0913  # a root call starts its own 
             )
             result.append(tag_spec)
             by_name[tag_name] = tag_spec
-        for sub in direct_subs:
+        for sub in _direct_struct_subclasses(tp):
             # A subclass stands at its base's path, so the descent is the base's.
             specs = _collect_struct_specs(sub, prefix, union_tag, group, group_description, descent=descent)
             for spec in (s for s in specs if not _base_declares_path(tp, prefix, s.name)):

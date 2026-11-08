@@ -45,6 +45,7 @@ from confarg._types import (
     _all_have_defaults,
     _allows_none,
     _class_of,
+    _demands_tag,
     _dict_kv,
     _direct_struct_subclasses,
     _elem_type,
@@ -306,19 +307,19 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath, union_tag: s
     """
     if not isinstance(data, dict):
         return _take_instance(tp, data, path)
-    direct_subs = _direct_struct_subclasses(tp)
+    demands_tag = _demands_tag(tp)
     if union_tag in data:
         if not _union_tag_shadowed(tp, union_tag):
             return _construct_by_class_path(tp, data, path, union_tag)
-        if direct_subs:
+        if demands_tag:
             # The tag could have dispatched here; the member's value forces the
             # structural route instead, so say so once, on use.
             _warn_shadowed_tag_key(path, union_tag, "subclass")
         if union_tag in _struct_fields(tp):
             return _construct_struct(tp, data, path, union_tag)
         return _construct_shadowed_subclass(tp, data, path, union_tag)
-    if direct_subs:
-        sub_names = ", ".join(dotted_name(_class_of(s)) for s in direct_subs)
+    if demands_tag:
+        sub_names = ", ".join(dotted_name(_class_of(s)) for s in _direct_struct_subclasses(tp))
         if _union_tag_shadowed(tp, union_tag):
             msg = (
                 f"Cannot construct '{tp.__name__}' at '{_spell_field_path(path)}': it has subclasses ({sub_names})"
@@ -368,7 +369,7 @@ def _construct_shadowed_subclass(tp: Any, data: MergeDict, path: FieldPath, unio
         docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
     """
     subs = _struct_subclasses(tp)
-    matches = _disambiguate_struct(subs, data, union_tag)
+    matches = _covering_subclasses(subs, data, union_tag)
     if len(matches) == 1:
         return _construct_struct(matches[0], data, path, union_tag)
     if len(matches) > 1:
@@ -1678,7 +1679,7 @@ def _instance_variant(non_none: list[Any], data: Any) -> Any:
 
 def _struct_matches_value(tp: Any, value: Any, union_tag: str) -> bool:
     """Check if value could be a valid dict for struct tp."""
-    return isinstance(value, dict) and _structurally_matches(tp, _field_keys([tp], value, union_tag))
+    return isinstance(value, dict) and _builds_by_fields(tp, value, _field_keys([tp], value, union_tag), union_tag)
 
 
 def _bool_matches_value(value: Any) -> bool:
@@ -1800,18 +1801,57 @@ def _field_keys(variants: list[Any], data: MergeDict, union_tag: str) -> set[str
 
 
 def _disambiguate_struct(variants: list[Any], data: MergeDict, union_tag: str) -> list[Any]:
-    """Filter struct union variants to those matching data structurally."""
-    keys = _field_keys(variants, data, union_tag)
-    candidates = [_resolve_type(var) for var in variants if _structurally_matches(_resolve_type(var), keys)]
+    """Filter struct union variants to those construction builds *data* as by its fields (:func:`_builds_by_fields`).
 
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-variant-that-demands-its-tag-takes-no-untagged-value
+    """
+    keys = _field_keys(variants, data, union_tag)
+    candidates = [rv for var in variants if _builds_by_fields(rv := _resolve_type(var), data, keys, union_tag)]
+    return _refined(candidates, data, keys, union_tag)
+
+
+def _covering_subclasses(subs: list[Any], data: MergeDict, union_tag: str) -> list[Any]:
+    """Filter the subclasses *subs* to those whose own fields cover *data*, each built from them.
+
+    How a struct whose subclass owns the tag's spelling selects the subclass that builds it
+    (:func:`_construct_shadowed_subclass`): a subclass is built from its own fields there,
+    whatever subclasses it has in turn.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/casts-and-reserved-words.md#real-field-wins
+    """
+    keys = _field_keys(subs, data, union_tag)
+    candidates = [rs for sub in subs if _structurally_matches(rs := _resolve_type(sub), keys)]
+    return _refined(candidates, data, keys, union_tag)
+
+
+def _refined(candidates: list[Any], data: MergeDict, keys: set[str | ListOp], union_tag: str) -> list[Any]:
+    """Keep the struct *candidates* whose field types take *data*'s values, all of them where none does."""
     if len(candidates) <= 1:
         return candidates
-
     refined = [var for var in candidates if _type_compatible(var, data, keys, union_tag)]
+    return refined or candidates
 
-    if not refined:
-        return candidates
-    return refined
+
+def _builds_by_fields(var: Any, data: MergeDict, keys: set[str | ListOp], union_tag: str) -> bool:
+    """Return whether construction builds struct *var* from *data*, whose fields are *keys*, by those fields.
+
+    As :func:`_construct_struct_dispatch` builds it: a struct that demands its tag
+    (:func:`_demands_tag`) builds nothing from a value carrying no tag-shaped key, and from
+    one whose spelling its subclass owns only through the subclass that key selects
+    (:func:`_covering_subclasses`); any other struct by its fields covering *keys*.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-variant-that-demands-its-tag-takes-no-untagged-value
+    """
+    if not _demands_tag(var):
+        return _structurally_matches(var, keys)
+    if union_tag not in data:
+        return False
+    if _union_tag_shadowed(var, union_tag) and union_tag not in _struct_fields(var):
+        return bool(_covering_subclasses(_struct_subclasses(var), data, union_tag))
+    return _structurally_matches(var, keys)
 
 
 def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath, union_tag: str) -> Any:

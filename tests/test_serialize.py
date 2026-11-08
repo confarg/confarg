@@ -385,6 +385,14 @@ class TestDumpUnionTagAuto:
         result = confarg.dump(obj)
         assert result["shape"]["class"] == "tests.conftest.CircleShape"
 
+    def test_a_variant_that_demands_its_tag_leaves_the_other_untagged(self) -> None:
+        """``{}`` is no value of a base with subclasses, so the empty variant beside it needs no tag (BUG-295)."""
+        WithBaseOrEmpty = make_target("item", Union[_SubBase, Empty], default_factory=Empty)
+        obj = WithBaseOrEmpty(item=Empty())
+        result = confarg.dump(obj)
+        assert result == {"item": {}}
+        assert confarg.from_dict(WithBaseOrEmpty, result) == obj
+
 
 # ---------------------------------------------------------------------------
 # Leaf variants a sibling would steal back

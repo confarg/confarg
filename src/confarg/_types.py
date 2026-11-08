@@ -1809,6 +1809,21 @@ def _direct_struct_subclasses(tp: Any) -> list[Any]:
     return [s for s in subs if s is not None]
 
 
+def _demands_tag(tp: Any) -> bool:
+    """Return whether struct *tp* is built only through a class its tag names, never from its own fields.
+
+    A struct with subclasses is: a value names the class it builds. Where a member owns the
+    tag's spelling (:func:`_union_tag_shadowed`), the key is that member's value, and the
+    struct is built as the class owning it, never from no key. Read afresh on every call,
+    as the subclasses are.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/no-implicit-subclass-inference.md#no-implicit-subclass-inference
+        docs-dev/architecture/types/construction.md#a-variant-that-demands-its-tag-takes-no-untagged-value
+    """
+    return bool(_direct_struct_subclasses(tp))
+
+
 def _struct_fields(tp: Any) -> Mapping[str, Any]:
     """Return {name: type} for the members every channel sets on a struct: its constructor's parameters, read-only.
 
