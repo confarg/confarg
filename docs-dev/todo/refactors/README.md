@@ -26,7 +26,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-94 — Construction reads a sequence's index keys in two places](REF-94-construction-reads-a-sequences-index-keys-in-two-places.md) | trivial |  | S | medium | none |
 | [REF-95 — The tag-collision tests leave their warnings uncaptured](REF-95-the-tag-collision-tests-leave-their-warnings-uncaptured.md) | trivial |  | S | low | none |
 | [REF-98 — `_typed_read._read` and `_serialize.written_form` are one walk spelled twice](REF-98-typed_read-read-and-written-form-are-one-walk.md) | trivial |  | S | low | none |
-| [REF-99 — `read_union_leaf` reads a union's variants under the default `union_tag`](REF-99-read_union_leaf-spells-the-default-union-tag.md) | trivial |  | S | low | none |
 | [REF-101 — `_coerce_type_ref` repeats the class-tag import step for step](REF-101-coerce-type-ref-repeats-the-class-tag-import.md) | trivial |  | S | low | none |
 | [REF-102 — `make_parser` tells a merge option from a parser keyword by its own test](REF-102-make-parser-tells-a-merge-option-by-its-own-test.md) | trivial |  | S | low | none |
 | [REF-103 — `_pending_prefixes` walks the data by its own steps rather than `_step`](REF-103-pending-prefixes-walks-the-data-without-step.md) | trivial |  | S | medium | none |

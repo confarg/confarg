@@ -41,7 +41,7 @@ from confarg.typedload._coerce import (
     _TypeKind,
     read_as_object,
 )
-from confarg.typedload._construct import construct
+from confarg.typedload._construct import construct, read_union_leaf
 from tests.conftest import Release
 
 # ---------------------------------------------------------------------------
@@ -90,6 +90,13 @@ class _Ticket:
 
     def __init__(self, text: str) -> None:
         self.text = text
+
+
+@dataclass
+class _Mark:
+    """A struct registered as a leaf by its test, so only an explicit tag builds it from its fields."""
+
+    x: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +285,17 @@ class TestTryCoerceCustomType:
         token = _StrToken("not-a-uuid")
         result = _try_coerce(UUID, token, "--value")
         assert result is token
+
+
+class TestReadUnionLeafTag:
+    """Tests for the union tag read_union_leaf reads a variant's class under."""
+
+    def test_a_tagged_dict_reads_under_the_tag_handed_in(self) -> None:
+        """The reading picks the variant under the tag it is handed, as construction does, not the default (REF-99)."""
+        confarg.register_leaf_type(_Mark, lambda v: _Mark(int(v)))
+        path = f"{__name__}._Mark"
+        assert read_union_leaf(_Mark | str, {"kind": path, "x": 3}, "kind") == _Mark(3)
+        assert read_union_leaf(_Mark | str, {"class": path, "x": 3}, "kind") == {"class": path, "x": 3}
 
 
 # ---------------------------------------------------------------------------
