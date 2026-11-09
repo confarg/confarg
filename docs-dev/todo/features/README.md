@@ -15,6 +15,7 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-5 — Optional structural validation right after `merge()`](FEAT-5-structural-validation-after-merge.md) | minor |  | S | low | behavior |
 | [FEAT-26 — The expression whitelist is not documented for users](FEAT-26-the-expression-whitelist-is-not-documented-for-users.md) | minor |  | S | low | none |
 | [FEAT-61 — A call's value is configuration on an `Any` and a Callable node](FEAT-61-a-calls-value-is-configuration-on-an-any-and-a-callable-node.md) | minor |  | S | medium | behavior |
+| [FEAT-64 — The README says who confarg is for, and why not jsonargparse](FEAT-64-the-readme-says-who-confarg-is-for-and-why-not-jsonargparse.md) | minor |  | S | low | none |
 | [FEAT-7 — Lazy resolution between `merge` and `build`](FEAT-7-lazy-resolution-merge-to-build.md) | minor |  | M | high | behavior |
 | [FEAT-8 — Value provenance](FEAT-8-value-provenance.md) | minor |  | M | high | behavior |
 | [FEAT-15 — No way to inspect the flags of a class the tag has not named yet](FEAT-15-inspect-flags-of-unnamed-class.md) | minor |  | M | low | behavior |
@@ -30,6 +31,8 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-53 — A `collections.abc` implementer reads as a struct](FEAT-53-a-collections-abc-implementer-reads-as-a-struct.md) | minor |  | M | medium | config |
 | [FEAT-54 — A TOML file spells a `None`](FEAT-54-a-toml-file-spells-a-none.md) | minor |  | M | medium | behavior |
 | [FEAT-55 — Dumping a configuration whose root is no struct](FEAT-55-dumping-a-configuration-whose-root-is-no-struct.md) | minor |  | M | low | behavior |
+| [FEAT-65 — `load()` answers `--help`](FEAT-65-load-answers-help.md) | minor |  | M | medium | behavior |
+| [FEAT-66 — A one-page reference of the configuration language](FEAT-66-a-one-page-reference-of-the-configuration-language.md) | minor |  | M | low | none |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |
 | [FEAT-9 — A `confarg check` command to validate a configuration against a target](FEAT-9-confarg-check-command.md) | minor |  | L | low | behavior |
