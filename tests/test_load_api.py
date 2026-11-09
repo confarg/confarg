@@ -10,6 +10,7 @@ import dataclasses
 import enum
 import inspect
 import threading
+import warnings
 from collections.abc import Callable  # noqa: TC003  # a dataclass annotation confarg resolves at runtime
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -23,6 +24,7 @@ import confarg.cli.cyclopts as confargcyclopts
 import confarg.cli.typer as confargtyper
 from confarg import _defaults
 from confarg._merge import ListOp, MergeDict, _deep_merge
+from confarg.exceptions import ConfargWarning
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -567,6 +569,78 @@ def _tag(cls: type, **fields: Any) -> dict[str, Any]:
     return {"class": f"{cls.__module__}.{cls.__qualname__}", **fields}
 
 
+@dataclasses.dataclass(frozen=True)
+class _Fixed:
+    x: int = 0
+
+
+@dataclasses.dataclass(frozen=True)
+class _SubFixed(_Fixed):
+    y: int = 0
+
+
+class _OpaqueFixed(_Fixed):
+    """Keeps nothing under the names of its parameters, so no tag spells it."""
+
+    def __init__(self, *args: Any) -> None:
+        super().__init__(args[0])
+
+
+@dataclasses.dataclass
+class _FixedDefaults:
+    origin: _Fixed = _SubFixed(3, 4)
+    opaque: _Fixed = _OpaqueFixed(3)  # noqa: RUF009  # the default under test, immutable
+    other: _Fixed | None = None
+    out: Any = None
+    label: str = ""
+    picked: int = 0
+    table: dict[str, int] = dataclasses.field(default_factory=dict)
+    spots: list[_Fixed] = dataclasses.field(default_factory=list)
+    held: list[_Fixed] = dataclasses.field(default_factory=list)
+
+
+class TestAnExpressionLeavesARegisteredLeafsSubclass:
+    """A whole expression leaves an unregistered subclass of a registered leaf as its tag (BUG-309)."""
+
+    @pytest.fixture(autouse=True)
+    def _register(self, leaf_registry: None) -> None:
+        confarg.register_leaf_type(_Fixed, lambda v: _Fixed(int(v)), serialize=lambda f: str(f.x))
+
+    def test_a_whole_expression_builds_the_subclass(self) -> None:
+        """``${origin}`` is the built ``origin``, wherever it is written."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ConfargWarning)
+            built = confarg.build(_FixedDefaults, {"other": "${origin}", "out": "${origin}"})
+        assert (built.other, built.out) == (_SubFixed(3, 4), _SubFixed(3, 4))
+
+    def test_a_list_an_expression_leaves_is_walked(self) -> None:
+        """The answer is each leaf's, at any depth of what the expression leaves."""
+        built = confarg.build(_FixedDefaults, {"held": [_SubFixed(3, 4)], "spots": "${held}"})
+        assert built.spots == [_SubFixed(3, 4)]
+
+    def test_an_interpolation_keeps_the_parents_form(self) -> None:
+        """Text holds the form the leaf is written as, not a dict."""
+        assert confarg.build(_FixedDefaults, {"label": "at ${origin}"}).label == "at 3"
+
+    def test_an_interpolation_along_a_chain_keeps_the_parents_form(self) -> None:
+        """What a whole expression left reads as the object again, so one object is written alike."""
+        built = confarg.build(_FixedDefaults, {"other": "${origin}", "label": "at ${other}"})
+        assert (built.other, built.label) == (_SubFixed(3, 4), "at 3")
+
+    def test_a_subscript_key_keeps_the_parents_form(self) -> None:
+        """A key is text too."""
+        assert confarg.build(_FixedDefaults, {"table": {"3": 7}, "picked": "${table[origin]}"}).picked == 7
+
+    def test_a_subclass_no_tag_spells_warns(self) -> None:
+        """No tag reads back, so the parent's form is left, with the warning a dump gives."""
+        with pytest.warns(ConfargWarning) as record:
+            built = confarg.build(_FixedDefaults, {"other": "${opaque}"})
+        assert built.other == _Fixed(3)
+        assert [str(w.message) for w in record] == [
+            "Value at 'other' will not read back as _OpaqueFixed: _Fixed reads it as _Fixed(x=3).",
+        ]
+
+
 class TestAnExpressionReadsATaggedLeaf:
     """A registered leaf written as a dict whose class key names it reads as the object it builds (BUG-283)."""
 
@@ -613,12 +687,16 @@ class TestAnExpressionReadsATaggedLeaf:
         """``${origin.x}`` reads the field the tagged dict holds, which is the built ``origin.x``."""
         assert confarg.build(_Tagged, {"origin": _tag(_Spot, x=3), "same": "${origin.x == 3}"}).same
 
-    def test_an_unregistered_subclass_reads_as_its_dict(self) -> None:
-        """A class key naming a subclass no registration reads builds a struct, which reads as its dict."""
+    def test_an_unregistered_subclass_reads_as_the_object_it_builds(self) -> None:
+        """A whole expression leaves its tag again, and text its parent's form, as for the object itself."""
         sub = _tag(_SubSpot, x=3, y=4)
         built = confarg.build(_Tagged, {"origin": sub, "plain": "${origin}", "label": "at ${origin}"})
         assert built.plain == _SubSpot(3, 4)
-        assert built.label == f"at {sub}"
+        assert built.label == "at 3"
+
+    def test_a_field_below_an_unregistered_subclass_tag_reads_as_the_member(self) -> None:
+        """``${origin.y}`` reads the field the tagged dict holds, the subclass's own included."""
+        assert confarg.build(_Tagged, {"origin": _tag(_SubSpot, x=3, y=4), "same": "${origin.y == 4}"}).same
 
     def test_a_value_the_tag_refuses_reads_as_written(self) -> None:
         """No coercion error at resolution: the dict is left for construction to refuse."""

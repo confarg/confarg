@@ -29,7 +29,14 @@ from confarg._parse_cli import (
     _WalkState,
 )
 from confarg._pipeline import _merge_sources
-from confarg._serialize import _check_native_types, _DumpOptions, _serialize, _serialize_untyped, written_form
+from confarg._serialize import (
+    _check_native_types,
+    _DumpOptions,
+    _serialize,
+    _serialize_untyped,
+    left_form,
+    written_form,
+)
 from confarg._typed_read import TypedReading
 from confarg._types import _MISSING, TagPolicy, _resolve_type, _root_kind, _spell_type
 from confarg.dictexpr import resolve_expressions
@@ -207,6 +214,7 @@ def _resolve_over_defaults(target_r: Any, data: MergeDict, copies: Copies) -> Me
         laid.data,
         read=TypedReading(target_r),
         write=written_form,
+        leave=left_form,
         settle=settle,
         copies=copies,
     )
@@ -413,6 +421,13 @@ def dump(
     leaves each ``date`` and ``datetime`` a date. A value matches by its own type, so
     ``(date,)`` keeps a ``date`` and still writes a ``datetime`` as text; a datetime whose UTC
     offset has seconds, which no writer reads back, is always written as text.
+
+    Each leaf is read back as its field's type reads it, which runs each registered coercion.
+    A subclass of a registered leaf that is not registered itself, and a registered dataclass
+    or plain class whose text does not read back, is written as its ``class`` key beside its
+    fields when that reads back as it. A leaf that still does not read back as an equal value,
+    such as ``True`` in an ``int`` field, is written with a ``ConfargWarning`` saying what comes
+    back.
 
     Args:
         value: A dataclass or plain-class instance.

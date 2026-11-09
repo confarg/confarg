@@ -100,12 +100,12 @@ def _read_tagged_leaf(tp: Any, value: MergeDict) -> Any:
 
     A class key naming a registered leaf builds it from its fields wherever construction takes
     the tag, at the leaf, a struct it subclasses, a union, an ``Any`` or a Callable alike, so
-    *value* reads as what :func:`construct` builds there. The class itself must be registered:
-    an unregistered subclass of one is a struct, which reads as its dict. *value* reads as
-    written where it names no registered leaf, where construction refuses it, and where it
-    holds what construction has yet to compute (:func:`_computes`): text spelling ``${...}``
-    is a literal, resolution having resolved every expression the read reaches, which builds
-    as any other text. The reading never warns: construction warns of what it builds.
+    *value* reads as what :func:`construct` builds there, as does a class key naming a subclass
+    of a registered leaf. *value* reads as written where it names neither, where construction
+    refuses it, and where it holds what construction has yet to compute (:func:`_computes`):
+    text spelling ``${...}`` is a literal, resolution having resolved every expression the
+    read reaches, which builds as any other text. The reading never warns: construction warns
+    of what it builds.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
@@ -113,7 +113,7 @@ def _read_tagged_leaf(tp: Any, value: MergeDict) -> Any:
     if _defaults.CLASS_KEY not in value or _computes(value):
         return value
     cls = class_named(value[_defaults.CLASS_KEY])
-    if cls is None or not _is_registered_leaf(cls):
+    if cls is None or not any(_is_registered_leaf(c) for c in cls.__mro__):
         return value
     try:
         with warnings.catch_warnings():

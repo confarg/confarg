@@ -14,7 +14,7 @@ Every parse goes through `_parse_body`, which strips it, because `ast.parse` alo
 ## A typed leaf reads as its object
 
 The merged dict holds an `Enum` or registered leaf as it was written, on every channel ([token model](../types/token-model.md#a-leaf-reaches-the-merged-dict-as-written)).
-`build()` and `resolve()` hand `resolve_expressions` a reader and a writer, and an expression reads such a leaf as its object wherever one type is certain:
+`build()` and `resolve()` hand `resolve_expressions` a reader and writers, and an expression reads such a leaf as its object wherever one type is certain:
 
 | Expression, `c: Color` (`RED = "red"`) set by `RED`, `red` or the default | Value |
 |---|---|
@@ -33,11 +33,27 @@ The merged dict holds an `Enum` or registered leaf as it was written, on every c
   The dependency graph orders before a read every expression it reaches ([a reference reads everything its path reaches](resolution.md#a-reference-reads-everything-its-path-reaches)), and a subscript indexes no base the graph did not order ([spelling a path](#spelling-a-path)), so text spelling `${...}` that a read meets is the literal an escape resolves to: `$${HOME}`, resolved to the literal `${HOME}`, reads as `Path('${HOME}')` at a `Path` field, as construction builds it, and so does the same text an expression computes (BUG-310).
   `contains_expression`, the predicate of every gate before `build()` ([deferral rule](deferral-rule.md#deferral-rule)), matches the literal as well as the expression, so it cannot tell them apart once resolution has started; until BUG-310 the reader asked it, and read every literal as text.
   BUG-310 told an expression yet to resolve by its position, from the set of positions resolution had still to write, because a subscript indexing its base read the base whole, pending expressions included; once that read reached its own position (BUG-311), no read met the set any more, and it went.
-- **The writer** (`_serialize.written_form`) gives what an expression leaves behind — a pure result, an interpolated piece, a computed subscript key — in the form `dump()` writes: an `Enum` member's value, a registered type's serializer.
+- **The writers** (`_serialize.written_form` for an interpolated piece and a computed subscript key, `_serialize.left_form` for a pure result) give what an expression leaves behind in the form `dump()` writes: an `Enum` member's value, a registered type's serializer, and, for a pure result only, the [tag of a registered leaf's subclass](#a-whole-expression-leaves-a-subclass-as-its-tag).
   `resolve()` rewrites only what expressions produced, so a source's `RED` comes out as `RED`.
 - **Without them**, `resolve_expressions` reads and writes values as they are: the engine knows no type ([resolution](resolution.md#resolution-algorithm)).
 
 Why objects inside and the dump form at the edges, and what was rejected: [design decisions](../design-decisions/an-expression-reads-a-typed-leaf-as-its-object.md#an-expression-reads-a-typed-leaf-as-its-object).
+
+### A whole expression leaves a subclass as its tag
+
+A reference reads the built value, so a pure `${origin}` holding an unregistered subclass of a registered leaf cannot leave its parent's form, which rebuilds the parent and drops the subclass's own fields: `_serialize.left_form` leaves the class tag, which reads back as the subclass (BUG-309, maintainer-chosen).
+
+| `origin: Point`, default `SubPoint(3, 4)`, `Point` registered and dumped as its `x` | Result |
+|---|---|
+| `other: Point \| None = "${origin}"` | `SubPoint(x=3, y=4)` |
+| `a: Any = "${origin}"` | `SubPoint(x=3, y=4)` |
+| `"at ${origin}"` | `'at 3'` |
+| `${table[origin]}` | the entry `3` |
+
+Text and a computed key keep the parent's form (`written_form`): a dict inside a sentence or as a key helps nobody, and `'at 3'` works today, so a pure expression and an interpolation go through two writers (maintainer-chosen).
+Writing the tag in all three was rejected for that.
+A subclass no tag spells keeps its parent's form, with the warning a dump gives, naming the expression's position.
+A registered leaf, a subclass registered in its own right included, leaves its dump form as any typed leaf does ([below](#a-tagged-leaf-reads-as-the-leaf-it-builds)): the tag the dump writes for one is for what the position reads, which an expression does not know.
 
 ### A tagged leaf reads as the leaf it builds
 
@@ -51,8 +67,8 @@ The reader (`_typed_read._read_tagged_leaf`) reads such a dict as what `construc
 
 - **The class the tag names decides**, not the field's type: a tag naming a registered `Leafy` under a `Base` struct field it subclasses, an `Any` or a Callable builds `Leafy`, which the reference reads.
   The decision is construction's own, so the reader spells no variant choice of its own beside construction's.
-- **The class itself must be registered.**
-  A tag naming an unregistered subclass of a registered leaf builds a struct ([a registration is one construction reaches](../design-decisions/a-registration-is-one-construction-reaches.md#a-registration-is-one-construction-reaches)), which reads as its dict: reading it as the leaf would write it by its parent's serializer, so `other: Point = "${origin}"` would rebuild a `Point` and drop the subclass's own fields.
+- **A tag naming a subclass of a registered leaf reads as the object it builds too**, though that class is a struct ([a registration is one construction reaches](../design-decisions/a-registration-is-one-construction-reaches.md#a-registration-is-one-construction-reaches)), so an object and its tag read alike wherever the value came from, along a chain of references too: a whole expression leaves [its tag](#a-whole-expression-leaves-a-subclass-as-its-tag) again, and `"at ${origin}"` is `'at 3'` (maintainer-chosen).
+  Until BUG-309 it read as its dict, since the only form to leave was its parent's, so `other: Point = "${origin}"` would have rebuilt a `Point` and dropped the subclass's own fields.
 - **What an expression leaves is the dump form**, as for any typed leaf: a pure `${origin}` leaves `'3'`, which an `Any` holds as text; the tagged spelling no longer escapes that cost.
   Rejected: writing back the tagged dict a leaf was read from, which needs the reader to hand the writer its source spelling, and writes one object two ways.
 - **A dict construction refuses reads as written**, the constructor's own exception included, for construction to raise.
