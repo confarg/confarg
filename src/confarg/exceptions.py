@@ -434,6 +434,38 @@ class ConfargError(Exception):
         return cls(f"Cannot {action}: it copies more than {bound} positions{where} ({copied} copied).")
 
     @classmethod
+    def key_written_twice(
+        cls,
+        action: str,
+        keys: tuple[Any, Any],
+        *,
+        path: FieldPath = (),
+        lines: tuple[int, int] | None = None,
+    ) -> ConfargError:
+        """Return the error for a mapping writing one key twice, *keys* its two spellings in the document's order.
+
+        Two keys of one type are a key written twice; two of different types are spellings a dict
+        holds as one (``1`` and ``True``), named as such. A YAML mapping is named by *lines*, those
+        of its two keys; a JSON object, which its parser gives no position, by *path*. Called on a
+        subclass, it returns that subclass: ``InvalidConfigFileError`` for a document.
+
+        Dev Notes:
+            docs-dev/architecture/pipeline/deep-merge.md#a-document-writes-each-key-once
+        """
+        first, second = keys
+        if type(first) is type(second):
+            what = f"key {first!r} is written twice"
+        else:
+            what = f"keys {first!r} and {second!r} both read as the key {first!r}"
+        if lines is None:
+            where = f"in the object at '{_spell_long_path(path)}'" if path else "in the top-level object"
+        elif lines[0] == lines[1]:
+            where = f"in one mapping, both on line {lines[0]}"
+        else:
+            where = f"in one mapping, at lines {lines[0]} and {lines[1]}"
+        return cls(f"Cannot {action}: {what} {where}.")
+
+    @classmethod
     def holds_itself(cls, action: str, path: FieldPath, holder: FieldPath) -> ConfargError:
         """Return the error for a container at *path* that is the container at *holder*, one of its ancestors.
 

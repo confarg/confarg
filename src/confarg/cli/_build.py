@@ -36,7 +36,7 @@ from confarg._callable import (
     spec_opener,
     yielded_callable_path,
 )
-from confarg._cast import SCALAR_CAST_TYPES, holds_the_cast
+from confarg._cast import SCALAR_CAST_TYPES, decode_json, holds_the_cast
 from confarg._import import _import_dotted, dotted_name
 from confarg._merge import (
     MergeDict,
@@ -86,7 +86,7 @@ from confarg._types import (
 )
 from confarg.cli._prefix import apply_prefix, in_prefix, strip_argv_prefix
 from confarg.cli._spec import FlagSpec, HelpParts, _build_help, _get_field_docstrings, _get_field_meta, _struct_doc
-from confarg.exceptions import ConfargWarning, SymbolImportError
+from confarg.exceptions import ConfargError, ConfargWarning, SymbolImportError
 from confarg.typedload._coerce import (
     _NONE_TOKENS,
     _enum_choices,
@@ -687,8 +687,9 @@ def _blob_document_from_argv(target: Any, argv: Sequence[str]) -> MergeDict:
     either way and the walk already reads both: a ``{``-prefixed blob, where vanilla's loop
     decodes one (:func:`~confarg._parse_cli._takes_whole_value`), and a bare string,
     which is the shorthand for ``{bind: <string>}`` and must buy the same argument flags.  A
-    malformed blob is skipped rather than raised on — registration is best-effort, and
-    the real error belongs to the parse.  A key that would have to descend through a
+    blob is decoded as the loop decodes it (:func:`~confarg._cast.decode_json`), and one it
+    refuses is skipped rather than raised on — registration is best-effort, and the real
+    error belongs to the parse.  A key that would have to descend through a
     shorthand already collected is skipped too: it is the refinement, not a competitor.
 
     Dev Notes:
@@ -719,8 +720,8 @@ def _blob_document_from_argv(target: Any, argv: Sequence[str]) -> MergeDict:
             # Read whole only where vanilla's loop decodes it; elsewhere it is text (BUG-216).
             if not _takes_whole_value(_resolve_field_type(target, parts), val):
                 continue
-            with contextlib.suppress(json.JSONDecodeError):
-                decoded = json.loads(val)
+            with contextlib.suppress(json.JSONDecodeError, ConfargError):
+                decoded = decode_json(val, f"--{key}", parts)
                 if isinstance(decoded, dict):
                     _set_nested(doc, parts, decoded)
         else:
