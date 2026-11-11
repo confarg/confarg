@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import uuid
 from dataclasses import dataclass, field, make_dataclass
 from pathlib import Path
@@ -1193,11 +1194,11 @@ class TestCliListAppend:
         result = confarg.load(Parent, argv=["--values+", "10", "20"], env={})
         assert result.values == [10, 20]
 
-    def test_bracket_string_treated_as_literal_not_json(self) -> None:
-        """A value starting with '[' that is not valid JSON is treated as a plain string."""
+    def test_lone_bracket_string_that_is_no_json_is_refused(self) -> None:
+        """A lone value starting with '[' is the whole list, so one that is not valid JSON is refused (BUG-323)."""
         WithList = make_target("tags", list[str], default_factory=list)
-        result = confarg.load(WithList, argv=["--tags", "["], env={})
-        assert result.tags == ["["]
+        with pytest.raises(ConfargError, match=re.escape("Invalid JSON for --tags: Expecting value")):
+            confarg.load(WithList, argv=["--tags", "["], env={})
 
     def test_bracket_string_in_append_mode_treated_as_literal(self) -> None:
         """In append mode, a value starting with '[' that is not valid JSON is treated as a string."""

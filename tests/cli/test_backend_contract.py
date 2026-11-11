@@ -2455,10 +2455,11 @@ class TestJsonArrayTokenContract:
         cfg = loader.load(_WithStrList, argv=["--input", '["a", "b"]'], env={})
         assert cfg.input == ["a", "b"]
 
-    def test_invalid_json_falls_back_to_literal(self, loader: ConfargLoader) -> None:
-        """A non-JSON '[' token is not parsed; it stays a single literal element."""
-        cfg = loader.load(_WithStrBoolList, argv=["--values", "[oops"], env={})
-        assert cfg.values == ["[oops"]
+    def test_invalid_json_is_refused(self, loader: ConfargLoader) -> None:
+        """A lone '[' token that is no JSON is no item either: the list reads nothing else (BUG-323)."""
+        with pytest.raises(ConfargError) as excinfo:
+            loader.load(_WithStrBoolList, argv=["--values", "[oops"], env={})
+        assert str(excinfo.value) == "Invalid JSON for --values: Expecting value: line 1 column 2 (char 1)"
 
     def test_merged_dict_matches_vanilla(self, loader: ConfargLoader) -> None:
         """The raw merged dict is byte-identical across all five loaders (plain values)."""
@@ -5673,6 +5674,143 @@ class TestADecodedValueIsData:
         """A JSON object writing one key twice is refused, never read as text nor kept last (BUG-313)."""
         with pytest.raises(ConfargError, match=re.escape(f"Cannot set {argv[0]!r}: {reason}.")):
             loader.load(_DecodedInto, argv=argv, env={})
+
+
+@dataclass
+class _IllFormedInto:
+    """Fields taking nothing but an object or a list, unions holding another variant beside one, and lists of items."""
+
+    d: dict[str, int] = dataclasses.field(default_factory=dict)
+    sec: _DefaultedSection = dataclasses.field(default_factory=_DefaultedSection)
+    maybe_d: dict[str, int] | None = None
+    text_or_d: str | dict[str, int] = ""
+    int_or_d: int | dict[str, int] = 0
+    path_or_d: Path | dict[str, int] = Path()
+    ints: list[int] = dataclasses.field(default_factory=list)
+    strs: list[str] = dataclasses.field(default_factory=list)
+    anys: list[Any] = dataclasses.field(default_factory=list)
+    dicts: list[dict[str, int]] = dataclasses.field(default_factory=list)
+    maybe_dicts: list[dict[str, int]] | None = None
+    text_or_dicts: str | list[dict[str, int]] = ""
+    pair: tuple[int, int] = (0, 0)
+    flag_or_strs: bool | list[str] = False
+
+
+_OBJECT_ERROR = "Expecting property name enclosed in double quotes: line 1 column 9 (char 8)"
+_ARRAY_ERROR = "Expecting value: line 1 column 4 (char 3)"
+_WORDS_ERROR = "Expecting value: line 1 column 2 (char 1)"
+
+
+class TestIllFormedJson:
+    """A ``{``/``[``-led value that is no JSON: refused where its type reads nothing else, else text (BUG-323)."""
+
+    @pytest.mark.parametrize(
+        ("argv", "error"),
+        [
+            pytest.param(["--d", '{"x": 1,'], _OBJECT_ERROR, id="dict"),
+            pytest.param(["--sec", '{"x": 1,'], _OBJECT_ERROR, id="struct"),
+            pytest.param(["--maybe_d", '{"x": 1,'], _OBJECT_ERROR, id="optional-dict"),
+            pytest.param(["--ints", "[1,"], _ARRAY_ERROR, id="list"),
+            pytest.param(["--strs", "[a b]"], _WORDS_ERROR, id="list-of-text"),
+            pytest.param(["--dicts", '{"x": 1,'], _OBJECT_ERROR, id="item"),
+            pytest.param(["--maybe_dicts", '{"x": 1,'], _OBJECT_ERROR, id="optional-list-item"),
+            pytest.param(["--dicts+", '{"x": 1,'], _OBJECT_ERROR, id="appended-item"),
+        ],
+    )
+    def test_it_is_refused_where_the_type_takes_nothing_else(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        error: str,
+    ) -> None:
+        """The parse proves it wrong, naming the flag: no reading of it as text could build the field."""
+        with pytest.raises(ConfargError) as excinfo:
+            loader.load(_IllFormedInto, argv=argv, env={})
+        assert str(excinfo.value) == f"Invalid JSON for {argv[0]}: {error}"
+
+    def test_a_fixed_length_sequence_refuses_it(self, whole_value_arity_loader: ConfargLoader) -> None:
+        """A lone ``[``-led token is the whole tuple, as a list's is, not its first position."""
+        with pytest.raises(ConfargError) as excinfo:
+            whole_value_arity_loader.load(_IllFormedInto, argv=["--pair", "[1,"], env={})
+        assert str(excinfo.value) == f"Invalid JSON for --pair: {_ARRAY_ERROR}"
+
+    def test_a_variant_taking_text_takes_it(self, loader: ConfargLoader) -> None:
+        """Construction picks the variant, as it does for any text: a ``str``, a ``Path``."""
+        cfg = loader.load(
+            _IllFormedInto,
+            argv=["--text_or_d", '{"x": 1,', "--path_or_d", '{"x": 1,'],
+            env={},
+        )
+        assert cfg.text_or_d == '{"x": 1,'
+        assert type(cfg.text_or_d) is str
+        assert cfg.path_or_d == Path('{"x": 1,')
+
+    @pytest.mark.parametrize(
+        ("argv", "reason"),
+        [
+            pytest.param(["--int_or_d", '{"x": 1,'], f"dict[str, int]: invalid JSON: {_OBJECT_ERROR}", id="object"),
+            # No one-element list from it: the list variant reads a `[`-led token as JSON or not at all.
+            pytest.param(["--flag_or_strs", "[a b]"], f"list[str]: invalid JSON: {_WORDS_ERROR}", id="array"),
+        ],
+    )
+    def test_a_union_refusing_it_names_the_decode_error(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        reason: str,
+    ) -> None:
+        """No variant takes the text: the variant reading its shape gives the decode error as its reason."""
+        with pytest.raises(TypeCoercionError) as excinfo:
+            loader.load(_IllFormedInto, argv=argv, env={})
+        assert f"\n  {reason}" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        ("argv", "field", "expected"),
+        [
+            pytest.param(["--strs+", "[a b]"], "strs", ["[a b]"], id="ill-formed-array-is-a-text-item"),
+            pytest.param(["--strs+", '{"x": 1}'], "strs", ['{"x": 1}'], id="object-at-a-text-item"),
+            pytest.param(["--anys+", '{"x": 1}'], "anys", ['{"x": 1}'], id="object-at-an-any-item"),
+            pytest.param(["--dicts+", '{"x": 1}'], "dicts", [{"x": 1}], id="object-at-a-dict-item"),
+        ],
+    )
+    def test_an_appended_item_is_decoded_where_its_type_takes_the_shape(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        field: str,
+        expected: list[Any],
+    ) -> None:
+        """An item is read as a whole value of the item type is: JSON only where that type takes the shape."""
+        assert getattr(loader.load(_IllFormedInto, argv=argv, env={}), field) == expected
+
+    # Optionality changes nothing, and neither does a scalar variant beside the list.
+    _DICT_LISTS = pytest.mark.parametrize("field", ["dicts", "maybe_dicts", "text_or_dicts"])
+
+    @_DICT_LISTS
+    def test_items_are_decoded_as_appended_ones_space_separated(
+        self,
+        space_sep_loader: ConfargLoader,
+        field: str,
+    ) -> None:
+        """A whole value's items read as an append's do: ``{``-led items of a dict list are objects."""
+        cfg = space_sep_loader.load(_IllFormedInto, argv=[f"--{field}", '{"x": 1}', '{"x": 2}'], env={})
+        assert getattr(cfg, field) == [{"x": 1}, {"x": 2}]
+
+    @_DICT_LISTS
+    def test_items_are_decoded_as_appended_ones_repeated(self, repeated_loader: ConfargLoader, field: str) -> None:
+        """A whole value's items read as an append's do: ``{``-led items of a dict list are objects."""
+        cfg = repeated_loader.load(_IllFormedInto, argv=[f"--{field}", '{"x": 1}', f"--{field}", '{"x": 2}'], env={})
+        assert getattr(cfg, field) == [{"x": 1}, {"x": 2}]
+
+    def test_a_second_token_makes_it_an_item_space_separated(self, space_sep_loader: ConfargLoader) -> None:
+        """Only a lone token is a whole value: beside another, the ``[``-led text is an item."""
+        cfg = space_sep_loader.load(_IllFormedInto, argv=["--strs", "[a b]", "c"], env={})
+        assert cfg.strs == ["[a b]", "c"]
+
+    def test_a_second_token_makes_it_an_item_repeated(self, repeated_loader: ConfargLoader) -> None:
+        """A later occurrence extends the run, so the first token is an item, not a refused whole value."""
+        cfg = repeated_loader.load(_IllFormedInto, argv=["--strs", "[a b]", "--strs", "c"], env={})
+        assert cfg.strs == ["[a b]", "c"]
 
 
 class TestCollectionPatchListSyntax:

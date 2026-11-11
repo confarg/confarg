@@ -3,7 +3,7 @@
 `merge()` returns an **unvalidated** dict: it is not guaranteed to be constructible into the target.
 Convertibility is decided only in `build()`/`construct()`, which raise `TypeCoercionError`/`MissingFieldError`.
 
-- Parsers reject only what they can **prove wrong at parse time** (a flag missing its value, an empty `--flag` for a union whose only sequence variant is a fixed tuple, invalid JSON after an explicit `.json` cast).
+- Parsers reject only what they can **prove wrong at parse time** (a flag missing its value, an empty `--flag` for a union whose only sequence variant is a fixed tuple, invalid JSON after an explicit `.json` cast, or in a `{`- or `[`-led value whose type reads nothing but the object or the list it opens).
   A config file or env var carrying `"abc"` for an `int` merges cleanly and fails in `build()`.
 - **Do not add convertibility validation to the merge layer.**
   It would make channels disagree (a CLI check that env/files skip) and it cannot see expression results.

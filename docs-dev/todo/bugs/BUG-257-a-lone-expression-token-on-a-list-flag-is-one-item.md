@@ -2,7 +2,7 @@
 filed: 2026-10-18
 where:
   - src/confarg/_parse_cli.py::_varlen_value
-  - src/confarg/_parse_cli.py::_lone_json_array
+  - src/confarg/_parse_cli.py::_lone_json_value
   - src/confarg/cli/_build.py
 effort: M  # vanilla's loop and the adapters' registration of the flag, on five front-ends
 risk: medium
@@ -14,7 +14,7 @@ introduced_by: [PR-5]  # the CLI read every token of a list flag as an item, the
 # BUG-257 — A lone expression token on a list flag is one item, where the environment reads it as the whole list
 
 `APP_NAMES='${other}'` sets a `list[str]` field to the list `${other}` resolves to, and so does `--names.json '"${other}"'`, but `--names '${other}'` stores `['${other}']`, a list of one item, which construction then refuses as a list where a `str` item stands.
-A lone `[`-led token is already a whole-value spelling of such a flag (`_lone_json_array`, [token consumption](../../architecture/cli-parsing/token-consumption.md#token-consumption)); a lone `${...}` token is not.
+A lone `[`-led token is already a whole-value spelling of such a flag (`_lone_json_value`, [token consumption](../../architecture/cli-parsing/token-consumption.md#token-consumption)); a lone `${...}` token is not.
 Fix direction: decide whether a lone token that is one whole expression stands for the whole value, as the `[` token does, on vanilla's loop and the adapters' registration alike; `--names a '${other}'` would stay two items.
 
 Origin: latent since the initial version (PR-5), whose CLI made every token of a list flag an item and whose environment parser stored a variable's text as the whole value; the reproduction gives the same two results at PR-5.

@@ -20,7 +20,7 @@ import functools
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn
+from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn, Union
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
@@ -76,6 +76,7 @@ from confarg._types import (
     _elem_type,
     _fixed_position,
     _fixed_seq_types,
+    _IllFormedJson,
     _is_callable,
     _is_dict,
     _is_namedtuple,
@@ -83,6 +84,7 @@ from confarg._types import (
     _is_struct_like,
     _is_union,
     _is_varlen_collection,
+    _json_shape_readers,
     _namedtuple_fields,
     _resolve_type,
     _root_kind,
@@ -945,25 +947,65 @@ def detect_force_cast(
     return parent, path[-1]
 
 
-def _parse_json_arg(token: str, flag: str, at: Sequence[str | int]) -> Any:
-    """Parse token as JSON, raising ConfargError on invalid JSON.
+def _takes_json(tp: Any, value: str) -> bool:
+    """Return whether the value *value*, at a position of type *tp*, is decoded as JSON.
+
+    A ``{``- or ``[``-led value is, where a variant of *tp* reads the object or the array it
+    opens (:func:`~confarg._types._reads_json_shape`); anywhere else it is text, as any value
+    is. The one answer for a whole value and an item, on argv and in the environment alike;
+    *tp* is None at a position no type describes.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+    """
+    return value.startswith(("{", "[")) and tp is not None and _json_shape_readers(tp, value[0])[0]
+
+
+def _read_json(value: str, tp: Any, spelling: str, at: Sequence[str | int]) -> Any:
+    """Read the value *value* a position of type *tp* takes as JSON (:func:`_takes_json`), as data.
+
+    Text that is no JSON is refused, naming *spelling*, where every variant of *tp* reads the
+    shape it opens: no reading of it builds the position. Where a variant may take it as
+    text, it is that text, marked :class:`~confarg._types._IllFormedJson` so construction
+    gives the decode error should no variant take it.
 
     Args:
-        token: The raw CLI token to parse.
-        flag: The flag name (e.g. ``--foo``) used in the error message.
-        at: The path the value lands at, which it is counted from.
+        value: The ``{``- or ``[``-led text.
+        tp: The type of the position it lands at.
+        spelling: The flag or the variable as its channel writes it, for a refusal.
+        at: The position it lands at, from the configuration root.
 
     Returns:
-        The decoded JSON value.
+        The decoded value, or the text marked as no JSON.
 
     Raises:
-        ConfargError: If the token is not valid JSON.
+        ConfargError: If *value* is no JSON and every variant of *tp* reads its shape, or
+            :func:`~confarg._cast.decode_json` refuses the decoded value.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
     """
     try:
-        return decode_json(token, flag, at)
+        return decode_json(value, spelling, at)
     except json.JSONDecodeError as e:
-        msg = f"Invalid JSON for {flag}: {e}"
-        raise ConfargError(msg) from e
+        if _json_shape_readers(tp, value[0])[1]:
+            raise ConfargError.invalid_json(spelling, e) from e
+        return _IllFormedJson(value)
+
+
+def _read_item(et: Any, token: str, spelling: str, at: Sequence[str | int]) -> Any:
+    """Read the item *token* of a collection whose items are of type *et*, as a whole value of *et* is read.
+
+    JSON where *et* reads the shape it opens (:func:`_read_json`), else a token coerced as
+    the merged dict holds it (:func:`~confarg.typedload._coerce._try_coerce`); *at* is the
+    item's own position.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+    """
+    if _takes_json(et, token):
+        return _read_json(token, et, spelling, at)
+    return _try_coerce(et, _StrToken(token), spelling)
 
 
 class _EqValue(str):
@@ -1372,6 +1414,15 @@ class _ParseCtx:
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
+    refused_runs: dict[tuple[str, ...], ConfargError] = field(default_factory=dict)
+    """The refusal of each run whose one token was refused as a whole value, keyed by field path.
+
+    A later occurrence of its flag makes that token an item, so the refusal waits for the
+    end of argv, where it is raised if the run never grew (:meth:`write_run`).
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+    """
     #: What the layers below argv hold: the config files, then the environment.
     below: MergeDict = field(default_factory=dict)
     #: The nodes argv names anywhere (:func:`_argv_named_nodes`): a lower layer's naming types none of them.
@@ -1393,6 +1444,25 @@ class _ParseCtx:
             _set_nested(self.data, path, value, self.at)
         else:
             _set_nested(self.data, [_defaults.ROOT_KEY], value, self.root_at)
+
+    def write_run(self, path: list[str], tokens: list[str], shape: Callable[[], Any]) -> None:
+        """Write what *shape* makes of the run *tokens* a multi-token flag accumulated at *path*.
+
+        A run of one token is a whole value, which a later occurrence turns into an item: its
+        refusal is kept in :attr:`refused_runs` until then, and the run writes nothing.
+
+        Dev Notes:
+            docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+        """
+        self.refused_runs.pop(tuple(path), None)
+        try:
+            value = shape()
+        except ConfargError as e:
+            if len(tokens) != 1:
+                raise
+            self.refused_runs[tuple(path)] = e
+            return
+        self.write(path, value)
 
     def naming(self, prefix: tuple[str, ...]) -> Any:
         """Return what the node at *prefix* names for the flag being typed (:data:`NamingView`).
@@ -1447,28 +1517,23 @@ def _collect_append_items(  # the flag's spelling and path name it in a refusal
     """Collect append-mode values from args, returning (items, new_i).
 
     Accepts a JSON array literal as a single token, otherwise consumes space-separated
-    tokens until the next flag. A JSON item is data (:func:`~confarg._cast.decode_json`);
-    *spelling* names the flag or the variable that refuses a reserved key in one, and *at*
-    the path of the list the items are appended to, which an item is counted from.
+    tokens until the next flag, each read as a whole value of *et* is (:func:`_read_item`):
+    a ``[``-led token that is no JSON is an item. A JSON value is data
+    (:func:`~confarg._cast.decode_json`); *spelling* names the flag or the variable that
+    refuses one, and *at* the path of the list the items are appended to, which an item is
+    counted from.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
     """
     if i < len(args) and not _looks_like_flag(args[i]) and args[i].startswith("["):
-        try:
-            parsed = decode_json(args[i], spelling, at)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, list):
+        parsed = _try_parse_json_list(args[i], spelling, at)
+        if parsed is not None:
             return parsed, i + 1
 
     items: list[Any] = []
     while i < len(args) and not _looks_like_flag(args[i]):
-        tok = args[i]
-        if tok.startswith("{"):
-            try:
-                items.append(decode_json(tok, spelling, (*at, len(items))))
-            except json.JSONDecodeError:
-                items.append(_try_coerce(et, _StrToken(tok), spelling))
-        else:
-            items.append(_try_coerce(et, _StrToken(tok), spelling))
+        items.append(_read_item(et, args[i], spelling, (*at, len(items))))
         i += 1
     return items, i
 
@@ -1568,7 +1633,7 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
     items: list[Any] = []
     for et in _fixed_seq_types(ft) or ():
         _require_value(args, i, token, usage)
-        items.append(_try_coerce(et, _StrToken(args[i]), token))
+        items.append(_read_item(et, args[i], token, (*path, len(items))))
         i += 1
     ctx.write(path, items)
     return i
@@ -1577,7 +1642,8 @@ def _consume_fixed_tuple_args(  # noqa: PLR0913, PLR0917  # token only names the
 def _union_seq_value(ft: Any, tokens: list[str], token: str, at: Sequence[str | int]) -> Any:
     """Shape a union-with-sequence-variant field's accumulated tokens into its value.
 
-    A single token is stored as a bare scalar when the union also has a scalar
+    A lone ``[``-led token is the whole value, read as JSON (:func:`_lone_json_value`).
+    Any other single token is stored as a bare scalar when the union also has a scalar
     variant (so ``--input foo`` stays ``'foo'``); it is marked with
     ``_UnionSeqToken`` so that, if every scalar variant rejects it, ``construct``
     can still fall back to filling the sequence variant as a one-element list
@@ -1585,14 +1651,16 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str, at: Sequence[str | 
     A single none word the union reads as ``None`` is stored bare too, the
     environment's shape, so ``--xs none`` nulls a ``list[int] | None`` as
     ``APP_XS=none`` does (BUG-163). Otherwise the tokens form a list and tuple/list/set disambiguation is
-    deferred to ``construct``. No tokens builds the empty list when the union has
+    deferred to ``construct``, each item read as JSON where a type the sequence variants hold
+    at its position reads the shape it opens (:func:`_union_item_type`), as a list's item is.
+    No tokens builds the empty list when the union has
     a varlen variant (e.g. ``int | list[int]`` → ``[]``); otherwise it is a
     missing-value error.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#unions-with-sequence-variants
     """
-    parsed = _lone_json_array(tokens, token, at)
+    parsed = _lone_json_value(ft, tokens, token, at)
     if parsed is not None:
         return parsed
     if not tokens:
@@ -1603,7 +1671,32 @@ def _union_seq_value(ft: Any, tokens: list[str], token: str, at: Sequence[str | 
         return _UnionSeqToken(_StrToken(tokens[0]))
     if len(tokens) == 1 and _selects_none(_union_args(ft), _StrToken(tokens[0])):
         return _StrToken(tokens[0])
-    return [_StrToken(t) for t in tokens]
+    items: list[Any] = []
+    for n, t in enumerate(tokens):
+        it = _union_item_type(ft, n)
+        items.append(_read_json(t, it, token, (*at, n)) if _takes_json(it, t) else _StrToken(t))
+    return items
+
+
+def _union_item_type(ft: Any, n: int) -> Any:
+    """Return the type the sequence variants of the union *ft* hold at the position *n*, or None if none holds one.
+
+    One type where they agree, else their union, so an item is decoded as JSON where any of
+    them reads the shape it opens and refused as no JSON only where every one does
+    (:func:`_read_json`), whether the union is an optional list or holds a scalar too.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+    """
+    held: list[Any] = []
+    for variant in _union_args_no_none(ft):
+        if (tt := _fixed_seq_types(variant)) is not None:
+            held.extend(tt[n : n + 1])
+        elif _is_varlen_collection(variant):
+            held.append(_elem_type(variant))
+    if not held:
+        return None
+    return held[0] if len(held) == 1 else Union[tuple(held)]  # noqa: UP007  # a union built at runtime
 
 
 def _handle_root_cast(ctx: _ParseCtx, i: int, token: str, *, kind: RootKind, cast_name: str) -> int:
@@ -1693,38 +1786,42 @@ def _try_parse_json_list(arg: str, spelling: str, at: Sequence[str | int]) -> li
     return parsed if isinstance(parsed, list) else None
 
 
-def _lone_json_array(tokens: list[str], spelling: str, at: Sequence[str | int]) -> list[Any] | None:
-    """Return the decoded array when *tokens* is one inline JSON array, else None.
+def _lone_json_value(ft: Any, tokens: Sequence[str], spelling: str, at: Sequence[str | int]) -> Any:
+    """Return what *tokens* are as the whole value of *ft* when they are one ``[``-led token, else None.
 
     The inline array is a **whole-value** spelling, so it is only that when it stands
     alone: a second token — from the same occurrence or a later one — makes every token
-    an ordinary item instead. Elements are returned raw (plain values, not
-    ``_StrToken``), which is what exempts them from the stealing rule and makes ``null``
-    expressible.
+    an ordinary item instead. Standing alone, it is read as any JSON-led value is
+    (:func:`_read_json`): decoded, refused if it is no JSON where *ft* reads nothing but an
+    array, else text for the variant that takes it. Elements are returned raw (plain
+    values, not ``_StrToken``), which is what exempts them from the stealing rule and makes
+    ``null`` expressible.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
     """
     if len(tokens) != 1 or not tokens[0].startswith("["):
         return None
-    return _try_parse_json_list(tokens[0], spelling, at)
+    return _read_json(tokens[0], ft, spelling, at)
 
 
 def _varlen_value(ft: Any, tokens: list[str], spelling: str, at: Sequence[str | int]) -> Any:
     """Shape a varlen collection field's accumulated tokens into its stored value.
 
-    One inline JSON array standing alone is decoded as the whole value; otherwise every
-    token becomes an element, coerced eagerly to the element type so the merged dict
-    carries the same types whichever channel supplied them.
+    One inline JSON array standing alone is the whole value (:func:`_lone_json_value`);
+    otherwise every token becomes an element, read as a whole value of the element type is
+    (:func:`_read_item`), so the merged dict carries the same types whichever channel
+    supplied them, and an appended item reads as this one does.
 
     Dev Notes:
         docs-dev/architecture/cli-parsing/token-consumption.md#token-consumption
     """
-    parsed = _lone_json_array(tokens, spelling, at)
+    parsed = _lone_json_value(ft, tokens, spelling, at)
     if parsed is not None:
         return parsed
     et = _elem_type(ft)
-    return [_try_coerce(et, _StrToken(t), spelling) for t in tokens]
+    return [_read_item(et, t, spelling, (*at, n)) for n, t in enumerate(tokens)]
 
 
 def _consume_multi_tokens(ctx: _ParseCtx, i: int, path: list[str]) -> tuple[list[str], int]:
@@ -1754,22 +1851,24 @@ def _consume_collection_or_scalar(
 ) -> int:
     """Consume collection (array/tuple/varlen) or scalar value; return new arg index."""
     args = ctx.argv
-    # Fixed-length sequence: one whole-value JSON array in place of its positional tokens.
-    # The multi-token families below decide the same thing on their accumulated tokens.
+    # Fixed-length sequence: one whole-value JSON array in place of its positional tokens,
+    # a `[`-led token that is no JSON being one only where it stands alone before the next
+    # flag. The multi-token families below decide the same thing on their accumulated tokens.
     tt = _fixed_seq_types(ft)
-    if (
-        tt is not None
-        and i < len(args)
-        and not _looks_like_flag(args[i])
-        and (parsed := _lone_json_array([args[i]], token, path)) is not None
-    ):
-        ctx.write(path, parsed)
-        return i + 1
+    if tt is not None and i < len(args) and not _looks_like_flag(args[i]):
+        parsed = None
+        if i + 1 == len(args) or _looks_like_flag(args[i + 1]):
+            parsed = _lone_json_value(ft, [args[i]], token, path)
+        elif args[i].startswith("["):
+            parsed = _try_parse_json_list(args[i], token, path)
+        if parsed is not None:
+            ctx.write(path, parsed)
+            return i + 1
 
     # Variable-length collection → consume until the next flag, extending a prior occurrence
     if _is_varlen_collection(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        ctx.write(path, _varlen_value(ft, tokens, token, path))
+        ctx.write_run(path, tokens, lambda: _varlen_value(ft, tokens, token, path))
         return i
 
     # Fixed-length sequence (tuple[X, Y] or a namedtuple) → consume exact count
@@ -1779,7 +1878,7 @@ def _consume_collection_or_scalar(
     # Union with a sequence variant → consume greedily (disambiguation deferred to construct)
     if _union_has_seq_variant(ft):
         tokens, i = _consume_multi_tokens(ctx, i, path)
-        ctx.write(path, _union_seq_value(ft, tokens, token, path))
+        ctx.write_run(path, tokens, lambda: _union_seq_value(ft, tokens, token, path))
         return i
 
     # Default: consume one scalar value
@@ -1805,12 +1904,7 @@ def _accepts_object_value(ft: Any) -> bool:
     Dev Notes:
         docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags
     """
-
-    def accepts(v: Any) -> bool:
-        v = _resolve_type(v)
-        return _is_struct(v) or _is_namedtuple(v) or _is_dict(v) or _is_callable(v)
-
-    return accepts(ft) or (_is_union(ft) and any(accepts(v) for v in _union_args_no_none(ft)))
+    return _json_shape_readers(ft, "{")[0]
 
 
 def _takes_whole_value(ft: Any | None, value: str) -> bool:
@@ -2018,7 +2112,7 @@ def _consume_typed_arg(
     # JSON object → dataclass / dict / callable / union-with-dc
     if i < len(args) and _takes_whole_value(ft, args[i]):
         _forget_tokens_below(ctx, path)
-        ctx.write(path, _parse_json_arg(args[i], token, path))
+        ctx.write(path, _read_json(args[i], ft, token, path))
         return i + 1
 
     return _consume_collection_or_scalar(ctx, i, token, ft, path)
@@ -2233,4 +2327,6 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
             # the host's: it is the stray vanilla refuses.
             raise UnknownArgumentError.unexpected_positional(argv[i])
 
+    if ctx.refused_runs:  # a lone token no later occurrence made an item
+        raise next(iter(ctx.refused_runs.values()))
     return fold_root_json(ctx.data, root_json, merge_root(target)), config_files

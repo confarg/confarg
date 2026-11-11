@@ -37,7 +37,6 @@ from confarg._merge import (
 from confarg._naming import MergedNaming, named_member_names
 from confarg._parse_cli import (
     NamingView,
-    _accepts_object_value,
     _appended_element_type,
     _check_mount_subpath,
     _collect_append_items,
@@ -50,10 +49,12 @@ from confarg._parse_cli import (
     _merge_suffix_on_root,
     _open_callable_shorthand,
     _path_unknown,
+    _read_json,
     _reserved_segment,
     _resolve_field_type,
     _restart_restated_node,
     _takes_callable_shorthand,
+    _takes_json,
     _Unreached,
     _unreached,
     _walk_target,
@@ -61,7 +62,6 @@ from confarg._parse_cli import (
     detect_force_cast,
 )
 from confarg._types import (
-    _is_seq_variant,
     _is_struct,
     _is_struct_like,
     _is_union,
@@ -71,7 +71,6 @@ from confarg._types import (
     _StrToken,
     _struct_fields,
     _union_branches,
-    _union_has_seq_variant,
 )
 from confarg.exceptions import (
     ConfargError,
@@ -461,41 +460,23 @@ def _warn_unknown_env_field(orig_key: str, parts: list[str], target: Any, walk_t
     return True
 
 
-def _accepts_json_for(ft: Any, value: str) -> bool:
-    """Return True when a ``[``/``{``-led env value should be JSON-parsed for type ``ft``.
-
-    The opening bracket must match a shape the type can accept, and the shape is not this
-    channel's question to answer: ``{`` defers to
-    :func:`~confarg._parse_cli._accepts_object_value`, the predicate the CLI whole-value
-    flag already consults, and ``[`` to :func:`~confarg._types._is_seq_variant` and its
-    union arm.  Asking here again is what let a plain class take the blob from the
-    environment while the CLI refused it (BUG-39).
-
-    Dev Notes:
-        docs-dev/architecture/environment-parsing.md#environment-parsing
-    """
-    if value.startswith("{"):
-        return _accepts_object_value(ft)
-    if value.startswith("["):
-        return _is_seq_variant(ft) or _union_has_seq_variant(ft)
-    return False
-
-
 def _store_env_value(parts: list[str], ft: Any, value: str, data: MergeDict, orig_key: str, at: MergeAt) -> None:  # noqa: PLR0913, PLR0917  # where it lands is typed by at
     """Parse an env var string value and store it at the resolved path in data, *at* where *data* stands.
 
-    A JSON value is data (:func:`~confarg._cast.decode_json`), refused naming *orig_key* if it
+    A ``{``- or ``[``-led value is read as the flag's is, by the one decision-maker
+    (:func:`~confarg._parse_cli._read_json`): JSON where the type reads its shape, data
+    refused naming *orig_key* if it is no JSON where the type reads nothing else, or if it
     holds a key confarg reserves. The empty path is a root set whole, whose value
     ``__root__`` holds, as the bare ``--<prefix>`` flag writes it.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
     """
     written = parts or [_defaults.ROOT_KEY]
-    if _accepts_json_for(ft, value):
-        with contextlib.suppress(json.JSONDecodeError):
-            parsed = decode_json(value, orig_key, parts)
-            if isinstance(parsed, list | dict):
-                _set_nested(data, written, parsed, at)
-                return
-    _set_nested(data, written, _try_coerce(ft, _StrToken(value), orig_key), at)
+    if _takes_json(ft, value):
+        _set_nested(data, written, _read_json(value, ft, orig_key, parts), at)
+    else:
+        _set_nested(data, written, _try_coerce(ft, _StrToken(value), orig_key), at)
 
 
 def _prefixed_variables(

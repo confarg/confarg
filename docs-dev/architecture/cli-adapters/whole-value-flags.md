@@ -81,7 +81,7 @@ Before REF-72 the adapters replayed that accumulation off argv with a reader of 
 
 A namedtuple's sub-flags keep their spelling across the move, merged in argv order as on the plain spelling, and a sub-flag written last descends into the same generic `_set_nested` `__base__` — so `--pt 1 2 --pt.y 9` under `Point | None` is `{__base__: ['1', '2'], 'y': 9}` on all five front-ends, and `build()` lays the patch over the positions on all five alike (BUG-160).
 
-For the namedtuple, the lone token is decoded by vanilla's two decoders (`_lone_json_array` for `[…]`, `_accepts_object_value` + `_parse_json_arg` for `{…}`).
+For the namedtuple, the lone token is decoded by vanilla's two decoders (`_lone_json_value` for `[…]`, `_takes_whole_value` + `_read_json` for `{…}`).
 Sub-flags refine it as they refine a struct's whole value, and each is stored under the key the user spelled, name and index alike (BUG-65): `--pt.x 13 --pt.0 9` reaches the merged dict as `{'x': 13, '0': 9}`, and `build()` owns the win, constructing an all-index dict positionally and refusing a mixed one with `Unknown field(s)`.
 The arity flag's positions are the `__base__` a later sub-flag patches beside, so `--pt 1 2 --pt.0 9` is `{__base__: [1, 2], '0': 9}`, which builds `Pt(9, 2)` as a plain tuple's index patch does.
 Every occurrence is written where argv puts it, so the latest writer wins and an earlier one is overwritten as it is in any sequential loop — `--pair.y 7 --pair 13 42` is `[13, 42]`, the reverse order patches the positions, and `--pt.x 1 --pt 7 8 --pt.y 2` is `{__base__: [7, 8], 'y': 2}` ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)).

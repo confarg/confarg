@@ -91,7 +91,7 @@ Wraps the composed dict and answers what the target used to answer:
 - `value_at(parts)` / `exists(parts)` — walks dicts by key and lists by integer index, exactly as `_pipeline._lookup_declared` (`_pipeline.py:99-117`) does.
   Reuse that walk rather than rewriting.
 - `accepts_container(parts)` — whether a `{`/`[`-leading token should be JSON-decoded, answered from the existing value's type.
-  Replaces the type-driven `_parse_env._accepts_json_for`.
+  Replaces the type-driven `_parse_cli._takes_json`.
 
 ### Phase 3 — value inference (`src/confarg/untyped/_infer.py`)
 

@@ -2,8 +2,8 @@
 
 `--env '{"a": "b"}'` and `MYAPP_ENV='{"a": "b"}'` decode the same for `dict[str, str]` and for `dict[str, str] | None`.
 Optionality says what a field may be *unset* to; it is not a statement about its syntax, so making `| None` the difference between a decoded mapping and a raw string would be a spelling trap.
-Both predicates — `_parse_cli._accepts_object_value` and the `accepts_obj` test in `_parse_env._store_env_value` — therefore ask their union arm about every type the bare arm accepts: structs, namedtuples, dicts and callables.
-In `_accepts_object_value` that is literally one test, the inner `accepts()`, applied to the type and then to each non-`None` union variant; nothing may answer only for the bare arm.
+Both channels therefore ask one predicate, `_types._json_shape_readers` (through `_parse_cli._accepts_object_value` and `_parse_cli._takes_json`), which asks the union arm about every type the bare arm accepts: structs, namedtuples, dicts and callables.
+It is literally one test, `_types._reads_json_shape`, applied to the type and then to each non-`None` union variant; nothing may answer only for the bare arm.
 
 Both channels were fixed in one change on purpose.
 The gap was symmetric, so repairing only the CLI would have *created* a divergence where none existed, which [invariants](../invariants.md#cross-channel-parity) forbids.

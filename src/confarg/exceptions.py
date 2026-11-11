@@ -395,6 +395,19 @@ class ConfargError(Exception):
         )
 
     @classmethod
+    def invalid_json(cls, spelling: str, error: Exception) -> ConfargError:
+        """Return the error for a value that *spelling* gives as JSON, which is none, *error* its decoder's.
+
+        The one spelling for a ``json`` cast, the root cast, and a ``{``- or ``[``-led value
+        whose type reads nothing else, on argv and in the environment alike: ``--d``,
+        ``APP_D``, ``--d.json``.
+
+        Dev Notes:
+            docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+        """
+        return cls(f"Invalid JSON for {spelling}: {error}")
+
+    @classmethod
     def too_deep(cls, action: str, path: FieldPath | None, bound: int, subject: str = "it") -> ConfargError:
         """Return the error for a value nesting deeper than *bound* levels, *path* the first position past it.
 

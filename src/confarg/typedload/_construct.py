@@ -52,6 +52,7 @@ from confarg._types import (
     _fixed_position,
     _fixed_seq_types,
     _generic_origin,
+    _IllFormedJson,
     _init_params,
     _is_callable,
     _is_dict,
@@ -69,6 +70,7 @@ from confarg._types import (
     _namedtuple_defaults,
     _namedtuple_fields,
     _Pinned,
+    _reads_json_shape,
     _resolve_type,
     _scalar_read_as,
     _self_defaulting_descriptor,
@@ -1582,15 +1584,20 @@ def _variant_reasons(non_none: list[Any], refusals: _Refusals, data: Any, path: 
     :func:`~confarg.exceptions._variant_reason` reads: a refusal saying only that *data* is no
     value of the variant, or not of its shape, gives none. A scalar leaf refuses a dict, a list
     or a tuple on its shape whatever it says, a format hint, a tag it cannot take or, for a leaf a tag
-    opens, the tag the dict lacks, so it gives none there either.
+    opens, the tag the dict lacks, so it gives none there either. Text a channel meant as JSON,
+    which is none, is refused by a variant reading the shape it opens for the decode error.
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
     """
     spelled = _spell_field_path(path)
     container = isinstance(data, dict | list | tuple)
     reasons = []
     for variant in non_none:
+        if isinstance(data, _IllFormedJson) and _reads_json_shape(variant, data[0]):
+            reasons.append((_spell_type(variant), f"invalid JSON: {data.decode_error()}"))
+            continue
         if container and _type_kind(_resolve_type(variant)) in _READ_FROM_ONE_VALUE:
             continue
         refused = [e for v, e in refusals if v is variant]
