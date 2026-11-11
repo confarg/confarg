@@ -152,6 +152,22 @@ def escape_expressions(text: str) -> str:
     return _rewrite_spans(text, _find_expressions(text), lambda span: "$" + text[span.start : span.end])
 
 
+def escape_data(data: Any) -> Any:
+    """Return *data* spelled so that resolution gives it back: each string value escaped, each key as written.
+
+    The walk is the one resolution scans (:func:`_collect_expressions`): a dict's values and a
+    list's items. A key is never escaped, since resolution never reads one.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#text-spelling-an-expression-is-written-escaped
+    """
+    if isinstance(data, dict):
+        return {k: escape_data(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [escape_data(v) for v in data]
+    return escape_expressions(data) if isinstance(data, str) else data
+
+
 def contains_expression(value: object) -> bool:
     """Return ``True`` when expression resolution would rewrite *value*.
 

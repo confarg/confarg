@@ -25,6 +25,24 @@ Until BUG-202 a delete reached the writer, which raised its own error.
   Callables dump as what they are ([callables](../callables.md#round-trip)), and leave through `_serialize_untyped`, since a partial's keywords carry no declared type.
   A callable instance and a bound method's owner are serialized as structs, their fields typed ([callables](../callables.md#an-object-dumps-the-state-it-holds)).
 
+## Text spelling an expression is written escaped
+
+`dump()` returns a configuration, which `build()` and `load()` resolve, so a string value the object holds that spells `${...}` would read back as an expression: `C(f='${x}')` reloaded as whatever `x` held, or was refused naming a missing `x` (BUG-318).
+`dump()` therefore writes its result through `dictexpr._expressions.escape_data`, which spells every string value with `escape_expressions`, `'${x}'` as `'$${x}'` and `'$${x}'` as `'$$${x}'`, and resolution gives each back byte for byte (maintainer-chosen).
+Every string value is escaped, whatever wrote it — a `str` field, a list item, an `Any` node's text, a partial's keyword, a registered leaf's text form (`Path('${x}/data')`) — since resolution reads them all; a class tag, a `bind:` path and a cast name are dotted names, which the escape leaves as they are.
+A key is written as it stands: resolution reads no key, so `{'${x}': 1}` already reads back, and an escaped key would read back as `'$${x}'`.
+
+The escape runs once, over the finished dump.
+The read-back checks ([below](#a-leaf-is-asked-whether-it-reads-back)) run `construct`, which resolves nothing, so they compare the text itself; and `left_form`, which leaves a whole expression's value in the resolved dict through `_serialize_read_leaf`, writes no escape into it.
+
+`from_dict()` and `construct()` resolve nothing, so they read a dump's escape as written: `from_dict(C, dump(C(f='${x}')))` builds `f='$${x}'`.
+The dump is read back by `build()` and `load()`, as the text the default layer lays is ([a default string stays text](../design-decisions/a-field-default-is-the-base-layer.md#a-default-string-stays-text)).
+A raw dict is written as it stands, `dump_file(merge(...))` keeping its expressions ([the object dump writes state](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
+
+Rejected: escaping in `dump_file()` alone, which leaves `build(C, dump(obj))` evaluating the text; and writing the text as it stands with a warning, which leaves every reload evaluating it.
+Both would have kept `from_dict(C, dump(obj))` reading the text.
+Precedents: OmegaConf's `to_yaml` writes `\${x}`, which reloads as the text; its `to_yaml(resolve=True)` and `OmegaConf.structured(OmegaConf.to_object(cfg))` write `${x}` and read it back as the value of `x` (run).
+
 ## An unsupported leaf is refused both ways
 
 A value typed by a leaf construction does not build — no struct, no type reference, and none of the leaves `_coerce._is_coercible_leaf` names, as `complex` is until registered — is refused by `dump()` with a `ConfargError` naming the path and `register_leaf_type`, the type construction refuses as `Unsupported leaf type` (`_serialize._refuse_an_unsupported_leaf`).
