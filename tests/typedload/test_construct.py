@@ -1143,6 +1143,40 @@ class TestPlainSpellingOfAListOpOnASequence:
         assert confarg.build(_TupleWithDefault, {"u": {ListOp.BASE: [7, 8]}}).u == (7, 8)
 
 
+class TestAListReadsItsIndexKeysAsAFixedLengthSequenceDoes:
+    """One reader of an index-keyed dict serves a list and a fixed-length sequence (REF-94)."""
+
+    @pytest.mark.parametrize("target", [list[int], set[int], tuple[int, ...]])
+    @pytest.mark.parametrize("key", sorted(MERGE_OP_KEYS))
+    def test_a_plain_op_key_on_a_collection_is_refused_naming_the_key(self, target: Any, key: str) -> None:
+        """The refusal a fixed tuple gives (BUG-209), not the non-integer one."""
+        match = re.escape(
+            f"Cannot construct collection at 'u': {key!r} spells a list op, which only a configuration file writes",
+        )
+        with pytest.raises(TypeCoercionError, match=match):
+            construct(target, {key: [1, 2], "0": 5}, path=("u",))
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            ({"01": 1, "0": 2, "2": 3}, [2, 1, 3]),
+            ({"+1": 1, "0": 2, "2": 3}, [2, 1, 3]),
+            ({" 1": 1, "0": 2, "2": 3}, [2, 1, 3]),
+            ({True: 1, 0: 2}, [2, 1]),
+            ({0: 1, "1": 2}, [1, 2]),
+            ({"0": 1, "3": 4, "1": 2, "2": 3}, [1, 2, 3, 4]),
+        ],
+    )
+    def test_a_list_keeps_reading_a_key_with_int(self, data: dict[Any, Any], expected: list[int]) -> None:
+        """A key ``int()`` reads builds on a list, though a fixed tuple refuses it."""
+        assert construct(list[int], data, path=("u",)) == expected
+
+    def test_an_infinite_key_is_refused_not_raised(self) -> None:
+        """``int(float('inf'))`` is an ``OverflowError``: a key naming no index."""
+        with pytest.raises(TypeCoercionError, match=re.escape("dict keys must be integer indices")):
+            construct(list[int], {float("inf"): 1}, path=("u",))
+
+
 @dataclass
 class _ScalarFieldConfig:
     """A scalar field, the ticket's shape: no struct for a tag to select."""

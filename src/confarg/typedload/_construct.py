@@ -765,7 +765,44 @@ def _indexed_dict_to_positions(
         docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
     """
     _refuse_a_position_spelled_twice(tp, data, what, path)
-    length = len(_fixed_seq_types(tp) or ())
+    out, unknown = _read_index_keys(
+        data,
+        path,
+        what,
+        lambda k: _fixed_position(tp, k),
+        len(_fixed_seq_types(tp) or ()),
+    )
+    if unknown and _is_namedtuple(tp):
+        fields = list(_namedtuple_fields(tp))
+        raise TypeCoercionError.unknown_fields(set(unknown), tp.__name__, _spell_field_path(path), fields)
+    if unknown:
+        raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path), data)
+    return out
+
+
+def _read_index_keys(
+    data: dict[Any, Any],
+    path: FieldPath,
+    what: str,
+    position: Callable[[Any], int | None],
+    length: int | None = None,
+) -> tuple[dict[int, Any], list[Any]]:
+    """Read the keys of the index-keyed *data* standing for the sequence *what*: ``({position: value}, unknown keys)``.
+
+    The one reader of an index-keyed dict, for a list and a fixed-length sequence alike. A key
+    is read by *position*, the kind's own rule: a fixed-length sequence's
+    :func:`~confarg._types._fixed_position`, a list's ``int()`` (a file's ``"01"`` patches index 1).
+    A key it reads as none is returned in the second list, for the caller to refuse in its own
+    words. With a *length*, a key that spells an index past it is refused here.
+
+    Raises:
+        TypeCoercionError: On a key spelling one of the reserved list ops (``_merge.MERGE_OP_KEYS``
+            -- a marker, never the plain string, is the op), or, with a *length*, on an index out
+            of range.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/deep-merge.md#no-channel-types-an-op
+    """
     out: dict[int, Any] = {}
     unknown: list[Any] = []
     for k, v in data.items():
@@ -775,22 +812,23 @@ def _indexed_dict_to_positions(
                 f" {k!r} spells a list op, which only a configuration file writes"
             )
             raise TypeCoercionError(msg)
-        position = _fixed_position(tp, k)
-        if position is not None:
-            out[position] = v
-        elif (index := _spelled_position(k)) is not None:
-            spelled = _spell_field_path(path)
-            where = _spelled_where(spelled)
+        if (read := position(k)) is not None:
+            out[read] = v
+        elif length is not None and (index := _spelled_position(k)) is not None:
+            where = _spelled_where(_spell_field_path(path))
             msg = f"Cannot construct {what} at {where}: index {index} out of range for length {length}"
             raise TypeCoercionError(msg)
         else:
             unknown.append(k)
-    if unknown and _is_namedtuple(tp):
-        fields = list(_namedtuple_fields(tp))
-        raise TypeCoercionError.unknown_fields(set(unknown), tp.__name__, _spell_field_path(path), fields)
-    if unknown:
-        raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path), data)
-    return out
+    return out, unknown
+
+
+def _list_index_of(key: Any) -> int | None:
+    """Return the index a list reads *key* as with ``int()``, a file's text or a YAML integer alike, else None."""
+    try:
+        return int(key)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _refuse_a_position_spelled_twice(tp: Any, data: dict[Any, Any], what: str, path: FieldPath) -> None:
@@ -1010,12 +1048,10 @@ def _build_items(et: Any, data: Any, path: FieldPath) -> list[Any]:
             raise TypeCoercionError(msg)
         if not data:
             return []
-        try:
-            # One reading of an index key, whether a file spelled it as text or as a YAML integer.
-            positions = {int(k): v for k, v in data.items()}
-        except (TypeError, ValueError):
-            what = "collection"  # a list, a set or a variable-length tuple
-            raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path), data) from None
+        what = "collection"  # a list, a set or a variable-length tuple
+        positions, unknown = _read_index_keys(data, path, what, _list_index_of)
+        if unknown:
+            raise TypeCoercionError.keys_not_indices(what, _spell_field_path(path), data)
         _refuse_an_index_delete(positions, path)
         neg = [k for k in positions if k < 0]
         if neg:

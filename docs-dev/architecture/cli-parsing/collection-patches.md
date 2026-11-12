@@ -49,7 +49,7 @@ The environment refuses such a variable at parse, as it refuses every path below
 Where the variants of a union refuse it at different segments, the message names the shallowest one any of them refuses: `u: P | Q` with `P.a.b` and `Q.a` lists refuses `APP_U__A__B__C` as "segment 'b' names no element of 'u.a'", whichever variant is declared first.
 That is the first refusal the walk meets, segment by segment; naming the first variant's, as it did when the walk followed each branch in turn, would rank every state by the variants that led to it, for this message alone (BUG-260).
 
-Configuration files are not walked, so a file key below a list is still read by the merge's `int()`: `xs: {"01": 5}` patches index 1.
+Configuration files are not walked, so a file key below a list is still read by the merge's `int()`: `xs: {"01": 5}` patches index 1, and construction's one reader of an index-keyed dict (`_construct._read_index_keys`) takes the same key rule from a list, where a fixed-length sequence reads it by `_fixed_position`.
 Only a file writes a list op by name (`__base__`, `__append__`, ...), which no other channel may ([reserved keys](../config-files/reserved-keys.md#reserved-file-only-keys)), and the one reader of each op that holds a list, `_merge._replace_base` for the base and `_merge._delete_indices` for either delete, refuses a value of the wrong shape rather than reading it with `list()` or iterating it (BUG-170, BUG-175).
 
 ## The type decides what a delete removes
