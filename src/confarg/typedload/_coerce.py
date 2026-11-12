@@ -287,7 +287,7 @@ def _coerce_timezone(value: Any) -> timezone:
 
 def _format_offset(value: timezone) -> str:
     """Write *value* as the UTC offset ``datetime.isoformat()`` writes: ``+02:00``, ``+00:00``, ``+00:00:30``."""
-    return datetime.min.replace(tzinfo=value).isoformat()[len("0001-01-01T00:00:00") :]
+    return datetime.min.replace(tzinfo=value).strftime("%:z")
 
 
 # register_leaf_type writes both registries at runtime, so nothing that reads them is ever
