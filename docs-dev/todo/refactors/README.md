@@ -30,7 +30,7 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-114 — Each adapter reconciles its registration by hand](REF-114-each-adapter-reconciles-its-registration-by-hand.md) | trivial |  | S | low | none |
 | [REF-115 — `_format_offset` slices an `isoformat()` string where `strftime("%:z")` says it](REF-115-format-offset-slices-an-isoformat-string.md) | trivial |  | S | low | none |
 | [REF-116 — The dump opens and closes an instance by hand, twice](REF-116-the-dump-opens-and-closes-an-instance-by-hand-twice.md) | trivial |  | S | low | none |
-| [REF-117 — Two depth bounds share a name, and two rules elide a long path](REF-117-two-depth-bounds-share-a-name-and-two-rules-elide-a-path.md) | trivial |  | S | low | none |
+| [REF-117 — Two rules elide a long path](REF-117-two-rules-elide-a-long-path.md) | trivial |  | S | low | behavior |
 | [REF-119 — Two timing-bound tests fail under a loaded machine](REF-119-two-timing-bound-tests-fail-under-a-loaded-machine.md) | trivial |  | S | low | none |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | trivial |  | M | high | none |
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | trivial |  | M | low | none |

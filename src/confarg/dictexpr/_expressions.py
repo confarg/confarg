@@ -484,7 +484,7 @@ def _parse_body(body: str) -> ast.Expression:
     :func:`eval`, so ``${ a }`` means ``${a}``; :func:`ast.parse` alone would read the
     leading blank as an indent.
 
-    A body nested deeper than :data:`_MAX_DEPTH`, or too deeply for the parser itself,
+    A body nested deeper than :data:`_MAX_EXPRESSION_DEPTH`, or too deeply for the parser itself,
     raises :class:`_TooDeepError`, a :class:`SyntaxError`, so every parse site treats it as a
     body that does not parse, and no walker after the parse meets a tree it cannot recurse
     through.
@@ -496,14 +496,14 @@ def _parse_body(body: str) -> ast.Expression:
         tree = ast.parse(body.strip(), mode="eval")
     except (RecursionError, MemoryError) as exc:
         raise _TooDeepError from exc
-    if _nests_deeper_than(tree, _MAX_DEPTH):
+    if _nests_deeper_than(tree, _MAX_EXPRESSION_DEPTH):
         raise _TooDeepError
     return tree
 
 
 #: The most expression levels a body may nest, every walker after the parse recursing once
 #: or more per level: half of where the first of them gave up on an empty stack (BUG-145).
-_MAX_DEPTH = 100
+_MAX_EXPRESSION_DEPTH = 100
 
 
 def _nests_deeper_than(tree: ast.AST, bound: int) -> bool:
@@ -526,7 +526,7 @@ def _nests_deeper_than(tree: ast.AST, bound: int) -> bool:
 class _TooDeepError(SyntaxError):
     """A body nested too deeply to walk, refused as a body that does not parse.
 
-    Deeper than :data:`_MAX_DEPTH`, or deep enough that the parser itself gives up: with a
+    Deeper than :data:`_MAX_EXPRESSION_DEPTH`, or deep enough that the parser itself gives up: with a
     :class:`RecursionError` while it builds the tree, or a :class:`MemoryError` when its own
     stack overflows, never a :class:`SyntaxError`; which one depends on the depth and the
     Python version.
