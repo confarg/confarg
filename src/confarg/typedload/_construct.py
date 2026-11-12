@@ -71,6 +71,7 @@ from confarg._types import (
     _namedtuple_defaults,
     _namedtuple_fields,
     _Pinned,
+    _position_key,
     _reads_json_shape,
     _resolve_type,
     _scalar_read_as,
@@ -214,7 +215,7 @@ def _lay_patch_over_positions(tp: Any, data: dict[Any, Any], path: FieldPath) ->
     _refuse_a_position_spelled_twice(tp, patch, tp.__name__, path)
     for spelled, v in patch.items():
         position = _fixed_position(tp, spelled)
-        k = spelled if position is None else field_names[position]
+        k = spelled if position is None else _position_key(tp, position)
         if isinstance(v, _DeleteSentinel):
             laid.pop(k, None)  # the position is unset (BUG-243)
         elif k in laid:

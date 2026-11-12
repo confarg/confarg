@@ -74,7 +74,6 @@ from confarg._tags import import_tagged_classes
 from confarg._types import (
     _dict_kv,
     _elem_type,
-    _fixed_position,
     _fixed_seq_types,
     _IllFormedJson,
     _is_callable,
@@ -86,6 +85,7 @@ from confarg._types import (
     _is_varlen_collection,
     _json_shape_readers,
     _namedtuple_fields,
+    _position_type,
     _resolve_type,
     _root_kind,
     _spell_type,
@@ -93,7 +93,6 @@ from confarg._types import (
     _struct_fields,
     _struct_member_names,
     _struct_member_type,
-    _tuple_types,
     _union_args,
     _union_args_no_none,
     _union_branches,
@@ -112,42 +111,6 @@ from confarg.typedload._construct import _is_typed_call, _reads_specs, _selects_
 NamingView = Callable[[tuple[str, ...]], Any]
 
 
-def _step_tuple_type(tp: Any, part: str) -> Any | None:
-    """Advance one step into a tuple type by numeric index.
-
-    A variadic tuple takes an index as a list does, only as ``str()`` writes one; a fixed
-    tuple takes a position as a namedtuple does (:func:`~confarg._types._fixed_position`,
-    BUG-108).
-    """
-    et = _tuple_types(tp)
-    if et is None:
-        return _elem_type(tp) if _list_index(part) is not None else None
-    position = _fixed_position(tp, part)
-    return None if position is None else et[position]
-
-
-def _namedtuple_index_spellings(n: int) -> dict[str, int]:
-    """Return every canonical index spelling for an n-field namedtuple, by position.
-
-    The one source for "which index spellings exist" — str(i) and the negative str(i - n)
-    that counts from the end (BUG-80) — so the type walk accepts exactly what
-    cli/_build._collect_namedtuple_specs registers as flags (BUG-97).
-
-    Dev Notes:
-        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md
-    """
-    return {**{str(i): i for i in range(n)}, **{str(i - n): i for i in range(n)}}
-
-
-def _namedtuple_position_spellings(n: int, i: int) -> list[str]:
-    """Return the index spellings of position i in an n-field namedtuple, str(i) first.
-
-    The per-field view of :func:`_namedtuple_index_spellings`, for the registration and
-    collection sites that list a field's keys rather than look one up.
-    """
-    return [spelled for spelled, pos in _namedtuple_index_spellings(n).items() if pos == i]
-
-
 def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # one return per kind
     """Advance one step into tp along path segment part. Returns new type or None.
 
@@ -162,14 +125,13 @@ def _advance_field_type(tp: Any, part: str) -> Any | None:  # noqa: PLR0911  # o
     """
     match _type_kind(tp):
         case _TypeKind.NAMEDTUPLE:
-            position = _fixed_position(tp, part)
-            return None if position is None else list(_namedtuple_fields(tp).values())[position]
+            return _position_type(tp, part)
+        case _TypeKind.TUPLE if _fixed_seq_types(tp) is not None:
+            return _position_type(tp, part)
         case _TypeKind.STRUCT | _TypeKind.TAGGABLE_LEAF:
             return _struct_member_type(tp, part)
-        case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
+        case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET | _TypeKind.TUPLE:
             return _elem_type(tp) if _list_index(part) is not None else None
-        case _TypeKind.TUPLE:
-            return _step_tuple_type(tp, part)
         case _TypeKind.DICT:
             _, vt = _dict_kv(tp)
             return vt

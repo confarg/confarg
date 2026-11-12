@@ -48,7 +48,8 @@ from confarg._types import (
     _fixed_seq_types,
     _is_seq_variant,
     _is_struct,
-    _namedtuple_fields,
+    _position_key,
+    _position_type,
     _resolve_type,
     _root_kind,
     _struct_declared_defaults,
@@ -540,14 +541,13 @@ def _lay_unset_positions(tp: Any, out: MergeDict, path: DataPath, walk: _Walk) -
     if not walk.for_resolution or _holds_list_ops(out):
         return
     held = {_fixed_position(tp, k) for k in out}
-    names = list(_namedtuple_fields(tp)) if _type_kind(tp) is _TypeKind.NAMEDTUPLE else []
     for i, et in enumerate(_fixed_seq_types(tp) or ()):
         if i in held or (value := unset_position(tp, i)) is _UNSET_POSITION:
             continue
         laid = _merged_form(value, et, walk)
         if laid is _NOT_LAID:
             continue
-        key = names[i] if names else str(i)
+        key = _position_key(tp, i)
         out[key] = laid
         walk.untouched.append((*path, key))
 
@@ -602,8 +602,7 @@ def _element_type(tp: Any) -> Callable[[Any], Any]:
     def element(key: Any) -> Any:
         if positions is None:
             return _elem_type(tp)
-        position = _fixed_position(tp, key)
-        return Any if position is None else positions[position]
+        return Any if (et := _position_type(tp, key)) is None else et
 
     return element
 
