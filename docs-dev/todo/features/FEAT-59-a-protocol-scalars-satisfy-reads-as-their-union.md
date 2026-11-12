@@ -13,7 +13,7 @@ effort: L  # every walk changes its answer through the two union readers, and a 
 risk: high  # a Protocol becomes a union in every channel and front-end at once
 impact: behavior  # a Protocol field FEAT-57 reads as class: only starts taking plain values
 severity: minor  # annotating the concrete scalar type instead works
-blocked_by: [FEAT-57, BUG-299]  # FEAT-57 gives a Protocol its tag half and conformance; BUG-299 its cast flags
+blocked_by: [FEAT-57]  # FEAT-57 gives a Protocol its tag half and conformance
 ---
 
 # FEAT-59 — A Protocol that scalars satisfy reads as the union of those scalars

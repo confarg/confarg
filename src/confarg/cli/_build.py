@@ -1051,6 +1051,8 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
             # The bare flag first: a whole variant object carries its own discriminator.
             # A sequence variant beside the structs makes it take a run, which vanilla's
             # loop consumes for any union with one.
+            # The cast flags of the scalars the union holds, as the other union branches
+            # register them: vanilla's detect_force_cast takes them here too (BUG-299).
             whole = _shaped(_whole_value_spec(flag, resolved, help_text, group, group_description), resolved)
             tag = _build_class_key_spec(
                 flag,
@@ -1059,7 +1061,8 @@ def _specs_for_field(  # noqa: C901, PLR0911, PLR0913, PLR0917  # one branch per
                 group_description,
                 callable_class=_holds_a_callable(resolved),
             )
-            specs = [whole, tag, *openers]
+            casts = _union_cast_flag_specs(flag, _scalar_cast_types_in_union(resolved), group, group_description)
+            specs = [whole, tag, *openers, *casts]
             by_name: dict[str, FlagSpec] = {s.name: s for s in specs}
             below = descent.into(flag, [resolved])
             for variant in concrete if below is not None else []:
