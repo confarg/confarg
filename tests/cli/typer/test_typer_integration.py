@@ -399,6 +399,13 @@ class TestHelpReadsUnderEveryMarkupMode:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _Patched:
+    """A list field whose element patch (``--items.0 5``) is a flag only the typed argv produces."""
+
+    items: list[int] = field(default_factory=list)
+
+
 class TestSetupCompletion:
     """Tests for typer's setup_completion wrapper."""
 
@@ -410,14 +417,15 @@ class TestSetupCompletion:
         assert len(command.params) == before
 
     def test_completion_mode_extends_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With _PROGNAME_COMPLETE set, dynamic flags are added from COMP_WORDS."""
-        command = _make_command(Simple, argv=[])
+        """With _PROGNAME_COMPLETE set, the dynamic flags COMP_WORDS calls for are added."""
+        command = _make_command(_Patched, argv=[])
         command.name = "cli"
         monkeypatch.setenv("_CLI_COMPLETE", "bash_complete")
-        monkeypatch.setenv("COMP_WORDS", "cli --port 1 --")
+        monkeypatch.setenv("COMP_WORDS", "cli --items.0 5 ")
         monkeypatch.setenv("COMP_CWORD", "3")
-        setup_completion(command, Simple)
-        assert "port" in {p.name for p in command.params}
+        assert "items.0" not in {p.name for p in command.params}
+        setup_completion(command, _Patched)
+        assert "items.0" in {p.name for p in command.params}
 
     def test_failure_degrades_silently(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """setup_completion swallows any exception: completion must never crash a shell."""

@@ -321,6 +321,13 @@ class TestBoolConvention:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _Patched:
+    """A list field whose element patch (``--items.0 5``) is a flag only the typed argv produces."""
+
+    items: list[int] = dataclasses.field(default_factory=list)
+
+
 class TestSetupCompletion:
     """Tests for click's setup_completion wrapper."""
 
@@ -332,16 +339,16 @@ class TestSetupCompletion:
         assert len(cmd.params) == before
 
     def test_completion_mode_extends_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When _PROGNAME_COMPLETE is set, dynamic flags are added to the command."""
+        """When _PROGNAME_COMPLETE is set, the dynamic flags the typed words call for are added."""
         monkeypatch.setenv("_CLI_COMPLETE", "bash_complete")
-        monkeypatch.setenv("COMP_WORDS", "cli ")
-        monkeypatch.setenv("COMP_CWORD", "1")
+        monkeypatch.setenv("COMP_WORDS", "cli --items.0 5 ")
+        monkeypatch.setenv("COMP_CWORD", "3")
 
         cmd = click.Command(name="cli", callback=lambda: None, params=[])
-        populate_command(Simple, cmd, config_flag="")
-        before = len(cmd.params)
-        setup_completion(cmd, Simple)
-        assert len(cmd.params) == before
+        populate_command(_Patched, cmd, config_flag="")
+        assert "items.0" not in [p.name for p in cmd.params]
+        setup_completion(cmd, _Patched)
+        assert "items.0" in [p.name for p in cmd.params]
 
     def test_completion_exception_is_swallowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Errors during completion extension must not propagate to the user."""
