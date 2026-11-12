@@ -11,7 +11,8 @@ needs_design: true  # the effort sizes the design pass; the implementation is no
 
 # FEAT-17 — An end-of-options separator (`--`)
 
-A bare `--` is an ordinary token in every front-end: nothing marks "everything after this is a value".
+A bare `--` is an ordinary token to vanilla, and to the loop that writes the CLI channel on every front-end: nothing marks "everything after this is a value".
+argparse, click and typer do honor it as their own separator and bind what follows as the host's positionals, which the loop then reads again as confarg flags ([BUG-332](../bugs/BUG-332-a-token-the-host-bound-as-a-value-is-read-again-as-a-confarg-flag.md)).
 The `=` form is the escape for a dashed value and closes BUG-27 ([design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value](../../architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value)), but it can only shield one token, so a variable-length flag still cannot take a dashed element after the first (`--tags=--a --b` reads `--b` as a flag).
 
 The design pass has to answer three things before any code is written, which is why this is filed rather than folded into BUG-27:

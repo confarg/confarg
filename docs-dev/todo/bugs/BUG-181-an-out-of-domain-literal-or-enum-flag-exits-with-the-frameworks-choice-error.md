@@ -21,7 +21,7 @@ That breaks [adapter output equals vanilla output](../../architecture/invariants
 The refusal is intended but not approved: [expression-tolerant choice gates](../../architecture/cli-adapters/parity.md#expression-tolerant-choice-gates) defers `${...}` tokens while "keeping native help, completion and error text for real values", yet [cross-channel parity](../../architecture/invariants.md#cross-channel-parity) lists no such divergence among the approved ones.
 
 Fix direction: either widen the existing gates (`_ExpressionTolerantChoices`, click's `_ExpressionTolerantChoice.convert`, typer's `_TypedOption.process_value`, cyclopts' `_expression_tolerant_convert` with `_ExpressionTolerantPydantic`) to let every token through, keeping `choices` for help and completion only, so `build()` judges the domain as it does for the other channels; or approve the parse-time refusal as a divergence leaning to the frameworks' idiom ([design decisions](../../architecture/design-decisions/divergence-leans-to-the-backend.md#a-divergence-leans-towards-the-affected-backends-own-idiom)).
-BUG-96 is the same shape for a bare scalar flag.
+[BUG-96](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) asks the same choice for a bare one-token flag, with the costs of each side measured; settle the two together.
 
 Origin: latent since each adapter was written; vanilla's own parser has kept the token at every revision below.
 Each was checked by running this reproduction, for `--lit c` and `--col purple`, against the revision's own tree.
