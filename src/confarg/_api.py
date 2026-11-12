@@ -80,10 +80,10 @@ def merge(target: type | TypeAliasType | UnionType, **opts: Unpack[MergeOptions]
 
         1. ``files`` — in the order given.
         2. ``env_config`` — the single global path named by that env var (if set).
-        3. ``CONFIG__*`` env vars — sorted lexicographically by their env var name,
-           which is equivalent to sorting by subpath depth (shallower paths first).
-           A global ``CONFIG=file`` therefore loads before ``CONFIG__DB=db.yaml``,
-           which loads before ``CONFIG__DB__HOST=host.yaml``.
+        3. ``<env_prefix><CONFIG_FLAG>[__<subpath>]`` env vars — sorted lexicographically by their
+           env var name, which is equivalent to sorting by subpath depth (shallower paths first).
+           With ``env_prefix="MYAPP_"``, a global ``MYAPP_CONFIG=file`` therefore loads before
+           ``MYAPP_CONFIG__DB=db.yaml``, which loads before ``MYAPP_CONFIG__DB__HOST=host.yaml``.
         4. CLI ``--config`` / ``--config.subpath`` flags — in left-to-right order.
 
     Raises:
