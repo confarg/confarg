@@ -1,6 +1,7 @@
 ---
 filed: 2026-10-26  # split out of FEAT-2, filed 2026-09-12
 where:
+  - src/confarg/_callable.py::argument_types
   - src/confarg/_callable.py::_coerce_kwargs
   - src/confarg/_callable.py::_fillable_params
   - src/confarg/_types.py::_init_fields
@@ -18,5 +19,6 @@ Under the `args` of `bind:` or `call:`, an extra key binds as a keyword argument
 A struct reads its `__init__`'s `**kwargs` as a member named `kwargs`, typed: `{class: pkg.K, a: 1, b: '2'}` is refused, `Unknown field(s) ['b'] for K at 'k'. Valid fields: ['a', 'kwargs']`, while `{class: pkg.K, a: 1, kwargs: {b: '2'}}` reaches the annotation, `Cannot coerce str '2' to int at 'k.kwargs.b'`.
 
 The design pass decides one reading for both: whether extra keys beside the named parameters are the spelling of `**kwargs` (as a call site writes it, and as jsonargparse's `init_args` does *(inferred)*), how each is typed and validated, how argv registers and completes a key no signature names, and how the dump writes them back.
+An extra key is read as `Any` today, by construction, the argv walk, the typed merge and the dump alike, all through `_callable.argument_types` ([an argument dumps as its parameter is typed](../../architecture/callables.md#an-argument-dumps-as-its-parameter-is-typed)): typing it by the annotation is a change to that one function, plus how the argv walk and `--help` learn the key.
 [BUG-240](../bugs/BUG-240-a-var-positional-parameter-cannot-be-set-under-args.md) is the `*args` side of the same question, and [FEAT-50](FEAT-50-a-kwargs-forwarded-to-the-parent-sets-its-members.md) a `**kwargs` forwarded to a parent's constructor.
 See [callables](../../architecture/callables.md).

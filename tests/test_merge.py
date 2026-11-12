@@ -1045,6 +1045,10 @@ def _takes_labels(labels: dict[str, str]) -> dict[str, str]:
     return labels
 
 
+def _untyped(x, **extra):  # the arguments no annotation types are the subject
+    return x, extra
+
+
 class _Hold:
     def __init__(self, x: int = 0) -> None:
         self.x = x
@@ -1221,6 +1225,15 @@ class TestTheTypeDecidesWhetherAKeyReplaces:
         lower = f"fn: {{bind: {__name__}._takes_labels, args: {{labels: {{team: ml}}}}}}\n"
         cfg = _layered(tmp_path, lower, "fn: {args: {labels: {class: x}}}\n")
         assert cfg.fn() == {"team": "ml", "class": "x"}
+
+    @pytest.mark.parametrize("name", ["x", "extra"])
+    def test_an_untyped_argument_merges_as_an_any_node(self, tmp_path, name: str) -> None:
+        """An unannotated or ``**kwargs`` argument is built as ``Any``, so an opener above replaces the dict below."""
+        others = "" if name == "x" else "x: 0, "
+        lower = f"fn: {{bind: {__name__}._untyped, args: {{{others}{name}: {{a: 1}}}}}}\n"
+        cfg = _layered(tmp_path, lower, f"fn: {{args: {{{name}: {{bind: {__name__}._g}}}}}}\n")
+        x, extra = cfg.fn()
+        assert (x if name == "x" else extra[name]) is _g
 
 
 class TestALowerShorthandOpensUnderTheArgumentsAbove:

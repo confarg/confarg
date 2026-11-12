@@ -431,7 +431,8 @@ def _step(  # noqa: C901  # one answer per kind of step
             # exact spelling reaches; its value is a class path, below which nothing lies.
             yield stone, _WalkState(str, str_subtree=False, in_spec=below_spec)
         elif takes_untyped_argument(node, part):
-            yield stone, _WalkState(str, str_subtree=True, in_spec=True)
+            # Construction reads an argument no annotation types as Any (_callable.argument_types).
+            yield stone, _WalkState(Any, str_subtree=False, in_spec=True)
         else:
             yield stone, None
 

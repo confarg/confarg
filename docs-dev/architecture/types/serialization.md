@@ -22,8 +22,9 @@ Until BUG-202 a delete reached the writer, which raised its own error.
   `_DumpOptions` carries the set and the tag policy down every serializer, and `_serialize_untyped` takes the set too ([design decisions](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-writer-may-hold-a-date-natively)).
 - A dataclass is written as the fields it stores, an `init=False` one included and an `InitVar` never; a plain class as its constructor's parameters, each read from the same-named attribute, slot or property the instance holds, never from a plain class attribute ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
 - `_serialize` writes the state of the built object: resolved values, and never the `call:` that produced one ([design decision](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
-  Callables dump as what they are ([callables](../callables.md#round-trip)), and leave through `_serialize_untyped`, since a partial's keywords carry no declared type.
-  A callable instance and a bound method's owner are serialized as structs, their fields typed ([callables](../callables.md#an-object-dumps-the-state-it-holds)).
+  Callables dump as what they are ([callables](../callables.md#round-trip)).
+  A callable instance and a bound method's owner are serialized as structs, their fields typed ([callables](../callables.md#an-object-dumps-the-state-it-holds)), and a partial's arguments as the parameters they fill are typed, an unannotated one as an `Any` node ([callables](../callables.md#an-argument-dumps-as-its-parameter-is-typed)).
+  `_callable._serialize_callable` decides the spec's shape and hands each value back to the serializer (`_serialize._spec_writer`), at the position the spec writes it, `bind` and `args` included.
 
 ## Text spelling an expression is written escaped
 

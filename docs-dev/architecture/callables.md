@@ -194,6 +194,7 @@ A subtree is how a nested target spec is spelled (`--f.bind.class pkg.H --f.bind
 Signature and annotations are taken from different objects when needed: `inspect.signature(cls)` gives constructor parameters, but annotations live on `cls.__init__`; for a callable instance they live on `type(obj).__call__`.
 
 A `call:` reads its annotations from the same object as `bind:` does (`_hints_source`), so a class it calls is built from its `__init__` annotations, as under `class:` (BUG-155).
+`_callable.argument_types` is the one reader of those annotations, for construction and for the dump alike ([an argument dumps as its parameter is typed](#an-argument-dumps-as-its-parameter-is-typed)); an argument it types nothing for is built as `Any` (BUG-308).
 
 Validation is skipped where it cannot work: an uninspectable callable (a C extension) is taken unchecked, and `Callable[..., R]` checks no call ([call shape](#a-callable-is-checked-by-its-call-shape)).
 
@@ -282,18 +283,34 @@ A callable therefore dumps as what it is, opener by opener:
 |---|---|
 | a function, a class, a static or class method | its dotted path through the module that publishes it ([dotted imports](types/dotted-imports.md#a-path-names-the-module-that-publishes-the-object)), when it reads back as the callable |
 | an instance method, whoever built its owner | the path through its owner's class beside the fields the owner holds, as a `classfn:` spec; the bare path when the owner's constructor takes no argument ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |
-| `bind:` | `{bind: <target>, args: {<arguments>}}`, whatever the keywords spell, each positional argument named by the parameter it fills (`_named_partial_args`); a bare path when nothing is bound. The target is serialized by these same rules. A positional argument no name holds, one spilling into `*args` or one of a target whose signature cannot be read, cannot be dumped |
+| `bind:` | `{bind: <target>, args: {<arguments>}}`, whatever the keywords spell, each positional argument named by the parameter it fills (`_named_partial_args`), each argument written as that parameter is typed ([below](#an-argument-dumps-as-its-parameter-is-typed)); a bare path when nothing is bound. The target is serialized by these same rules. A positional argument no name holds, one spilling into `*args` or one of a target whose signature cannot be read, cannot be dumped, nor can a keyword the target takes no parameter for |
 | a callable instance, `class:` or whoever built it | its class's path beside the fields it holds, as a `class:` spec ([an object dumps the state it holds](#an-object-dumps-the-state-it-holds)) |
 | `classfn:` | the instance method it yields, by the row above |
 | `call:` | the callable it returned, by the rows above |
 
-A partial over a callable instance dumps the instance's `class:` spec as its nested target.
-A partial's keywords carry no declared type, so the spec leaves through `_serialize_untyped`, which writes an `Enum` or a `Path` as a raw dict's value; a struct keyword is not written that way (BUG-194).
+A partial over a callable instance dumps the instance's `class:` spec as its nested target, its fields written at `<path>.bind`, where the spec holds them.
 
 A callable that no configuration spells, such as a closure, a lambda, or an instance whose fields cannot be read, cannot be dumped.
 The merged dict keeps the spec that produced it, and `dump_file(merge(...))` writes it as written.
 
 An object an `Any` field holds is written by the same rules, a bare path opened into its `bind:` form, which an `Any` node reads where it reads a bare string as text ([serialization](types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)).
+
+### An argument dumps as its parameter is typed
+
+A partial's arguments are written by the type each one was built by: `_callable.argument_types`, the annotation of the parameter it fills, read from the object `_hints_source` names, is what `_coerce_kwargs` constructs an argument by and what `_serialize_callable` hands the serializer to write it by, at `<path>.args.<name>` (BUG-194).
+An argument is therefore written as a field of that type is: a struct as its fields, a union's variant tagged where reading back needs it or where the tag policy asks, a Callable as its spec, an `int` under `float` widened, a value its annotation does not hold written as an `Any` node holds it with a `ConfargWarning` ([serialization](types/serialization.md#a-value-its-type-does-not-hold-dumps-as-an-any-node-holds-it)).
+
+An argument no annotation types — an unannotated parameter, a key `**kwargs` takes, any argument of a target whose signature or annotations cannot be read — is `Any` both ways: construction builds it as an `Any` field holds it, a class spec built into its object and an argv token handed over as a `str`, and the dump writes it as an `Any` node does, an object as the spec that rebuilds it (BUG-308).
+The argv walk lands on `Any` below such an argument too (`_parse_cli._step`), so `--f.args.x.int 5` is a cast there as `--a.int 5` is on an `Any` field and `__cast__` is in a file, and so does the typed merge (`_typed_merge._ArgsAt`), so an opener a higher layer writes there replaces the dict below, as it does on an `Any` field.
+This is how a struct reads an unannotated constructor parameter, and how Hydra's `instantiate` reads a nested `_target_` dict whatever the parameter's annotation, with its default `_recursive_=True`.
+
+A keyword the target takes no parameter for, where it takes no `**kwargs`, is refused at `dump()`: construction would refuse the spec on read-back, as it refuses a positional argument no name holds.
+
+Rejected:
+
+- **A struct rule in `_serialize_untyped`**, writing any struct it meets as its class spec: the untyped path does not know the parameter's type, so it could not widen an `int`, tag a union's variant only where needed, follow the tag policy, or write a Callable argument, and the same value would be written by two rules depending on whether it sits in a field or under `args`.
+- **Keeping an unannotated argument raw** on construction, the behavior until BUG-308: an object there has no spelling a file holds that reads back as it, and the argv token leaked to the callee.
+- **Writing an unknown keyword with a warning**, as a value its type does not hold is: such a value still loads, but the spec is refused outright on load.
 
 ### A path is written only when it reads back
 

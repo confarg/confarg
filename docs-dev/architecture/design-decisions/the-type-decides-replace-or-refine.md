@@ -27,7 +27,8 @@ Three refinements of the rule:
   A bare string on an `Any` is text, so a dict replaces it.
 - **The data names a class the type does not.**
   Below a node whose class only the data names, a subclass by its tag, the class of a `class:` spec, the owner of a `classfn:` or the target of a `bind:` or `call:` under `args`, the merge imports it to type the node's members, as the default layer does for a tag.
-  Where it cannot type a node at all (a key the type does not declare, a name that does not import, a parameter with no annotation, a merge given no target), it falls back to the shape rule: the class key and `call` replace, every other key refines.
+  An argument no annotation types, or one a `**kwargs` takes, is an `Any` node, as construction builds it ([callables](../callables.md#an-argument-dumps-as-its-parameter-is-typed)).
+  Where it cannot type a node at all (a key the type does not declare, a name that does not import, a merge given no target), it falls back to the shape rule: the class key and `call` replace, every other key refines.
 
 **Within one source, a restated opener or tag starts the node afresh too.**
 The CLI and the environment write a source key by key, so a second opener or tag at a node that already names its target arrives as one more key: `--fn.bind pkg.f --fn.args.a 1 --fn.bind pkg.g`, a `{…}` value then `--fn.bind`, `--task.class A --task.extra 1 --task.class B`.

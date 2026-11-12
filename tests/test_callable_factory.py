@@ -20,8 +20,8 @@ from typing import Any
 import pytest
 
 import confarg
-from confarg._callable import _serialize_callable
-from confarg.exceptions import TypeCoercionError
+from confarg._callable import _serialize_callable, _SpecWriter
+from confarg.exceptions import FieldPath, TypeCoercionError
 
 # ---------------------------------------------------------------------------
 # Module-level helpers — importable by dotted path
@@ -35,9 +35,13 @@ def _bound(partial: functools.partial) -> dict[str, Any]:
     return dict(inspect.signature(partial.func).bind_partial(*partial.args, **partial.keywords).arguments)
 
 
-def _no_owner(owner: Any) -> dict[str, Any]:
+def _no_owner(owner: Any, at: FieldPath) -> dict[str, Any]:
     """Stand in for the owner-field reader where no callable serialized is a bound method."""
-    pytest.fail(f"no owner to read, got {owner!r}")
+    pytest.fail(f"no owner to read at {at!r}, got {owner!r}")
+
+
+# Writes no owner, and each argument as the partial holds it.
+_ARGUMENTS_AS_HELD = _SpecWriter(fields=_no_owner, argument=lambda _tp, value, _at: value)
 
 
 class _Optimizer:
@@ -321,19 +325,19 @@ class TestFactorySerialization:
     def test_factory_partial_serializes_as_bind_dict(self):
         """A factory partial with kwargs serializes as a bind: dict with its keywords under args (not class:)."""
         p = functools.partial(_SGD, lr=0.05, momentum=0.9)
-        out = _serialize_callable(p, _no_owner)
+        out = _serialize_callable(p, (), _ARGUMENTS_AS_HELD)
         assert out == {"bind": f"{_MOD}._SGD", "args": {"lr": 0.05, "momentum": 0.9}}
 
     def test_factory_partial_no_kwargs_serializes_as_bare_string(self):
         """A factory partial with no kwargs serializes as a bare class FQN string."""
         p = functools.partial(_SGD)
-        out = _serialize_callable(p, _no_owner)
+        out = _serialize_callable(p, (), _ARGUMENTS_AS_HELD)
         assert out == f"{_MOD}._SGD"
 
     def test_function_partial_serializes_as_bind_dict(self):
         """Test that a function partial serializes as a bind: dict with its keywords beside it."""
         p = functools.partial(_identity, x=1)
-        assert _serialize_callable(p, _no_owner) == {"bind": f"{_MOD}._identity", "args": {"x": 1}}
+        assert _serialize_callable(p, (), _ARGUMENTS_AS_HELD) == {"bind": f"{_MOD}._identity", "args": {"x": 1}}
 
     def test_round_trip_factory(self):
         """Load → dump → reload preserves the factory (as bind: with args)."""
