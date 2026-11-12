@@ -189,11 +189,11 @@ def _refuse_root_config_append(orig_key: str, parts: list[str], separator: str) 
         ConfargError: If *parts* is the config segment alone, with the append suffix.
     """
     if len(parts) == 1 and _is_env_append(parts):
-        msg = (
-            f"Environment variable {orig_key!r} requires a field path to append to."
-            f" Use {orig_key[:-1]}{separator}<FIELD>{APPEND_SUFFIX}=/path/to/file."
+        subject = f"Environment variable {orig_key!r}"
+        raise ConfargError.append_names_no_field(
+            subject,
+            f"{orig_key[:-1]}{separator}<FIELD>{APPEND_SUFFIX}=/path/to/file",
         )
-        raise ConfargError(msg)
 
 
 def _refuse_unreached_variable(

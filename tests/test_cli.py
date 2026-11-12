@@ -1446,8 +1446,11 @@ class TestConfigFileAppend:
         """
         extra = tmp_yaml("host: a\nport: 1\nname: db1\n", "extra.yaml")
         for flag in ("--config+", "--config.+"):
-            with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path"):
+            with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path") as exc_info:
                 confarg.load(WithNestedList, argv=[flag, str(extra)], env={})
+            assert str(exc_info.value) == (
+                "--config+ requires a field path to append to. Use --config.fieldname+ /path/to/file."
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -68,12 +68,8 @@ def _load_cli_config(value: Any, subpath: str, config_flag: str, root: MergeAt, 
     if subpath.endswith(APPEND_SUFFIX):
         real_subpath = subpath[: -len(APPEND_SUFFIX)]
         if not real_subpath or real_subpath.endswith("."):
-            msg = (
-                f"--{config_flag}{'.' + real_subpath if real_subpath else ''}{APPEND_SUFFIX}"
-                f" requires a field path to append to."
-                f" Use --{config_flag}.fieldname{APPEND_SUFFIX} /path/to/file."
-            )
-            raise ConfargError(msg)
+            spelled = f"--{config_flag}{'.' + real_subpath if real_subpath else ''}{APPEND_SUFFIX}"
+            raise ConfargError.append_names_no_field(spelled, f"--{config_flag}.fieldname{APPEND_SUFFIX} /path/to/file")
     return _load_mount(value, subpath, root=root, reads=reads)
 
 
