@@ -12,6 +12,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-327 — An argv scalar cast leaves its expression unresolved](BUG-327-an-argv-scalar-cast-leaves-its-expression-unresolved.md) | critical |  | M | high | config | PR-50 |
 | [BUG-331 — A tag's later binding reads a key as the first binding types it](BUG-331-a-tags-later-binding-reads-a-key-as-the-first-binding-types-it.md) | critical |  | M | high | config | FEAT-13 |
 | [BUG-332 — A token the host framework bound as a value is read again as a confarg flag](BUG-332-a-token-the-host-bound-as-a-value-is-read-again-as-a-confarg-flag.md) | critical |  | M | medium | config | PR-72, REF-72 |
+| [BUG-337 — An index key fills every position below it, without a bound](BUG-337-an-index-key-fills-every-position-below-it-without-a-bound.md) | critical |  | M | medium | behavior | PR-5 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
 | [BUG-319 — Construction refuses a combination of `enum.Flag` members](BUG-319-construction-refuses-a-combination-of-enum-flag-members.md) | major |  | M | low | behavior | PR-46 |
@@ -20,6 +21,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-287 — An append at the top of a root file for a list-or-struct union crashes](BUG-287-an-append-at-the-top-of-a-root-file-for-a-list-or-struct-union-crashes.md) | minor |  | S | medium | behavior | PR-458 |
 | [BUG-328 — The append mount naming no field echoes `--config.+` as `--config+`](BUG-328-the-append-mount-naming-no-field-echoes-config-dot-plus-as-config-plus.md) | minor |  | S | low | behavior | PR-209 |
 | [BUG-334 — A class object under a Callable skips the factory check its path meets](BUG-334-a-class-object-under-a-callable-skips-the-factory-check-its-path-meets.md) | minor |  | S | low | behavior | PR-93 |
+| [BUG-338 — A list keeps the last of two spellings of one index](BUG-338-a-list-keeps-the-last-of-two-spellings-of-one-index.md) | minor |  | S | low | behavior | PR-5 |
 | [BUG-96 — A bare scalar flag exits with the framework's own error on all four adapters](BUG-96-a-bare-scalar-flag-exits-with-the-frameworks-own-error-on-the-adapters.md) | minor |  | M | low | behavior | PR-5, PR-13, PR-26, BUG-179 |
 | [BUG-181 — An out-of-domain Literal or Enum flag exits with the framework's choice error on the adapters](BUG-181-an-out-of-domain-literal-or-enum-flag-exits-with-the-frameworks-choice-error.md) | minor |  | M | medium | behavior | PR-5, PR-13, PR-26 |
 | [BUG-240 — A `*args` parameter cannot be set under the `args` of `bind:` or `call:`](BUG-240-a-var-positional-parameter-cannot-be-set-under-args.md) | minor |  | M | medium | behavior | PR-5 |
