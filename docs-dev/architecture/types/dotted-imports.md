@@ -88,6 +88,7 @@ So `dotted_name` names an object through the first module that publishes it and 
 - **A public face** is a module no attribute of the defining module names: `nt` and `posix` are published by `os` and `os.path`, `ntpath`, `posixpath` and `genericpath` (`getsize`, `commonprefix`, and on POSIX `exists`) by `os.path`, `_thread` by `threading`, the types `builtins` does not hold (`function`, `NoneType`, `module`) by `types`, and a stdlib accelerator `_x` by `x`, as PEP 399 lays them out.
   It is imported if it is not yet: a stdlib module named by convention, never by data.
 - **A module publishes** what `from module import *` takes: its `__all__`, or every name not starting with `_` when it declares none.
+  `__all__` is read as the object's own name is (below), so a lazy hook that raises for it declares none, and the module's public names stand in (BUG-282).
   `json.decoder.JSONDecodeError` is written `json.JSONDecodeError`, and a user's `myapp.models.Dog` is `myapp.Dog` once `myapp` imports it; `importlib.metadata.Pair`, which `importlib.metadata` holds without listing it in its `__all__`, stays where it is defined.
 - **The name** is the object's own when the module publishes it, read with `getattr`, so a lazy module `__getattr__` (PEP 562) runs for that name alone, as reading the path back runs it.
   Otherwise it is the first published name the module's namespace holds the object under, so `getpass.win_getpass` is written `getpass.getpass` and `nt._path_normpath` `os.path.normpath`.
