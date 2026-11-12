@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     import argparse
 
 from confarg import _defaults
-from confarg._tags import _partial_config_from_argv, _tag_named_struct, _tags_from_argv, _tags_from_config
+from confarg._tags import _partial_config_from_argv, _tag_named_struct, collect_tags
 from confarg._types import (
     _is_callable,
     _is_dict,
@@ -256,11 +256,9 @@ def _pre_extend_parser_for_completion(
         cli_prefix = parser.get_default(PREFIX_ATTR) or ""
         argv = strip_argv_prefix(argv, cli_prefix)
         config_dict = _partial_config_from_argv(argv, config_flag)
-        cli_tags = _tags_from_argv(argv)
-        config_tags = _tags_from_config(config_dict, target, prefix="")
-
-        # CLI wins over config
-        all_tags = {in_prefix(flag, cli_prefix): tag for flag, tag in {**config_tags, **cli_tags}.items()}
+        # argv wins over config, and a tag counts only where it selects a class, as for the import.
+        tags = collect_tags(argv, target, config_flag=config_flag)
+        all_tags = {in_prefix(flag, cli_prefix): tag for flag, tag in tags.items()}
 
         walk_ctx = _WalkCtx(parser=parser, existing_dests={a.dest for a in parser._actions})
 

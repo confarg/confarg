@@ -31,7 +31,7 @@ from confarg._types import (
     _union_args_no_none,
 )
 from confarg.dictexpr import contains_expression
-from confarg.typedload._construct import TagReading, tag_reading
+from confarg.typedload._construct import tag_selects_a_class
 
 
 def class_named(path: Any) -> type | None:
@@ -141,14 +141,14 @@ def _union_field_tags(
 ) -> dict[str, str]:
     """Return resolved class-tag entries for one union field in the merged config.
 
-    A tag-spelled key is one only where it selects a variant (:func:`tag_reading`): a dict
-    variant's entry is data, and a tag no variant is selected by is refused unimported.
+    A tag-spelled key is one only where it selects a variant (:func:`tag_selects_a_class`): a
+    dict variant's entry is data, and a tag no variant is selected by is refused unimported.
     """
     tags: dict[str, str] = {}
     non_none = _union_args_no_none(resolved)
     if len(non_none) > 1:
         sub = merged.get(name)
-        if isinstance(sub, dict) and _defaults.CLASS_KEY in sub and tag_reading(resolved) is TagReading.SELECTS:
+        if isinstance(sub, dict) and _defaults.CLASS_KEY in sub and tag_selects_a_class(resolved):
             val = sub[_defaults.CLASS_KEY]
             if isinstance(val, str):
                 tags[flag] = val
@@ -199,12 +199,19 @@ def collect_tags(
     *,
     config_flag: str,
     below: MergeDict | None = None,
+    cli_prefix: str = "",
 ) -> dict[str, str]:
     """Return ``{field_path: class_path}`` for every class key argv names, directly or in a file.
 
     argv wins over a config file for the same field path, as everywhere else. *below*, what
     the layers below argv hold, stands for its ``--config`` files when given: it holds them.
+    argv's flags are read below *cli_prefix*, which is stripped first; a flag outside it is
+    the host's, and names nothing.
     """
+    # Imported here: _parse_cli imports this module.
+    from confarg._parse_cli import _strip_argv_prefix  # noqa: PLC0415  # import cycle: _parse_cli imports this module
+
+    argv = _strip_argv_prefix(argv, cli_prefix)
     config_tags: dict[str, str] = {}
     if below is not None:
         config_tags = _tags_from_config(below, target, "")
@@ -215,25 +222,27 @@ def collect_tags(
     argv_tags = {
         field_path: class_path
         for field_path, class_path in _tags_from_argv(argv).items()
-        if not _argv_tag_selects_nothing(target, field_path)
+        if _argv_tag_may_select_a_class(target, field_path)
     }
     return {**config_tags, **argv_tags}
 
 
-def _argv_tag_selects_nothing(target: Any, field_path: str) -> bool:
-    """Return True if the class flag at *field_path* selects no variant of the union there, a dict variant's entry.
+def _argv_tag_may_select_a_class(target: Any, field_path: str) -> bool:
+    """Return True unless every way the type walk reaches *field_path* holds its class flag as no class's tag.
 
-    The argv scan is lexical, so it cannot tell a class key from a dict variant's entry
-    spelled like it; the type walk can, and an entry's value must never steer the walk or
-    the pre-registration import the way a class path does. A union reads the key as
-    :func:`tag_reading` says: only a class key that selects a variant is imported.
+    The argv scan is lexical, so it cannot tell a class key from a dict's entry or a leaf's
+    refused tag spelled like it; the type walk can, and asks :func:`tag_selects_a_class` of
+    each way, as construction asks it of the node it builds. Each way is asked apart, never
+    their common type: a union whose variants type the path apart builds the one the data
+    picks, so a tag any of them reads as a class may select one. A way below an untyped spec,
+    and a path no way reaches, which a subclass nobody imported yet may declare, keep the tag.
     """
     # Imported here: _parse_cli imports this module.
-    from confarg._parse_cli import _resolve_field_type  # noqa: PLC0415  # import cycle: _parse_cli imports this module
+    from confarg._parse_cli import _walk_path  # noqa: PLC0415  # import cycle: _parse_cli imports this module
 
     parts = field_path.split(".") if field_path else []
-    at = _resolve_field_type(target, parts)
-    return at is not None and _is_union(at) and tag_reading(at) is not TagReading.SELECTS
+    states = _walk_path(target, parts).end_states()
+    return not states or any(state.str_subtree or tag_selects_a_class(state.reached) for state in states)
 
 
 def import_tagged_classes(
@@ -242,6 +251,7 @@ def import_tagged_classes(
     *,
     config_flag: str,
     below: MergeDict | None = None,
+    cli_prefix: str = "",
 ) -> None:
     """Import every class the configuration names by its class key, ignoring failures.
 
@@ -254,7 +264,7 @@ def import_tagged_classes(
     Dev Notes:
         docs-dev/architecture/design-decisions/a-named-tag-is-imported-before-registration.md#a-named-tag-is-imported-before-registration
     """
-    for class_path in collect_tags(argv, target, config_flag=config_flag, below=below).values():
+    for class_path in collect_tags(argv, target, config_flag=config_flag, below=below, cli_prefix=cli_prefix).values():
         # Importing an arbitrary module runs its top level, which can raise anything at all.
         with contextlib.suppress(Exception):
             _import_dotted(class_path)

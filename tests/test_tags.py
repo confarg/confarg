@@ -10,8 +10,11 @@ subclass nobody imported is a contract test (tests/cli/test_backend_contract.py)
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 import pytest
 
@@ -22,6 +25,7 @@ from confarg._tags import (
     collect_tags,
     import_tagged_classes,
 )
+from tests.conftest import make_target
 
 if TYPE_CHECKING:
     from confarg._merge import MergeDict
@@ -231,7 +235,6 @@ class TestRootLevelTag:
 
     def test_root_tag_from_config(self) -> None:
         """A tag on the root struct itself, not on one of its fields."""
-        """A tag on the root struct itself, not on one of its fields."""
         assert _tags_from_config({"class": "myapp.ServerDB"}, _DBBase, "") == {"": "myapp.ServerDB"}
 
 
@@ -260,6 +263,80 @@ class TestCollectTags:
         """With no config flag there is no file to read, and argv still answers."""
         tags = collect_tags(["--db.class", "myapp.ServerDB"], _AppConfig, config_flag="")
         assert tags == {"db": "myapp.ServerDB"}
+
+
+@dataclass
+class _Inner:
+    b: int = 0
+
+
+@dataclass
+class _ForkA:
+    f: _Inner | None = None
+
+
+@dataclass
+class _ForkB:
+    f: int = 0
+
+
+class TestAnArgvTagIsCollectedWhereItSelectsAClass:
+    """argv's class flag is collected only where the type at its path reads it as selecting a class (BUG-286).
+
+    The scan is lexical, and skipped only a union no tag selects a variant of, so a ``dict``'s
+    entry or a leaf's refused tag was imported, running the module it names.
+    """
+
+    @pytest.mark.parametrize(
+        ("field_type", "selects"),
+        [
+            pytest.param(dict[str, str], False, id="dict"),
+            pytest.param(int, False, id="int"),
+            pytest.param(datetime, False, id="leaf-built-from-one-value"),
+            pytest.param(type, False, id="type"),
+            pytest.param(list[int], False, id="list"),
+            pytest.param(int | dict[str, str], False, id="union-holding-it-as-data"),
+            pytest.param(int | str, False, id="union-refusing-it"),
+            pytest.param(_DBBase, True, id="struct"),
+            pytest.param(_DBBase | None, True, id="optional-struct"),
+            pytest.param(UUID, True, id="leaf-a-tag-opens"),
+            pytest.param(Any, True, id="any"),
+            pytest.param(Callable[[], int], True, id="callable"),
+            pytest.param(_DBBase | int, True, id="union-with-a-struct"),
+        ],
+    )
+    def test_by_the_type_at_its_path(
+        self,
+        field_type: Any,
+        selects: bool,  # noqa: FBT001  # a parametrized expectation, not a call's flag
+    ) -> None:
+        """Construction imports a tag only where it selects a class; the scan asks the same question."""
+        target = make_target("f", field_type, default=None)
+        tags = collect_tags(["--f.class", "myapp.Thing"], target, config_flag="")
+        assert tags == ({"f": "myapp.Thing"} if selects else {})
+
+    def test_a_path_the_walk_cannot_resolve_is_collected(self) -> None:
+        """A path through a subclass nobody imported yet resolves nowhere: its tag may select a class there."""
+        tags = collect_tags(["--db.extra.class", "myapp.Thing"], _AppConfig, config_flag="")
+        assert tags == {"db.extra": "myapp.Thing"}
+
+    def test_a_tag_any_way_reads_as_a_class_is_collected(self) -> None:
+        """A union's variants may type the path apart; one reading the tag as a class is enough.
+
+        Folded into one type, ``_Inner | None`` and ``int`` disagree and read as ``str``, which
+        would have dropped a subclass's flags on every adapter.
+        """
+        target = make_target("x", _ForkA | _ForkB, default=None)
+        tags = collect_tags(["--x.f.class", "myapp.Thing"], target, config_flag="")
+        assert tags == {"x.f": "myapp.Thing"}
+
+    def test_the_cli_prefix_is_stripped_first(self) -> None:
+        """Under a prefix the path resolves as it does bare: the prefix is no field of the target."""
+        target = make_target("u", int | dict[str, str], default=0)
+        argv = ["--app.u.class", "myapp.Thing", "--host.class", "myapp.X"]
+        assert collect_tags(argv, target, config_flag="", cli_prefix="app") == {}
+        argv = ["--app.db.class", "myapp.ServerDB", "--host.class", "myapp.X"]
+        assert collect_tags(argv, _AppConfig, config_flag="", cli_prefix="app") == {"db": "myapp.ServerDB"}
 
 
 class TestImportTaggedClasses:

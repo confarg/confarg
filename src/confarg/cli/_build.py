@@ -1415,7 +1415,7 @@ def build_static_flags(  # noqa: PLR0913 — one keyword per knob, mirroring con
     # Imported here: a module-level import would create an import cycle with _parse_cli.
     from confarg._parse_cli import _locals_keys  # noqa: PLC0415
 
-    import_tagged_classes(argv, target, config_flag=config_flag, below=below)
+    import_tagged_classes(argv, target, config_flag=config_flag, below=below, cli_prefix=cli_prefix)
     flags = _collect_struct_specs(target, prefix="")
     if _root_kind(target).sets_whole:
         flags.insert(0, _whole_root_spec(target))

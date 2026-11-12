@@ -7855,6 +7855,187 @@ class TestATagSpelledKeyInAUnionWithADictContract:
         assert loader.load(_TagSpelledLabels, argv=[], env={}, files=[base, over]).nested == expected
 
 
+@dataclass
+class _TagSpelledEntries:
+    """Types no class flag selects a class at: a lone dict, a leaf, a union whose dict variant holds the key."""
+
+    labels: dict[str, str] = dataclasses_field(default_factory=dict)
+    n: int = 0
+    u: int | dict[str, str] = 0
+
+
+#: The classes of the import-before-registration probes, laid out per test so a subclass is new to each.
+_BUG286_BASE = """
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Inner:
+    b: int = 0
+
+
+@dataclass
+class A:
+    f: Inner | None = None
+
+
+@dataclass
+class B:
+    f: int = 0
+
+
+@dataclass
+class Base:
+    a: int = 0
+
+
+class Maker:
+    def __init__(self, inner: Base) -> None:
+        self.inner = inner
+
+    def __call__(self) -> int:
+        return 1
+
+
+@dataclass
+class OBase:
+    extra: int = 0
+
+
+@dataclass
+class Fork:
+    x: A | B = field(default_factory=B)
+
+
+@dataclass
+class WithMaker:
+    fn: Callable[[], int] | None = None
+
+
+@dataclass
+class Overridden:
+    o: OBase = field(default_factory=OBase)
+"""
+
+#: Subclasses nobody imports but a tag; ``{base}`` is the base module's name.
+_BUG286_SUB = """
+from dataclasses import dataclass, field
+
+from {base} import Base, Inner, OBase
+
+
+@dataclass
+class InnerSub(Inner):
+    deep: int = 0
+
+
+@dataclass
+class Sub(Base):
+    extra: int = 0
+
+
+@dataclass
+class OSub(OBase):
+    extra: Inner = field(default_factory=Inner)
+"""
+
+
+class TestAClassFlagIsImportedWhereItSelectsAClassContract:
+    """argv's class flag imports its module only where the type at its path reads it as selecting a class (BUG-286).
+
+    The pre-registration scan was lexical, so ``--labels.class pkg.mod.Thing`` on a lone
+    ``dict[str, str]`` ran ``pkg.mod``, though construction holds the value as data; under a
+    ``cli_prefix`` the scan resolved no path at all, so a union's dict entry ran it too.
+    """
+
+    def test_a_flag_no_type_selects_by_is_never_imported(
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A dict's entry, a leaf's refused tag and, under a prefix, a union's dict entry run no module."""
+        (tmp_path / "bug286_entry.py").write_text(
+            "import pathlib\npathlib.Path(__file__).with_suffix('.ran').touch()\n",
+        )
+        ran = tmp_path / "bug286_entry.ran"
+        monkeypatch.syspath_prepend(str(tmp_path))
+        monkeypatch.delitem(sys.modules, "bug286_entry", raising=False)
+        entry = {"class": "bug286_entry.Thing"}
+        assert loader.load(_TagSpelledEntries, argv=["--labels.class", "bug286_entry.Thing"], env={}).labels == entry
+        with pytest.raises(TypeCoercionError, match="picks the class"):
+            loader.load(_TagSpelledEntries, argv=["--n.class", "bug286_entry.Thing"], env={})
+        argv = ["--app.u.class", "bug286_entry.Thing"]
+        assert loader.load(_TagSpelledEntries, argv=argv, env={}, cli_prefix="app").u == entry
+        assert not ran.exists()
+
+    @pytest.fixture
+    def probes(self, request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+        """Lay out the probe classes under names new to this test, and return their base module."""
+        prefix = f"bug286_{re.sub(r'\W', '_', request.node.name)}"
+        (tmp_path / f"{prefix}_base.py").write_text(_BUG286_BASE)
+        (tmp_path / f"{prefix}_sub.py").write_text(_BUG286_SUB.format(base=f"{prefix}_base"))
+        monkeypatch.syspath_prepend(str(tmp_path))
+        base = __import__(f"{prefix}_base")
+        yield base
+        for name in (f"{prefix}_base", f"{prefix}_sub"):
+            sys.modules.pop(name, None)
+
+    @staticmethod
+    def _argv(probes: Any, case: str) -> list[str]:
+        """Return the command line of the probe *case*: an outer tag, and one below it naming a subclass."""
+        sub = probes.__name__.removesuffix("_base") + "_sub"
+        return {
+            "fork": ["--x.class", f"{probes.__name__}.A", "--x.f.class", f"{sub}.InnerSub", "--x.f.deep", "3"],
+            "maker": [
+                "--fn.class",
+                f"{probes.__name__}.Maker",
+                "--fn.inner.class",
+                f"{sub}.Sub",
+                "--fn.inner.extra",
+                "4",
+            ],
+            "override": ["--o.class", f"{sub}.OSub", "--o.extra.class", f"{sub}.InnerSub", "--o.extra.deep", "2"],
+        }[case]
+
+    def test_a_union_whose_variants_type_the_path_apart(self, loader: ConfargLoader, probes: Any) -> None:
+        """One variant reads the tag as a class, another as an ``int``: the subclass is imported, its field set."""
+        built = loader.load(probes.Fork, argv=self._argv(probes, "fork"), env={})
+        assert (type(built.x.f).__name__, built.x.f.deep) == ("InnerSub", 3)
+
+    def test_a_class_spec_argument_under_a_callable(self, loader: ConfargLoader, probes: Any) -> None:
+        """Below a Callable's ``class:`` the walk types the argument by the class the spec names."""
+        built = loader.load(probes.WithMaker, argv=self._argv(probes, "maker"), env={})
+        assert (type(built.fn.inner).__name__, built.fn.inner.extra) == ("Sub", 4)
+
+    def test_a_subclass_overriding_a_fields_type(self, loader: ConfargLoader, probes: Any) -> None:
+        """The base types ``extra`` as an ``int``, the subclass the tag names as a struct: the tag below it selects."""
+        built = loader.load(probes.Overridden, argv=self._argv(probes, "override"), env={})
+        assert (type(built.o.extra).__name__, built.o.extra.deep) == ("InnerSub", 2)
+
+    @pytest.mark.parametrize(
+        ("case", "target", "flag"),
+        [
+            pytest.param("fork", "Fork", "x.f.deep", id="fork"),
+            pytest.param("maker", "WithMaker", "fn.inner.extra", id="maker"),
+            pytest.param("override", "Overridden", "o.extra.deep", id="override"),
+        ],
+    )
+    def test_the_subclass_flag_is_registered(
+        self,
+        populating_loader: ConfargLoader,
+        probes: Any,
+        case: str,
+        target: str,
+        flag: str,
+    ) -> None:
+        """Registration sees the subclass the tag below the outer one names, so its own field has a flag."""
+        flags = populating_loader.registered_flags(getattr(probes, target), argv=self._argv(probes, case))
+        assert flags is not None
+        assert flag in flags
+
+
 # ---------------------------------------------------------------------------
 # An opener's word as a field of a class: or classfn: spec, parity across channels
 # ---------------------------------------------------------------------------
