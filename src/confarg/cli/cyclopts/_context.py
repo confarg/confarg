@@ -21,7 +21,7 @@ from confarg._defaults import _resolve_options
 from confarg._files import Reads
 from confarg._parse_cli import _config_pairs_in
 from confarg.cli._argv import drop_bare_occurrences, refuse_bare_occurrences
-from confarg.cli._collect import _construct_from_merged, _merge_from_flat
+from confarg.cli._merge_tail import _construct_from_merged, _merge_from_argv
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
 from confarg.cli.cyclopts._register import _app_meta
@@ -130,7 +130,7 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options, reads: Read
     flat: dict[str, Any] = {name_map.get(k, k): v for k, v in raw.items()}
 
     registration = _app_registration(app)
-    return _merge_from_flat(
+    return _merge_from_argv(
         flat,
         target,
         options,

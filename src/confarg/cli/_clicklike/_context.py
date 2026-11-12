@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 from confarg._defaults import _resolve_options
 from confarg._files import Reads
-from confarg.cli._collect import _construct_from_merged, _merge_from_flat
+from confarg.cli._merge_tail import _construct_from_merged, _merge_from_argv
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
 
@@ -87,7 +87,7 @@ def ctx_prefix(ctx: Any, options: _Options) -> str:
 def merge_from_ctx(target: object, ctx: Any, options: _Options, reads: Reads) -> MergeDict:
     """Flatten ``ctx`` and run the shared merge tail, reading through *reads*; see the adapters' merge_context."""
     found = registration(ctx)
-    return _merge_from_flat(
+    return _merge_from_argv(
         flat_from_ctx(ctx),
         target,
         options,

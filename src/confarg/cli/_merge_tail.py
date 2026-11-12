@@ -69,7 +69,7 @@ def _require_argv_spells(
         raise ConfargError(msg)
 
 
-def _merge_from_flat(  # noqa: PLR0913  # the parse result, then how the framework bound it
+def _merge_from_argv(  # noqa: PLR0913  # the parse result, then how the framework bound it
     flat: dict[str, Any],
     target: object,
     options: _Options,

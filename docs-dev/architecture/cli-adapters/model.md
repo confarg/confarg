@@ -14,7 +14,7 @@ They are a translation layer, never a second implementation: every adapter must 
 | raw dict | `merge_namespace` | `merge_context` | `merge_context` | `merge_app` |
 | object | `from_namespace` | `from_context` | `from_context` | `from_app` |
 
-`merge_*` → flatten the framework's result to `{dotted.flag: value}` → `cli._collect._merge_from_flat`, which is the whole shared tail: check the parse result against argv (`_require_argv_spells`) → vanilla's loop over argv (`_parse_cli._parse_cli(..., host_parsed=True)`), which returns the CLI channel and its `--config` files → `_pipeline._merge_sources`.
+`merge_*` → flatten the framework's result to `{dotted.flag: value}` → `cli._merge_tail._merge_from_argv`, which is the whole shared tail: check the parse result against argv (`_require_argv_spells`) → vanilla's loop over argv (`_parse_cli._parse_cli(..., host_parsed=True)`), which returns the CLI channel and its `--config` files → `_pipeline._merge_sources`.
 `from_*` = `merge_*` + `build()`.
 Only the flattening is per-adapter, so the four cannot drift.
 `merge_*` and `from_*` take `confarg.load`'s own keywords, `**opts: Unpack[MergeOptions]` ([pipeline](../pipeline/api-seams.md#one-option-set)).
@@ -32,7 +32,7 @@ The loop runs in `host_parsed` mode, which differs from vanilla in one respect o
 That is a positional or subcommand token no flag consumed, a flag outside `cli_prefix`, or, with no prefix, a flag whose first segment names no member of the target.
 Anything inside confarg's namespace is parsed exactly as vanilla parses it, so a flag the registration accepted and vanilla refuses (BUG-113) raises vanilla's error at merge rather than being dropped.
 One stray needs the host's answer: argparse and cyclopts register a multi-token or fixed-arity flag greedily, so the token after the run vanilla consumes was bound to the flag and is the stray vanilla refuses, while click and typer bind the exact count, so the same token is a positional of the host's.
-The adapter says which (`binds_runs`), and the loop asks `_collect._host_binds_run`: whether registration registered the flag to bind a run (`_build.bound_runs`, recorded on what `populate_*` filled), or the type it consumed for binds one.
+The adapter says which (`binds_runs`), and the loop asks `_merge_tail._host_binds_run`: whether registration registered the flag to bind a run (`_build.bound_runs`, recorded on what `populate_*` filled), or the type it consumed for binds one.
 Registration's answer comes first, since a flag below a node naming a class can be registered wider than one occurrence of it is typed ([design decisions](../design-decisions/a-node-types-its-keys-by-the-class-it-names.md#the-adapters)).
 
 The parse result is only *checked*: a confarg flag it holds that argv does not spell means the two are not one command line — typically `parse_args(custom)` merged with `argv` left to default to `sys.argv[1:]` — and is refused (`_require_argv_spells`) rather than lost without a word.
