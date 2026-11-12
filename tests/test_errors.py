@@ -569,6 +569,42 @@ class TestAUnionRefusalNamesEachVariantsReason:
         refusal = self._refusal(Target, {"v": value})
         assert refusal.splitlines()[1:] == [f"  {line}"]
 
+    @pytest.mark.parametrize(
+        ("field_type", "value", "line"),
+        [
+            pytest.param(
+                list[Color] | int,
+                ["red", "purple"],
+                "list[Color]: cannot coerce str 'purple' to Color at 'v[1]'. Valid members: 'RED' ('red'),"
+                " 'GREEN' ('green'), 'BLUE' ('blue')",
+                id="enum-in-a-list",
+            ),
+            pytest.param(
+                list[type] | int,
+                ["os.path"],
+                "list[type]: cannot coerce 'os.path' at 'v[0]': expected a class, got 'module'",
+                id="type-in-a-list",
+            ),
+            pytest.param(
+                dict[str, type] | int,
+                {"k": "nope.Nothing"},
+                "dict[str, type]: cannot import class 'nope.Nothing' at 'v.k': Cannot import 'nope.Nothing':"
+                " no importable module found in path. Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'",
+                id="type-in-a-dict",
+            ),
+        ],
+    )
+    def test_a_refusal_inside_the_value_says_its_message(self, field_type: Any, value: Any, line: str) -> None:
+        """A refusal raised below the union's position gives its whole message, which names where it stands (BUG-329).
+
+        The reason a factory says apart is relative to the position it was raised at, so a
+        union's line gave ``list[Color]: valid members ...``, naming neither the value nor
+        the position refused.
+        """
+        Target = make_target("v", field_type, default=None)
+        refusal = self._refusal(Target, {"v": value})
+        assert refusal.splitlines()[1:] == [f"  {line}"]
+
 
 @dataclass
 class _AmbiguousA:
