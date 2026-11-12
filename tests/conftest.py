@@ -9,8 +9,11 @@ from __future__ import annotations
 import enum
 import functools
 import http.server
+import importlib
+import sys
 import textwrap
 import threading
+import types
 from dataclasses import dataclass, field, make_dataclass
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
@@ -651,6 +654,37 @@ def leaf_registry():
     _LEAF_COERCIONS.update(coercions)
     _LEAF_SERIALIZERS.clear()
     _LEAF_SERIALIZERS.update(serializers)
+
+
+@pytest.fixture
+def running_script(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Return a function running a script's *source* as ``__main__``, as ``python <name>.py`` would.
+
+    The script is written to ``<tmp_path>/<folder>/<name>.py``, that folder put first on
+    ``sys.path``, as Python puts a script's own, and the source executed as a module named
+    ``__main__`` whose ``__file__`` is the script, then set as ``sys.modules["__main__"]``. A dotted
+    path naming ``<name>`` imports the file a second time, as the real run does. Every module
+    the test imports under a name it wrote is forgotten afterwards.
+    """
+    names: list[str] = []
+
+    def run(source: str, name: str = "myapp", folder: str = "app") -> types.ModuleType:
+        script = tmp_path / folder / f"{name}.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(textwrap.dedent(source), encoding="utf-8")
+        monkeypatch.syspath_prepend(str(script.parent))
+        importlib.invalidate_caches()
+        names.append(name)
+        sys.modules.pop(name, None)
+        main = types.ModuleType("__main__")
+        main.__file__ = str(script)
+        monkeypatch.setitem(sys.modules, "__main__", main)
+        exec(compile(script.read_text(encoding="utf-8"), str(script), "exec"), main.__dict__)
+        return main
+
+    yield run
+    for name in names:
+        sys.modules.pop(name, None)
 
 
 # ---------------------------------------------------------------------------

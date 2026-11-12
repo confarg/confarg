@@ -92,6 +92,24 @@ def _append_none_remedy(message: str) -> str:
     return f"{message.removesuffix('.')}. {_NONE_REMEDY}"
 
 
+def _a_copy_of_the_script(name: Any, twin: str | None) -> str:
+    """Return the sentence saying the class *name* is a copy of the running script's class *twin*, or nothing.
+
+    A dotted path naming the script being run by its file's module name imports it a second time,
+    so its classes are copies of the ones the script runs as ``__main__``. *twin* is the dotted
+    name of the class *name* copies, given by the caller only where that class would be taken.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-path-naming-the-running-script-imports-a-copy
+    """
+    if twin is None:
+        return ""
+    return (
+        f" {name!r} is a copy of {twin}: the path imports the running script a second time, under another name."
+        " Define the classes in a module the script imports."
+    )
+
+
 def _capitalized(reason: str) -> str:
     """Return *reason*, a clause one channel quotes after a colon, as the sentence another one opens with."""
     return reason[:1].upper() + reason[1:]
@@ -940,21 +958,20 @@ class TypeCoercionError(ConfargError):
         return cls(f"Cannot apply {key!r} to the {what} at {_spelled_where(path)}: it is an operation on a list.")
 
     @classmethod
-    def not_a_subclass(cls, name: Any, parent: str, path: str) -> TypeCoercionError:
+    def not_a_subclass(cls, name: Any, parent: str, path: str, *, twin: str | None = None) -> TypeCoercionError:
         """Return the error for a class that is not a subclass of the target type.
 
         *name* arrives as the text the caller names the class by — a dotted name, or the
         string the user typed — and *parent* as a dotted name, both passed in rather than
-        computed, this module importing nothing from ``confarg``.
+        computed, this module importing nothing from ``confarg``. *twin* names the running
+        script's class that *name* is a copy of, when it is one (:func:`_a_copy_of_the_script`).
 
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
         reason = f"class {name!r} is not a subclass of {parent}"
-        return cls._refusal(
-            f"Class {name!r} at {_spelled_where(path)} is not a subclass of {parent}.",
-            reason=(path, reason),
-        )
+        message = f"Class {name!r} at {_spelled_where(path)} is not a subclass of {parent}."
+        return cls._refusal(message + _a_copy_of_the_script(name, twin), reason=(path, reason))
 
     @classmethod
     def class_not_found(cls, name: str, path: str, cause: str, *, key: str | None = None) -> TypeCoercionError:
@@ -1113,19 +1130,50 @@ class TypeCoercionError(ConfargError):
         return cls._refusal(message, reason=(path, f"class {name!r} is a Protocol"))
 
     @classmethod
-    def tag_not_a_subclass(cls, name: Any, parent: str, path: str, call: str) -> TypeCoercionError:
+    def tag_not_a_subclass(
+        cls,
+        name: Any,
+        parent: str,
+        path: str,
+        call: str,
+        *,
+        twin: str | None = None,
+    ) -> TypeCoercionError:
         """Return the error for a class tag on a typed field that names no subclass of the field's type.
 
         *call* is the spelling of the ``call`` directive in the spec's mode, passed in because this
         module imports nothing from ``confarg``. The message names it to say what it does: it
         computes a value the field's type accepts, so it is no way to build the refused class.
+        *twin* is as for :meth:`not_a_subclass`.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/class-names-a-subclass-call-computes.md#class-names-a-subclass-call-computes
         """
+        message = f"Class {name!r} at {_spelled_where(path)} is not a subclass of {parent}."
         return cls(
-            f"Class {name!r} at {_spelled_where(path)} is not a subclass of {parent}."
-            f" A '{call}:' spec computes a value the field's type accepts, so it cannot build this class either.",
+            message + _a_copy_of_the_script(name, twin) + f" A '{call}:' spec computes a value the field's type"
+            " accepts, so it cannot build this class either.",
+        )
+
+    @classmethod
+    def tag_fits_no_variant(
+        cls,
+        name: Any,
+        variants: Sequence[str],
+        path: str,
+        *,
+        twin: str | None = None,
+    ) -> TypeCoercionError:
+        """Return the error for a union's class tag naming no subclass of any struct variant, *variants* by name.
+
+        *twin* is as for :meth:`not_a_subclass`.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#inheritance
+        """
+        return cls(
+            f"Class {name!r} at {_spelled_where(path)} is not compatible with any union variant."
+            f" Expected a subclass of one of: {list(variants)}.{_a_copy_of_the_script(name, twin)}",
         )
 
     @classmethod

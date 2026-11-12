@@ -20,6 +20,9 @@ if TYPE_CHECKING:
     from tests._loaders import ConfargLoader
 
 import re
+import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -1273,3 +1276,157 @@ class TestARefusedDictKeyIsSaidToBeAKey:
             match=r"^Unsupported leaf type tuple\[int, int\] at 'v'",
         ):
             confarg.build(Target, {"v": {"b": 1}})
+
+
+_SCRIPT = """
+    from dataclasses import dataclass, field
+
+
+    @dataclass
+    class DBServerConfig:
+        host: str = "h"
+
+
+    @dataclass
+    class SQLiteConfig:
+        path: str = "p"
+
+
+    @dataclass
+    class Base:
+        x: int = 0
+
+
+    @dataclass
+    class Sub(Base):
+        y: int = 1
+
+
+    @dataclass
+    class Unrelated:
+        z: int = 0
+
+
+    @dataclass
+    class Config:
+        db: DBServerConfig | SQLiteConfig = field(default_factory=SQLiteConfig)
+        base: Base = field(default_factory=Base)
+        kind: type[Base] = Base
+"""
+
+_A_COPY = (
+    "{name!r} is a copy of __main__.{qualname}: the path imports the running script a second time, under another"
+    " name. Define the classes in a module the script imports."
+)
+
+
+class TestAClassKeyNamingTheRunningScriptSaysSo:
+    """A path naming the running script imports it again, and each refusal of its class says so (FEAT-67).
+
+    The script runs as ``__main__``, so ``myapp.SQLiteConfig`` is a copy of ``__main__.SQLiteConfig``,
+    and the refusal listed ``__main__`` classes beside the copy, leaving the reader to work out why.
+    """
+
+    @pytest.mark.parametrize(
+        ("data", "first"),
+        [
+            pytest.param(
+                {"db": {"class": "myapp.SQLiteConfig"}},
+                "Class 'myapp.SQLiteConfig' at 'db' is not compatible with any union variant."
+                " Expected a subclass of one of: ['__main__.DBServerConfig', '__main__.SQLiteConfig'].",
+                id="union-tag",
+            ),
+            pytest.param(
+                {"base": {"class": "myapp.Sub"}},
+                "Class 'myapp.Sub' at 'base' is not a subclass of __main__.Base.",
+                id="struct-tag",
+            ),
+            pytest.param(
+                {"kind": "myapp.Sub"},
+                "Class 'myapp.Sub' at 'kind' is not a subclass of __main__.Base.",
+                id="type-field",
+            ),
+        ],
+    )
+    def test_each_refusal_says_the_class_is_a_copy(
+        self,
+        running_script: Callable[..., Any],
+        data: dict[str, Any],
+        first: str,
+    ) -> None:
+        """A union's tag, a struct's tag and a ``type[X]`` field name the copy and the class it copies."""
+        main = running_script(_SCRIPT)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(main.Config, data)
+        tag = next(iter(data.values()))
+        name = tag["class"] if isinstance(tag, dict) else tag
+        hint = _A_COPY.format(name=name, qualname=name.rpartition(".")[2])
+        message = str(exc_info.value)
+        assert message.startswith(f"{first} {hint}")
+
+    def test_a_module_of_the_same_name_elsewhere_is_not_the_script(
+        self,
+        running_script: Callable[..., Any],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A ``myapp`` that is another file than the one running is no copy of it, whatever its classes."""
+        main = running_script(_SCRIPT, folder="app")
+        other = tmp_path / "other"
+        other.mkdir()
+        (other / "myapp.py").write_text(textwrap.dedent(_SCRIPT), encoding="utf-8")
+        monkeypatch.syspath_prepend(str(other))
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(main.Config, {"base": {"class": "myapp.Sub"}})
+        assert "copy" not in str(exc_info.value)
+
+    def test_a_main_without_a_file_gets_no_hint(
+        self,
+        running_script: Callable[..., Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An interactive session or a frozen app has no script file to compare: the refusal is the plain one."""
+        main = running_script(_SCRIPT)
+        monkeypatch.delattr(main, "__file__")
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(main.Config, {"base": {"class": "myapp.Sub"}})
+        assert str(exc_info.value).startswith(
+            "Class 'myapp.Sub' at 'base' is not a subclass of __main__.Base. A 'call:'",
+        )
+
+    def test_a_class_whose_copy_would_be_refused_too_gets_no_hint(self, running_script: Callable[..., Any]) -> None:
+        """The script's own ``Unrelated`` is no ``Base`` either, so moving it would not help: no hint."""
+        main = running_script(_SCRIPT)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(main.Config, {"base": {"class": "myapp.Unrelated"}})
+        assert "copy" not in str(exc_info.value)
+
+    @pytest.mark.parametrize("module_form", [False, True], ids=["script", "dash-m"])
+    def test_a_real_run_says_so(self, tmp_path: Path, *, module_form: bool) -> None:
+        """``python myapp.py`` and ``python -m app.myapp`` both import the script again, and both are told."""
+        package = tmp_path / "app"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        run = textwrap.dedent("""
+
+            import sys
+
+            import confarg
+
+            try:
+                confarg.load(Config, argv=sys.argv[1:], env={})
+            except Exception as e:
+                print(e)
+        """)
+        (package / "myapp.py").write_text(textwrap.dedent(_SCRIPT) + run, encoding="utf-8")
+        name = "app.myapp.SQLiteConfig" if module_form else "myapp.SQLiteConfig"
+        command = ["-m", "app.myapp"] if module_form else [str(package / "myapp.py")]
+        cwd = tmp_path if module_form else package
+        result = subprocess.run(
+            [sys.executable, *command, "--db.class", name],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            check=True,
+        )
+        assert _A_COPY.format(name=name, qualname="SQLiteConfig") in result.stdout

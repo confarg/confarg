@@ -30,7 +30,7 @@ from confarg._callable import (
 )
 from confarg._cast import cast_name_for_type, holds_the_cast, type_for_cast_name
 from confarg._conformance import is_protocol
-from confarg._import import dotted_name
+from confarg._import import dotted_name, script_twin
 from confarg._merge import (
     MERGE_OP_KEYS,
     ListOp,
@@ -1368,11 +1368,8 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
         # A class no variant holds is the spec of the variant that reads one, which builds the class it names.
         return construct(reader, data, path=path)
     valid_variants = sorted(dotted_name(rv) for rv in structs)
-    msg = (
-        f"Class {tag!r} at {_spelled_where(path)} is not compatible with any union variant."
-        f" Expected a subclass of one of: {valid_variants}"
-    )
-    raise TypeCoercionError(msg)
+    twin = script_twin(cls, lambda c: any(_tagged_struct(c, rv) is not None for rv in structs))
+    raise TypeCoercionError.tag_fits_no_variant(tag, valid_variants, _spell_field_path(path), twin=twin)
 
 
 def _try_construct_union_struct(dc_vars: list[Any], data: MergeDict, path: FieldPath, refusals: _Refusals) -> Any:
@@ -1886,7 +1883,8 @@ def _construct_by_class_path(tp: type, data: MergeDict, path: FieldPath) -> Any:
         call = _defaults.CALL_KEY
         # A parameterized field names its arguments: the class may subclass its class, but never be one bound so.
         parent = repr(tp) if _generic_origin(tp) is not None else dotted_name(tp)
-        raise TypeCoercionError.tag_not_a_subclass(tag, parent, _spell_field_path(path), call)
+        twin = script_twin(cls, lambda c: _tagged_struct(c, tp) is not None)
+        raise TypeCoercionError.tag_not_a_subclass(tag, parent, _spell_field_path(path), call, twin=twin)
     cleaned = {k: v for k, v in data.items() if k != _defaults.CLASS_KEY}
     return _construct_named(bound, cleaned, path, _Naming(tag, "class key"))
 

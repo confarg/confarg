@@ -10,13 +10,14 @@ import builtins
 import functools
 import importlib
 import inspect
+import os
 import sys
 from typing import TYPE_CHECKING, Any
 
 from confarg.exceptions import SymbolImportError, SymbolNotFoundError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from types import ModuleType
 
 _NOT_FOUND = object()
@@ -164,6 +165,41 @@ def _c_owner(obj: Any) -> type | None:
     if owner is None and inspect.isbuiltin(obj):
         owner = obj.__self__
     return owner if isinstance(owner, type) else None
+
+
+def script_twin(cls: type, takes: Callable[[type], bool]) -> str | None:
+    """Return the dotted name of the running script's class that *cls* is a copy of, where *takes* takes it.
+
+    A script runs as ``__main__``, so a dotted path naming it by its file's module name imports the
+    file a second time, as another module whose classes are copies of the ones the script runs.
+    *cls* is such a copy when its module is not ``__main__`` but is the file ``__main__`` runs,
+    by ``__main__.__file__``, the one spelling of the script that ``python script.py``,
+    ``python -m pkg.app`` and a host framework's script all set to an absolute path. The class
+    ``__main__`` holds under *cls*'s qualified name is its twin, named only where *takes*, the
+    refusing site's own test, would take it. None otherwise: ``__main__`` has no file in an
+    interactive session or a frozen app.
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#a-path-naming-the-running-script-imports-a-copy
+    """
+    main = sys.modules.get("__main__")
+    module = sys.modules.get(cls.__module__)
+    if main is None or module is None or module is main:
+        return None
+    main_file, file = getattr(main, "__file__", None), getattr(module, "__file__", None)
+    if not (isinstance(main_file, str) and isinstance(file, str)) or not _same_file(main_file, file):
+        return None
+    twin: Any = main
+    for part in cls.__qualname__.split("."):
+        twin = getattr(twin, part, None)
+    if not isinstance(twin, type) or twin is cls or not takes(twin):
+        return None
+    return dotted_name(twin)
+
+
+def _same_file(a: str, b: str) -> bool:
+    """True if the paths *a* and *b* name one file, whatever their case on a case-insensitive system or their links."""
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
 def imports_back(path: str, obj: Any) -> bool:

@@ -167,6 +167,7 @@ Until BUG-298 the union returned any `None` before asking a variant, a regressio
 
 A struct field whose class has subclasses requires the class key naming the concrete class; without it construction fails rather than guessing, because the set of visible subclasses depends on what has been imported ([design decisions](../design-decisions/no-implicit-subclass-inference.md#no-implicit-subclass-inference)).
 The tag must be a full dotted path so the class can be imported.
+A tag naming the running script by its file's module name imports a copy of its classes, and the refusal says so ([a path naming the running script imports a copy](dotted-imports.md#a-path-naming-the-running-script-imports-a-copy)).
 No field, the struct's own or a subclass's, can take the key's spelling away, since `class` is a Python keyword ([the class key is `class`](../design-decisions/the-class-key-is-class.md#the-class-key-is-class)).
 
 Subclass discovery (`_struct_subclasses`) walks breadth-first and yields each class exactly once.

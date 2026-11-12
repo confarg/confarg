@@ -10986,6 +10986,39 @@ class TestClassTagPointsToCall:
         assert "'call:'" in str(info.value)
 
 
+class TestAClassKeyNamingTheRunningScriptContract:
+    """A tag naming the running script by its file's name says the class is a copy, in every front-end (FEAT-67)."""
+
+    _SCRIPT = """
+        from dataclasses import dataclass, field
+
+
+        @dataclass
+        class DBServerConfig:
+            host: str = "h"
+
+
+        @dataclass
+        class SQLiteConfig:
+            path: str = "p"
+
+
+        @dataclass
+        class Config:
+            db: DBServerConfig | SQLiteConfig = field(default_factory=SQLiteConfig)
+    """
+
+    def test_the_refusal_names_the_class_it_copies(
+        self,
+        loader: ConfargLoader,
+        running_script: Callable[..., Any],
+    ) -> None:
+        """``--db.class myapp.SQLiteConfig`` from ``myapp.py`` is a copy of ``__main__.SQLiteConfig``."""
+        main = running_script(self._SCRIPT)
+        with pytest.raises(TypeCoercionError, match=r"'myapp\.SQLiteConfig' is a copy of __main__\.SQLiteConfig"):
+            loader.load(main.Config, argv=["--db.class", "myapp.SQLiteConfig"], env={})
+
+
 class TestAnAppendThroughAUnion:
     """``--xs+`` appends wherever the walk takes ``--xs.<i>``, a union's sequence variant included (D4).
 
