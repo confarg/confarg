@@ -276,6 +276,21 @@ class ConfargError(Exception):
         return cls(f"Missing value for {token!r}. Usage: {token} {usage}")
 
     @classmethod
+    def unresolved_expression(cls, path: FieldPath, expression: str) -> ConfargError:
+        """Return the error for a ``${...}`` that ``from_dict()``, which evaluates nothing, met at *path*.
+
+        *path* is the value's position in the data, ``()`` for a root set whole.
+
+        Dev Notes:
+            docs-dev/architecture/design-decisions/a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution
+        """
+        where = f"The value at '{_spell_field_path(path)}'" if path else "The root value"
+        return cls(
+            f"{where} holds the expression {expression}, which from_dict() does not resolve:"
+            " build() resolves it, or pass the dict through resolve() first.",
+        )
+
+    @classmethod
     def root_cast_not_object(cls, flag: str, value: Any) -> ConfargError:
         """Return an error for a whole-configuration JSON cast that decoded to a non-mapping.
 

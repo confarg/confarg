@@ -73,6 +73,19 @@ class TestRoundTripCoercion:
         """Any text an object holds builds back from its dump as that text, never as an expression (BUG-318)."""
         obj = WithDefaults(name=value)
         assert confarg.build(WithDefaults, confarg.dump(obj)) == obj
+        assert confarg.from_dict(WithDefaults, confarg.dump(obj)) == obj
+
+    @example("${count}")
+    @example("$${count}")
+    @example("a ${count} $${x} ${")
+    @given(value=leaf_strs)
+    def test_str_resolve_round_trip(self, value: str) -> None:
+        """Any text a configuration spells reads back from its resolved dict as that text, by every reader (BUG-326)."""
+        merged = confarg.merge(WithDefaults, argv=[f"--name={escape_expressions(value)}"], env={})
+        resolved = confarg.resolve(WithDefaults, merged)
+        assert confarg.from_dict(WithDefaults, resolved).name == value
+        assert confarg.build(WithDefaults, resolved).name == value
+        assert confarg.resolve(WithDefaults, resolved) == resolved
 
     @given(value=leaf_ints)
     def test_int_round_trip_env(self, value: int) -> None:

@@ -40,6 +40,9 @@ The two dumps write two different things ([design decision](../design-decisions/
 `dump(instance)` serializes the *constructed* object, the values the program ran with: every expression resolved, and every `call:` replaced by what it produced.
 There is deliberately no "un-resolve" step.
 
+**Every dict the API returns is a configuration.**
+`merge()`, `resolve()` and `dump()` spell text as resolution reads it, so text that spells `${...}` is written `$${...}`, and every reader reads it back as that text: `build()` and `load()` through resolution, `from_dict()` by reading each escape and refusing a `${...}` it would not resolve ([design decisions](../design-decisions/a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution)).
+
 **The field defaults enter after `merge()`.**
 `build()`, `resolve()` and `from_dict()` lay the target's defaults under the data, so a `merge()` result holds only what the sources said, and a saved merge keeps following the class's defaults; `resolve()` takes the target for that reason ([design decisions](../design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer)).
 

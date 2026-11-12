@@ -1255,10 +1255,11 @@ class TestDumpEscapesExpressionText:
         ],
     )
     def test_text_is_written_escaped_and_builds_back(self, obj: _ExprText, written: dict[str, Any]) -> None:
-        """Each string value is written escaped, and ``build()`` reads the dump back as the object."""
+        """Each string value is written escaped, and ``build()`` and ``from_dict()`` read the object back."""
         dumped = confarg.dump(obj)
         assert {k: dumped[k] for k in written} == written
         assert confarg.build(_ExprText, dumped) == obj
+        assert confarg.from_dict(_ExprText, dumped) == obj  # BUG-326
 
     @pytest.mark.parametrize("text", ["${", "${}", "$", "a $ b", "${x"])
     def test_text_spelling_no_expression_is_written_as_it_stands(self, text: str) -> None:

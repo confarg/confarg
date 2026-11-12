@@ -35,12 +35,12 @@ A key is written as it stands: resolution reads no key, so `{'${x}': 1}` already
 The escape runs once, over the finished dump.
 The read-back checks ([below](#a-leaf-is-asked-whether-it-reads-back)) run `construct`, which resolves nothing, so they compare the text itself; and `left_form`, which leaves a whole expression's value in the resolved dict through `_serialize_read_leaf`, writes no escape into it.
 
-`from_dict()` and `construct()` resolve nothing, so they read a dump's escape as written: `from_dict(C, dump(C(f='${x}')))` builds `f='$${x}'`.
-The dump is read back by `build()` and `load()`, as the text the default layer lays is ([a default string stays text](../design-decisions/a-field-default-is-the-base-layer.md#a-default-string-stays-text)).
-A raw dict is written as it stands, `dump_file(merge(...))` keeping its expressions ([the object dump writes state](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
+The dump is read back by `build()` and `load()`, as the text the default layer lays is ([a default string stays text](../design-decisions/a-field-default-is-the-base-layer.md#a-default-string-stays-text)), and by `from_dict()`, which evaluates nothing but reads an escape as its text: `from_dict(C, dump(C(f='${x}')))` builds `f='${x}'` (BUG-326, [a configuration dict is spelled for resolution](../design-decisions/a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution)).
+`construct()`, below the expressions, reads the escape as written.
+A raw dict is written as it stands, `dump_file(merge(...))` keeping its expressions and `dump_file(resolve(...))` the escapes `resolve()` wrote ([the object dump writes state](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
 
 Rejected: escaping in `dump_file()` alone, which leaves `build(C, dump(obj))` evaluating the text; and writing the text as it stands with a warning, which leaves every reload evaluating it.
-Both would have kept `from_dict(C, dump(obj))` reading the text.
+Both kept `from_dict(C, dump(obj))` reading the text, which until BUG-326 read the escape as written; it now reads it as the text too.
 Precedents: OmegaConf's `to_yaml` writes `\${x}`, which reloads as the text; its `to_yaml(resolve=True)` and `OmegaConf.structured(OmegaConf.to_object(cfg))` write `${x}` and read it back as the value of `x` (run).
 
 ## An unsupported leaf is refused both ways
