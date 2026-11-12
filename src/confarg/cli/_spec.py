@@ -10,6 +10,7 @@ import ast
 import dataclasses
 import inspect
 import textwrap
+from itertools import pairwise
 from typing import TYPE_CHECKING, Annotated, Any, Final, NamedTuple, get_args, get_origin
 
 if TYPE_CHECKING:
@@ -274,13 +275,9 @@ def _get_field_docstrings(dc_type: type) -> dict[str, str]:
         if not (isinstance(node, ast.ClassDef) and node.name == dc_type.__name__):
             continue
         result: dict[str, str] = {}
-        stmts = node.body
-        for i, stmt in enumerate(stmts):
+        for stmt, next_stmt in pairwise(node.body):
             if not (isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)):
                 continue
-            if i + 1 >= len(stmts):
-                continue
-            next_stmt = stmts[i + 1]
             if (
                 isinstance(next_stmt, ast.Expr)
                 and isinstance(next_stmt.value, ast.Constant)
