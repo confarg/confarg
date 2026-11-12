@@ -48,7 +48,7 @@ It is asked wherever a value enters, before the first walker meets it:
 - **A call's value**, by `_callable._call_value`, counted from the node the call fills: a function computes it during construction, after the data it stands in was counted, so a value nesting past the bound or holding itself reached construction unchecked (BUG-297).
   A self-holding value a field took as it is, a `list[Any]` given a list holding itself, is refused with it.
   Its copies are charged to a budget of its own, construction carrying none ([one budget per configuration](a-configuration-copies-at-most-100000-positions.md#one-budget-per-configuration)).
-- **What `dump()` writes**: the serializer is the one walk of an instance, so it counts its own descent, `len(path)` in `_serialize._open`, rather than a second walk re-implementing how a dataclass, a namedtuple, a plain class and a partial are descended into.
+- **What `dump()` writes**: the serializer is the one walk of an instance, so it counts its own descent, `len(path)` in `_serialize._opened`, rather than a second walk re-implementing how a dataclass, a namedtuple, a plain class and a partial are descended into.
   A value a typed dump writes untyped is counted where it is written (`_serialize._untyped_at`), and a dict `dump_file()` writes is counted whole.
   So `dump()` never writes a file `load()` refuses.
 
