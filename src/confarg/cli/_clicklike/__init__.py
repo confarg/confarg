@@ -18,6 +18,7 @@ Dev Notes:
 
 from confarg.cli._clicklike._completion import partial_argv_from_env, setup_completion
 from confarg.cli._clicklike._context import (
+    command_prefix,
     construct_from_ctx,
     ctx_options,
     flat_from_ctx,
@@ -34,6 +35,7 @@ from confarg.cli._clicklike._register import load_flags_into_command, populate_c
 __all__ = [
     "DottedNameMixin",
     "StandsBareMixin",
+    "command_prefix",
     "construct_from_ctx",
     "ctx_options",
     "flat_from_ctx",

@@ -15,12 +15,7 @@ if TYPE_CHECKING:
     from confarg.cli._spec import FlagSpec
 
 from confarg._defaults import MergeOptions, _is_merge_option
-from confarg.cli._build import (
-    bound_runs,
-    build_dynamic_flags,
-    build_static_flags,
-    widen_static,
-)
+from confarg.cli._build import bound_runs, registered_flags
 from confarg.cli._markup import escape_percent
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, refuse_a_second_target, registration_inputs
@@ -89,10 +84,10 @@ def _register_spec(
         # A hidden flag is accepted but kept out of --help (BUG-80).
         "help": argparse.SUPPRESS if spec.hidden else spec.rendered_help(escape_percent),
     }
-    if spec.nargs == 0:
+    if spec.value_less:
         # Value-less flag (e.g. a list/dict delete --field.N-): argparse forbids
         # nargs=0 on a store action, so register it as a presence-only switch.
-        action = target.add_argument(f"--{spec.name}", action="store_true", **common)
+        target.add_argument(f"--{spec.name}", action="store_true", **common)
         existing_dests.add(spec.name)
         return
 
@@ -204,28 +199,11 @@ def populate_parser(
     """
     refuse_a_second_target(parser.get_default(REGISTRATION_ATTR), target, "parser")
     options, below, sources = registration_inputs(target, "populate_parser", opts)
-    cli_prefix, argv = options.cli_prefix or "", options.argv
-    config_flag = options.config_flag
-    static = build_static_flags(
-        target,
-        argv=argv,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        config_subkeys=config_subkeys,
-        below=below,
-    )
-    dynamic = build_dynamic_flags(
-        target,
-        argv,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        below=below,
-    )
-    static, dynamic = widen_static(static, dynamic)
-    load_flags_into_parser(static, parser)
-    load_flags_into_parser(dynamic, parser)
+    cli_prefix = options.cli_prefix or ""
+    flags = registered_flags(target, options, below, config_subkeys=config_subkeys)
+    load_flags_into_parser(flags, parser)
     # argparse hands the merge only a Namespace, so what registration read rides on it.
-    parser.set_defaults(**{REGISTRATION_ATTR: Registration(sources, bound_runs(static + dynamic, cli_prefix), target)})
+    parser.set_defaults(**{REGISTRATION_ATTR: Registration(sources, bound_runs(flags, cli_prefix), target)})
     if cli_prefix:
         # argparse hands from_namespace only a Namespace, with no way back to this
         # parser, so the prefix rides along on every Namespace the parser produces.

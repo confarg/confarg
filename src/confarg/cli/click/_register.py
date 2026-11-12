@@ -131,7 +131,6 @@ def populate_command(
         target,
         command,
         _spec_to_option,
-        _ConfargOption,
         "populate_command",
         opts,
         config_subkeys=config_subkeys,

@@ -160,6 +160,24 @@ class FlagSpec:
         docs-dev/architecture/design-decisions/index-spellings-are-hidden-from-help.md#index-spellings-are-hidden-from-help
     """
 
+    @property
+    def value_less(self) -> bool:
+        """Whether the flag takes no value at all: a presence-only switch (``nargs == 0``).
+
+        The one place the classification lives; an adapter only spells it in its framework's
+        own vocabulary.
+        """
+        return self.nargs == 0
+
+    @property
+    def takes_a_run(self) -> bool:
+        """Whether the flag binds every token up to the next flag (``nargs == "*"``).
+
+        The one place the classification lives; an adapter only spells it in its framework's
+        own vocabulary.
+        """
+        return self.nargs == "*"
+
     def rendered_help(self, escape: Callable[[str], str] | None = None) -> str:
         """Return the help the framework prints: :attr:`help`, then :attr:`note` passed through *escape*.
 

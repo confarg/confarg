@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from confarg.cli._spec import FlagSpec
 
-from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags, widen_static
+from confarg.cli._build import bound_runs, registered_flags
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, refuse_a_second_target, registration_inputs
 
@@ -47,11 +47,10 @@ def load_flags_into_command(
         existing.add(spec.name)
 
 
-def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_* signatures
+def populate_command(  # noqa: PLR0913  # mirrors the public populate_* signatures
     target: object,
     command: Any,
     option_factory: Callable[[FlagSpec], Any],
-    option_cls: type,
     caller: str,
     opts: Mapping[str, Any],
     *,
@@ -63,8 +62,6 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
         target: The type whose fields to register.
         command: The framework command to populate.
         option_factory: Builds the framework's option object from one spec.
-        option_cls: The framework's confarg option class, used to pick out the
-            options the prefix and the registration are recorded on.
         caller: The public function's name, which an unknown keyword is refused by.
         opts: The sources and how to read them (:class:`~confarg.MergeOptions`).
         config_subkeys: Whether to register ``--<config_flag>.<path>`` options.
@@ -72,33 +69,16 @@ def populate_command(  # noqa: PLR0913, PLR0917  # mirrors the public populate_*
     before_names = {p.name for p in command.params}
     refuse_a_second_target(getattr(command, REGISTRATION_ATTR, None), target, "command")
     options, below, sources = registration_inputs(target, caller, opts)
-    cli_prefix, argv = options.cli_prefix or "", options.argv
-    config_flag = options.config_flag
+    cli_prefix = options.cli_prefix or ""
 
-    static = build_static_flags(
-        target,
-        argv=argv,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        config_subkeys=config_subkeys,
-        below=below,
-    )
-    dynamic = build_dynamic_flags(
-        target,
-        argv,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        below=below,
-    )
-    static, dynamic = widen_static(static, dynamic)
-    load_flags_into_command(static, command, option_factory)
-    load_flags_into_command(dynamic, command, option_factory)
-    registration = Registration(sources, bound_runs(static + dynamic, cli_prefix), target)
+    flags = registered_flags(target, options, below, config_subkeys=config_subkeys)
+    load_flags_into_command(flags, command, option_factory)
+    registration = Registration(sources, bound_runs(flags, cli_prefix), target)
     # Recorded on the options, not on the command: both frameworks routinely copy
     # ``params`` onto another command (groups, decorators), and what registration read
     # must survive that so the merge step still finds it.
     for param in command.params:
-        if isinstance(param, option_cls):
+        if hasattr(param, "_confarg_name"):  # the options confarg made: DottedNameMixin's
             setattr(param, REGISTRATION_ATTR, registration)
             if cli_prefix:
                 setattr(param, PREFIX_ATTR, cli_prefix)

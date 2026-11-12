@@ -13,8 +13,8 @@ Typer is consequently a front-end in its own right, not a click spelling — but
 | `option_kwargs` — the whole `FlagSpec` → option-keyword mapping, in click's keywords | the choice type (click's expression-tolerant `Choice`, typer's `Literal`), the completion keyword |
 | `DottedNameMixin` — `--db.host` is not an identifier | the option base class |
 | `StandsBareMixin` — a flag that may carry no value ([a flag that stands bare](a-flag-that-stands-bare.md#a-flag-that-stands-bare)) | the option base class |
-| `load_flags_into_command`, `populate_command` | the option factory and class |
-| `flat_from_ctx`, `registered_prefix`, `merge_from_ctx`, `construct_from_ctx` | nothing — the Context is duck-typed |
+| `load_flags_into_command`, `populate_command` | the option factory |
+| `flat_from_ctx`, `registered_prefix`, `command_prefix`, `merge_from_ctx`, `construct_from_ctx` | nothing — the Context is duck-typed |
 | `setup_completion`, `partial_argv_from_env` | the option factory |
 
 The `${...}` bypass is not shared: click checks a choice in its `Choice.convert`, typer in the option's `process_value`, so each adapter carries its own ([expression-tolerant choice gates](parity.md#expression-tolerant-choice-gates)).

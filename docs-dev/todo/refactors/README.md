@@ -26,7 +26,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-27 — Tests of the neutral flag model still live under `tests/cli/argparse/`](REF-27-neutral-flag-tests-under-argparse.md) | trivial |  | M | low | none |
 | [REF-42 — `argparse/_completion.py` re-implements the `cli/_build.py` type walk](REF-42-argparse-completion-reimplements-the-build-walk.md) | trivial |  | M | medium | none |
 | [REF-45 — The argv value-run scan is written seven times](REF-45-argv-value-run-scan-duplicated.md) | trivial |  | M | high | none |
-| [REF-50 — Adapter registration and completion boilerplate](REF-50-adapter-registration-boilerplate.md) | trivial |  | M | low | none |
 | [REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | trivial |  | M | medium | none |
 | [REF-83 — The registration walk dispatches on shape outside `_type_kind`](REF-83-registration-walk-dispatches-outside-the-kind-table.md) | trivial |  | M | medium | none |
 | [REF-91 — The documentation written before the no-hard-wrap rule is still hard-wrapped](REF-91-the-older-documentation-is-hard-wrapped.md) | trivial |  | M | low | none |
