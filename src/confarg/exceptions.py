@@ -263,17 +263,6 @@ class ConfargError(Exception):
         """
         return type(self)(_append_none_remedy(str(self)))
 
-    def _without_none_remedy(self) -> Self:
-        """Return this error without the none-word remedy :meth:`_with_none_remedy` or a union's refusal ended with.
-
-        For a dict key, which a none word reads as ``None`` too, but which is no field to set.
-        """
-        message = str(self)
-        for ending in (f"\n{_NONE_REMEDY}", f". {_NONE_REMEDY}"):
-            if message.endswith(ending):
-                return type(self)(message.removesuffix(ending))
-        return self
-
     @classmethod
     def missing_value(cls, token: str, usage: str = "<value>") -> ConfargError:
         """Return the error for a value-taking flag that argv left without its value.
@@ -989,6 +978,37 @@ class TypeCoercionError(ConfargError):
             f"Cannot build {tp} at the root from the key(s) {sorted(map(str, keys))}:"
             f" {root_key!r} sets its whole value, so no key can be set beside it.",
         )
+
+    @classmethod
+    def cannot_read_key(
+        cls,
+        key: Any,
+        tp: str,
+        path: str,
+        because: str | None = None,
+        *,
+        refused: TypeCoercionError | None = None,
+    ) -> TypeCoercionError:
+        """Return the error for a dict's *key* that its key type *tp*, as spelled, refuses, the dict standing at *path*.
+
+        A key has no path of its own, so the refusal names the dict's and says it is a key;
+        *because* is what the key type says beyond refusing it (an Enum's members), a clause. A
+        key type that is a union passes the union's own *refused* error instead, and keeps the
+        reasons of its variants on the lines after the first, without the none-word remedy that
+        closes them, since a key is no field to set to ``None``. A union refusing the key
+        itself gives ``key 'b' is no int`` as the variant's reason, beside its own line.
+
+        Dev Notes:
+            docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
+        """
+        message = f"Cannot read key {key!r} of the dict at {_spelled_where(path)} as {tp}"
+        reason = f"key {key!r} is no {tp}"
+        if refused is not None:
+            lines = [line for line in str(refused).splitlines()[1:] if line != _NONE_REMEDY]
+            return cls._refusal("\n".join([f"{message}:", *lines]) if lines else message, reason=reason)
+        if because:
+            message, reason = f"{message}: {because}", f"{reason}: {because}"
+        return cls._refusal(message, reason=reason)
 
     @classmethod
     def unsupported_leaf(cls, tp: str, path: str) -> TypeCoercionError:

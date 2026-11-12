@@ -17,7 +17,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-281 — A method a module publishes off its own instance does not dump as its path](BUG-281-a-method-a-module-publishes-off-its-own-instance-does-not-dump-as-its-path.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-282 — A lazy module hook that raises on `__all__` escapes `dotted_name`](BUG-282-a-lazy-module-hook-raising-on-all-escapes-dotted-name.md) | minor |  | S | low | none | BUG-279 |
 | [BUG-287 — An append at the top of a root file for a list-or-struct union crashes](BUG-287-an-append-at-the-top-of-a-root-file-for-a-list-or-struct-union-crashes.md) | minor |  | S | medium | behavior | PR-458 |
-| [BUG-289 — A refused dict key reads as the value](BUG-289-a-refused-dict-key-reads-as-the-value.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-292 — A help group is headed by a docstring its class inherits](BUG-292-a-help-group-is-headed-by-a-docstring-its-class-inherits.md) | minor |  | S | low | behavior | PR-13 |
 | [BUG-299 — A union with a struct variant registers no cast flag](BUG-299-a-union-with-a-struct-variant-registers-no-cast-flag.md) | minor |  | S | medium | behavior | PR-54 |
 | [BUG-316 — A refusal at a recursive type alias raises `RecursionError`](BUG-316-a-refusal-at-a-recursive-type-alias-raises-recursionerror.md) | minor |  | S | low | behavior | unknown |

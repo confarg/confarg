@@ -258,14 +258,15 @@ class TestAUnionKeyType:
         """A key no variant reads is refused as the union refuses a value."""
         with pytest.raises(TypeCoercionError) as exc_info:
             construct(dict[int | None, int], {"x": 1}, path=("d",))
-        assert str(exc_info.value) == "Cannot coerce str 'x' to int at 'd'"
+        assert str(exc_info.value) == "Cannot read key 'x' of the dict at 'd' as int | None"
 
     def test_a_key_refusal_offers_no_field_remedy(self) -> None:
         """A key is no field: the none-word remedy a field's token gets is left out, the variants' reasons kept."""
         with pytest.raises(TypeCoercionError) as exc_info:
             construct(dict[_Bug261Color | int | None, int], {"x": 1}, path=("d",))
         assert str(exc_info.value) == (
-            "Cannot coerce str 'x' to _Bug261Color | int | None at 'd':\n  _Bug261Color: valid members 'RED' ('red')"
+            "Cannot read key 'x' of the dict at 'd' as _Bug261Color | int | None:\n"
+            "  _Bug261Color: valid members 'RED' ('red')"
         )
 
     def test_a_variant_no_key_is_refuses_the_key_type(self) -> None:
@@ -397,7 +398,7 @@ class TestOneValueHoldsEachKeyOnce:
 
     def test_a_key_that_does_not_coerce_is_refused_as_such(self) -> None:
         """Two keys the key type refuses are no collision: the first is refused as construction refuses it."""
-        with pytest.raises(TypeCoercionError, match=r"Cannot coerce .* to int at 'd'"):
+        with pytest.raises(TypeCoercionError, match=r"Cannot read key 1.5 of the dict at 'd' as int"):
             construct(dict[int, str], {1.5: "a", "1.5": "b"}, path=("d",))
 
 
