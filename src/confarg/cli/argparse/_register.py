@@ -171,8 +171,8 @@ def populate_parser(
 
     A ``dict``-typed field gets only the bare ``--field JSON`` whole-value flag (its
     keys are unknown statically); each ``--field.key`` found in ``argv`` is registered
-    alongside it.  Values are passed as strings: type coercion happens in
-    :func:`from_namespace`, not in argparse.
+    alongside it.  Values are passed as strings and argparse coerces none of them: the
+    merge reads the values off ``argv``, not off the Namespace.
 
     Args:
         target: The dataclass type whose fields to register.
