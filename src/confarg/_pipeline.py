@@ -95,27 +95,6 @@ def _check_locals_are_typed(node: Any, locals_key: str, path: str) -> None:
 _UNSET = object()
 
 
-def _lookup_declared(node: Any, path: list[str]) -> Any:
-    """Return the declared value at *path*, or ``_UNSET`` if the path is not declared.
-
-    Walks the config-file layer of the locals namespace the same way the value
-    itself is nested: dict keys by name, list/tuple entries by integer index.
-    """
-    for part in path:
-        if isinstance(node, dict):
-            if part not in node:
-                return _UNSET
-            node = node[part]
-        elif isinstance(node, list | tuple):
-            try:
-                node = node[int(part)]
-            except (ValueError, IndexError):
-                return _UNSET
-        else:
-            return _UNSET
-    return node
-
-
 def _coerce_override(value: Any, declared: Any, path: str) -> Any:
     """Coerce one env/CLI local-variable override to the runtime type of its declaration.
 
@@ -168,7 +147,7 @@ def _apply_locals_overrides(  # noqa: PLR0913, PLR0917  # recursive walk: carrie
         if isinstance(value, _DeleteSentinel) or isinstance(key, ListOp):
             raise LocalsError.not_restructurable(".".join(prefix) or str(key), locals_key, source)
         path = [*prefix, key]
-        found = _lookup_declared(declared, path)
+        found = _lookup_path(declared, path, _UNSET)
         if found is _UNSET:
             raise LocalsError.not_declared(".".join(path), locals_key, config_flag, source)
         # A list-index patch arrives as {"0": value}, so descend into a declared
@@ -179,20 +158,24 @@ def _apply_locals_overrides(  # noqa: PLR0913, PLR0917  # recursive walk: carrie
             override[key] = _coerce_override(value, found, f"{locals_key}.{'.'.join(path)}")
 
 
-def _lookup_path(data: Any, path: list[str]) -> Any:
-    """Return the node at *path*, or ``None`` when the path is absent."""
+def _lookup_path(data: Any, path: list[str], missing: Any = None) -> Any:
+    """Return the node at *path*, or *missing* when the path is absent.
+
+    Walks the layer the way the value itself is nested: dict keys by name, list and tuple
+    entries by integer index. ``_UNSET`` as *missing* tells an absent path from a ``None`` value.
+    """
     for part in path:
         if isinstance(data, dict):
             if part not in data:
-                return None
+                return missing
             data = data[part]
         elif isinstance(data, list | tuple):
             try:
                 data = data[int(part)]
             except (ValueError, IndexError):
-                return None
+                return missing
         else:
-            return None
+            return missing
     return data
 
 

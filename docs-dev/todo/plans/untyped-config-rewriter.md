@@ -88,7 +88,7 @@ Wraps the composed dict and answers what the target used to answer:
 - `resolve_path(parts) -> list[str]` — case-insensitive match of each segment against the keys actually present at that node, ambiguity an error.
   Mirrors `_parse_env._env_spelling` but reads dict keys instead of declared members.
   This is what makes `DB__MAX_CONNECTIONS` land on `maxConnections` when the file spells it that way — impossible today, where a node with no declared members falls back to `part.lower()`.
-- `value_at(parts)` / `exists(parts)` — walks dicts by key and lists by integer index, exactly as `_pipeline._lookup_declared` (`_pipeline.py:99-117`) does.
+- `value_at(parts)` / `exists(parts)` — walks dicts by key and lists by integer index, exactly as `_pipeline._lookup_path` does.
   Reuse that walk rather than rewriting.
 - `accepts_container(parts)` — whether a `{`/`[`-leading token should be JSON-decoded, answered from the existing value's type.
   Replaces the type-driven `_parse_cli._takes_json`.
@@ -155,7 +155,7 @@ New extra: `roundtrip = ["ruamel.yaml>=0.18", "tomlkit>=0.13"]`.
 | `examples/101_rewrite/` + `docs/examples/101_rewrite/README.md` | new tutorial |
 | `docs-dev/architecture/untyped-rewriting.md` | new topic; cross-link from `pipeline/` and `limitations.md` |
 
-Reused as-is, not reimplemented: `_files` (formats, `__include__`, mounting, dumpers), `_merge` (the whole patch vocabulary), `dictexpr` (expressions and anchoring), `_cast`, `_defaults`, `exceptions`, `typedload._coerce._coerce_leaf`, `_serialize._serialize_untyped`, and `_pipeline._lookup_declared`/`_lookup_path` as the Document walk.
+Reused as-is, not reimplemented: `_files` (formats, `__include__`, mounting, dumpers), `_merge` (the whole patch vocabulary), `dictexpr` (expressions and anchoring), `_cast`, `_defaults`, `exceptions`, `typedload._coerce._coerce_leaf`, `_serialize._serialize_untyped`, and `_pipeline._lookup_path` as the Document walk.
 
 ---
 
