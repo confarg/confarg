@@ -10,6 +10,7 @@ Questions carry no effort, risk or impact — a question is answered, not implem
 
 | Ticket | Severity | Blocked by |
 |---|---|---|
+| [Q-10 — What should `--help` and completion list below a field the subclasses type differently?](Q-10-what-should-help-and-completion-list-below-a-field-the-subclasses-type-differently.md) | minor (via BUG-113) |  |
 | [Q-2 — Should a varlen collection's element index flags be hidden from help too?](Q-2-should-a-varlen-collections-element-index-flags-be-hidden-from-help-too.md) |  |  |
 | [Q-6 — The untyped-config-rewriter plan is an unapproved proposal no ticket cites — where does it belong?](Q-6-the-untyped-config-rewriter-plan-is-uncited-and-unsettled.md) |  |  |
 | [Q-8 — Should a delete on an untyped node be read by its content?](Q-8-should-a-delete-on-an-untyped-node-be-read-by-its-content.md) |  |  |

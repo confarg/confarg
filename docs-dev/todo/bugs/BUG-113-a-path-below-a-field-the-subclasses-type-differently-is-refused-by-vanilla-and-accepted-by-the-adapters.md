@@ -7,6 +7,7 @@ risk: medium
 impact: behavior
 severity: minor
 introduced_by: [PR-38]  # fix: Fix inheritance-based dispatch in CLI integrations
+blocked_by: [Q-10]  # what `--help` and completion list for a tag-named class, and BUG-114's regression test
 ---
 
 # BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters
@@ -21,6 +22,13 @@ Fix direction: registration should refuse what the walk refuses — ask `_resolv
 See [cli-adapters/union-inheritance-and-cast-flags.md](../../architecture/cli-adapters/union-inheritance-and-cast-flags.md#union-inheritance-and-cast-flags) and [invariants.md#delegate-to-the-canonical-function](../../architecture/invariants.md#delegate-to-the-canonical-function).
 A tag naming the subclass, on argv or in a layer below it, types the path in all five front-ends ([a node types its keys by the class it names](../../architecture/design-decisions/a-node-types-its-keys-by-the-class-it-names.md#a-node-types-its-keys-by-the-class-it-names)): `--item.class S1 --item.inner.a 1` builds `S1(inner=A(a=1))`.
 What stays is the path nothing names, which vanilla cannot type and registration lists for every subclass.
+
+Correction to the fix direction, from the planning run: the predicate must strip a cast before it asks the walk.
+Asking `_resolve_field_type` for the bare spec path also drops the cast flags a subclass-only union field registers statically (`item.u.int`, `item.u.float`), which vanilla takes through `detect_force_cast`, and no existing test notices; so the filter asks `detect_force_cast` first, then the walk for the path it leaves.
+Union variants that disagree on a field are unaffected (the walk goes variant by variant, so `--u.inner.a` resolves in each): the filter belongs to the subclass recursion only, beside `_base_declares_path`.
+A run of eight spellings on all five front-ends (untagged, tag before the flag, tag after, a whole-value JSON naming, a `--config` file, a `--config.item` mount, an environment tag, the other subclass) found no spelling that completes today and stops completing: the tagged ones register dynamically through `_collect_loop_typed_specs`, and the untagged and tag-after ones are refused by vanilla today.
+What the fix does change is `--help` and completion, and BUG-114's regression test, which [Q-10](../questions/Q-10-what-should-help-and-completion-list-below-a-field-the-subclasses-type-differently.md) puts to the maintainer.
+The paragraph above saying registration lists the unnamed path for every subclass describes the state before this fix.
 
 Origin: regression from PR-38, a bug fix that made the adapters register each subclass's fields so that a base-typed field can be dispatched from the CLI.
 Bisected with `parse_args`: before PR-38 argparse refuses `--item.inner.a`, as vanilla does; from PR-38 it accepts it.
