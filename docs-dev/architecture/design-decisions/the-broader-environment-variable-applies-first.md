@@ -1,7 +1,7 @@
 # The broader environment variable applies first
 
 Two environment variables whose paths nest — `APP_USERS-` beside `APP_USERS__0=x`, `APP_USERS='["q", "r"]'` beside `APP_USERS__0=x`, `APP_DB__json` beside `APP_DB__PORT` — merge as the flags of the same paths merge when the broader one is typed first: the deeper variable refines what the broader one wrote (maintainer-chosen, BUG-116).
-At one path, a delete comes first, then a `json` cast, then a plain value.
+At one path, a delete comes first, then a cast (`json` or scalar), then a plain value.
 The mechanism is in [environment parsing](../environment-parsing.md#the-broader-variable-applies-first).
 
 The CLI resolves such a pair by "last typed wins", and the environment has no typing order: a mapping's iteration order is an accident of how it was built, so the pair resolved differently from one process to the next.
