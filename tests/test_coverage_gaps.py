@@ -424,8 +424,8 @@ class TestCallableEdgeCases:
             _resolve_callable_spec(spec, Callable, path=("test",), construct_fn=construct)
 
     def test_resolve_spec_invalid_type_raises(self) -> None:
-        """A non-str, non-dict callable spec raises TypeCoercionError."""
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected str or dict"):
+        """A callable spec that is no callable, str or dict raises TypeCoercionError."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match="expected a callable, str or dict"):
             _resolve_callable_spec(12345, Callable, path=("test",), construct_fn=construct)
 
     def test_check_signature_var_positional_skipped(self) -> None:
@@ -1568,8 +1568,8 @@ class TestCallableGaps:
         """_resolve_call_spec raises TypeCoercionError when the called function raises."""
         with pytest.raises(confarg.exceptions.TypeCoercionError, match="Failed to call"):
             _resolve_call_spec(
-                f"{_COV_MOD}._cov_raise_fn",
-                {"x": 1},
+                {"call": f"{_COV_MOD}._cov_raise_fn", "args": {"x": 1}},
+                Callable,
                 _SpecContext(("test",), construct),
             )
 

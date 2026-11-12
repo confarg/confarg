@@ -179,6 +179,21 @@ def _bad_factory(x: int) -> int:
     return x * 2
 
 
+class _CallableDict(dict[str, str]):
+    """A dict that is callable too: a Callable reads it as the spec it spells."""
+
+    def __call__(self, x: int) -> int:
+        return x * 100
+
+
+def _callable_dict_of_double() -> _CallableDict:
+    return _CallableDict(bind=f"{_MOD}._double")
+
+
+def _path_of_make_adder() -> str:
+    return f"{_MOD}._make_adder"
+
+
 def _optional_x(x: int = 0) -> int:
     """A function a ``Callable[[int], int]`` can call, its one parameter optional."""
     return x
@@ -2020,10 +2035,25 @@ class TestCallDictForm:
         assert result.fn(0) == 7
 
     def test_call_non_callable_result_raises(self, tmp_json: Any) -> None:
-        """call: raises TypeCoercionError when the factory returns a non-callable."""
+        """A value that is neither a callable nor a Callable's spelling is refused as a file writing it is (FEAT-61)."""
         cfg = tmp_json(json.dumps({"fn": {"call": f"{_MOD}._bad_factory", "args": {"x": 1}}}))
-        with pytest.raises(TypeCoercionError, match="not callable"):
+        refusal = r"Cannot construct Callable at 'fn': expected a callable, str or dict, got int 2"
+        with pytest.raises(TypeCoercionError, match=refusal):
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
+
+    def test_a_callable_dict_is_read_as_the_spec_it_spells(self) -> None:
+        """A call's value is read as ``build()`` reads the same object: a dict is a spec, callable or not (FEAT-61)."""
+        cfg = confarg.build(WithCallable, {"fn": {"call": f"{_MOD}._callable_dict_of_double"}})
+        assert cfg.fn is _double
+        assert confarg.build(WithCallable, {"fn": _callable_dict_of_double()}).fn is _double
+
+    def test_a_call_whose_target_is_a_call_reads_its_value_as_the_target(self) -> None:
+        """A call's value at a target position is a path or a spec, read as a bare Callable reads one (FEAT-61)."""
+        cfg = confarg.build(
+            WithCallable,
+            {"fn": {"call": {"call": f"{_MOD}._path_of_make_adder"}, "args": {"offset": 2}}},
+        )
+        assert cfg.fn(1) == 3
 
     def test_call_and_bind_together_raises(self, tmp_json: Any) -> None:
         """Specifying both call: and bind: raises TypeCoercionError."""

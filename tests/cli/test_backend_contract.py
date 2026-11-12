@@ -7331,6 +7331,178 @@ class TestACallsValueIsConfigurationOnAnAnyNodeContract:
         assert loader.load(_AnyCallConfig, argv=["--a.call", f"{__name__}.{target}"], env={}).a == expected
 
 
+def _plus_one(x: int) -> int:
+    return x + 1
+
+
+def _plus(x: int, k: int) -> int:  # noqa: FURB118  # a user function with its own dotted path
+    return x + k
+
+
+def _two_args(x: int, y: int) -> int:  # noqa: FURB118  # a user function with its own dotted path
+    return x + y
+
+
+@dataclass
+class _CallAdder:
+    """A callable class a call's value names by its tag."""
+
+    k: int = 1
+
+    def __call__(self, x: int) -> int:
+        return x + self.k
+
+
+@dataclass
+class _CallableCallConfig:
+    """A Callable field a call fills."""
+
+    f: Callable[[int], int] = _plus_one
+
+
+def _make_plus_one() -> Callable[[int], int]:
+    return _plus_one
+
+
+def _path_of_plus_one() -> str:
+    return f"{__name__}._plus_one"
+
+
+def _path_of_two_args() -> str:
+    return f"{__name__}._two_args"
+
+
+def _bind_of_plus() -> dict[str, Any]:
+    return {"bind": f"{__name__}._plus", "args": {"k": 5}}
+
+
+def _call_of_make_plus_one() -> dict[str, str]:
+    return {"call": f"{__name__}._make_plus_one"}
+
+
+def _tagged_adder() -> dict[str, Any]:
+    return {"class": f"{__name__}._CallAdder", "k": 7}
+
+
+def _classfn_of_adder() -> dict[str, Any]:
+    return {"classfn": f"{__name__}._CallAdder.__call__", "k": 3}
+
+
+def _a_pin() -> dict[str, str]:
+    return {"__cast__": "int", "__value__": "5"}
+
+
+def _three() -> int:
+    return 3
+
+
+class TestACallsValueIsConfigurationOnACallableNodeContract:
+    """A Callable node reads a call's value as configuration written in its place, in every front-end (FEAT-61).
+
+    It refused any value that was not callable already, a dotted path or a spec included:
+    ``'call:' at 'f': …(**{}) returned 'str', which is not callable.``
+    """
+
+    @pytest.mark.parametrize(
+        ("target", "x", "expected"),
+        [
+            pytest.param("_path_of_plus_one", 1, 2, id="dotted-path"),
+            pytest.param("_bind_of_plus", 1, 6, id="bind-with-args"),
+            pytest.param("_call_of_make_plus_one", 1, 2, id="nested-call"),
+            pytest.param("_tagged_adder", 1, 8, id="class-instance"),
+            pytest.param("_classfn_of_adder", 1, 4, id="classfn"),
+            pytest.param("_make_plus_one", 1, 2, id="a-callable-as-it-is"),
+        ],
+    )
+    def test_the_value_is_read_as_a_callable_spec(
+        self,
+        loader: ConfargLoader,
+        target: str,
+        x: int,
+        expected: int,
+    ) -> None:
+        """A path, a ``bind:``, a nested call, a tag and a ``classfn:`` each build what a file writing them builds."""
+        cfg = loader.load(_CallableCallConfig, argv=["--f.call", f"{__name__}.{target}"], env={})
+        assert cfg.f(x) == expected
+
+    def test_a_file_and_the_environment_agree(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """The call a file and a variable spell builds what the flag builds."""
+        cfg_file = tmp_path / "c.json"
+        cfg_file.write_text(json.dumps({"f": {"call": f"{__name__}._path_of_plus_one"}}))
+        from_file = loader.load(_CallableCallConfig, argv=[], env={}, files=[str(cfg_file)])
+        env = {"MYAPP_F__CALL": f"{__name__}._path_of_plus_one"}
+        from_env = loader.load(_CallableCallConfig, argv=[], env=env, env_prefix="MYAPP_")
+        assert from_file.f is _plus_one
+        assert from_env.f is _plus_one
+
+    @pytest.mark.parametrize(
+        ("target", "written", "refusal"),
+        [
+            pytest.param(
+                "_path_of_two_args",
+                f"{__name__}._two_args",
+                r"Callable at 'f': _two_args cannot be called as Callable\[\[int\], int\] calls it",
+                id="call-shape",
+            ),
+            pytest.param(
+                "_three",
+                3,
+                r"Cannot construct Callable at 'f': expected a callable, str or dict, got int 3",
+                id="int",
+            ),
+            pytest.param(
+                "_a_pin",
+                {"__cast__": "int", "__value__": "5"},
+                r"Cannot cast to int at 'f'",
+                id="pin",
+            ),
+        ],
+    )
+    def test_a_value_is_refused_as_the_same_value_in_a_file(
+        self,
+        loader: ConfargLoader,
+        target: str,
+        written: Any,
+        refusal: str,
+    ) -> None:
+        """The signature check, the shape and the pin each refuse it as they refuse a file writing it."""
+        with pytest.raises(TypeCoercionError, match=refusal):
+            loader.load(_CallableCallConfig, argv=["--f.call", f"{__name__}.{target}"], env={})
+        with pytest.raises(TypeCoercionError, match=refusal):
+            confarg.build(_CallableCallConfig, {"f": written})
+
+    def test_a_call_used_as_a_target_is_read_as_a_bare_callable(self, loader: ConfargLoader, tmp_path: Path) -> None:
+        """Under ``bind:``, a call's value is the target, not the field: its own arguments go under ``args``."""
+        cfg_file = tmp_path / "c.json"
+        spec = {"bind": {"call": f"{__name__}._path_of_two_args"}, "args": {"y": 10}}
+        cfg_file.write_text(json.dumps({"f": spec}))
+        assert loader.load(_CallableCallConfig, argv=[], env={}, files=[str(cfg_file)]).f(1) == 11
+
+    @pytest.mark.parametrize(
+        ("target", "refusal"),
+        [
+            pytest.param("_calls_itself", r"at 'f'.* returns .*_calls_itself.*a call already made there", id="cycle"),
+            pytest.param(
+                "_calls_forever",
+                r"at 'f'.*64 calls from .*_calls_forever.*deeper than 64 levels",
+                id="chain",
+            ),
+        ],
+    )
+    def test_a_chain_of_calls_is_bounded(self, loader: ConfargLoader, target: str, refusal: str) -> None:
+        """A call whose value is a call again is made in its place, bounded as on a typed field."""
+        with pytest.raises(ConfargError, match=refusal):
+            loader.load(_CallableCallConfig, argv=["--f.call", f"{__name__}.{target}"], env={})
+
+    @pytest.mark.parametrize("target", ["_path_of_plus_one", "_bind_of_plus", "_tagged_adder", "_classfn_of_adder"])
+    def test_each_built_value_dumps_and_reads_back(self, loader: ConfargLoader, target: str) -> None:
+        """The value dumps as its spec, never as the call, and that spec reads back to the same callable."""
+        cfg = loader.load(_CallableCallConfig, argv=["--f.call", f"{__name__}.{target}"], env={})
+        dumped = confarg.dump(cfg)
+        assert "call" not in dumped["f"]
+        assert confarg.from_dict(_CallableCallConfig, dumped).f(1) == cfg.f(1)
+
+
 class TestCallOnTheCliRegistrationContract:
     """A typed call's and a nested target spec's flags are discovered from the signatures they name (FEAT-32)."""
 
@@ -8429,6 +8601,25 @@ class TestAnyReadsSpecsContract:
         assert flags is not None
         assert "data.class" in flags
         assert "data.a" in flags
+
+    def test_a_call_beside_classfn_is_a_field_of_the_owner(self, loader: ConfargLoader) -> None:
+        """``classfn`` takes every other key as its owner's field, a ``call`` among them, as on a Callable.
+
+        An ``Any`` read the ``call`` as a typed call and refused ``classfn`` beside it (FEAT-61).
+        """
+        argv = ["--data.classfn", f"{__name__}._OwnsACall.shift", "--data.call", "3"]
+        cfg = loader.load(_WithAnyField, argv=argv, env={})
+        assert cfg.data(1) == 4
+
+
+@dataclass
+class _OwnsACall:
+    """An owner whose field is spelled like the ``call`` opener."""
+
+    call: int = 0
+
+    def shift(self, x: int) -> int:
+        return x + self.call
 
 
 class _TagNamedTagger:

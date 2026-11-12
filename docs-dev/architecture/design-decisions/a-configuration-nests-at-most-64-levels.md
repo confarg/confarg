@@ -64,6 +64,7 @@ The depth bound alone would stop a cycle at level 65, but it would name a sympto
 
 A call whose value is another `call:` at the same node is made in its place, as that spec written in the configuration would be, and so on until a value comes.
 Such a chain never deepens the position, so the depth count never meets it, and a function returning its own spec recursed through construction until Python's limit (BUG-297).
+`typedload._construct.is_a_call_at` answers whether a value is a call again at its node, a typed call or a Callable's own `call:`, so a chain is one on a typed field, an `Any` and a Callable alike (FEAT-61).
 `_callable._call_value` makes the chain in a loop, off the stack, and bounds it on its own:
 
 - **A spec equal to one already made at the node** is a cycle, refused naming the targets it goes round: `Cannot read the value of the call at 'n': 'pkg.loop' returns {'call': 'pkg.loop'}, a call already made there ('pkg.loop' -> 'pkg.loop').` The raw spec is configuration data, so `==` compares it; a chain whose arguments change at every link repeats no spec.

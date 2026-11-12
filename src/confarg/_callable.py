@@ -10,6 +10,7 @@ Dev Notes:
 
 from __future__ import annotations
 
+import collections.abc
 import functools
 import inspect
 import types
@@ -272,7 +273,8 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, construct_fn: An
 
     Dict with 'call' key:
       - Call the target (a dotted path, or a callable spec of its own) with the kwargs
-        under 'args'; its return value is the callable.
+        under 'args', and read its value as configuration written in its place: a callable
+        as it is, a dotted path or a spec as above, its signature checked.
 
     Dict with 'classfn' key:
       - Build the owner of the instance method it names from the other keys; the bound
@@ -282,11 +284,14 @@ def _resolve_callable_spec(spec: Any, tp: Any, path: FieldPath, construct_fn: An
     if isinstance(spec, str):
         result = _resolve_bare_string(str(spec), where, tp)
     elif isinstance(spec, dict):
+        if opens_a_call(spec):
+            # Construction reads the call's value as this Callable, its signature checked there.
+            return _resolve_call_spec(spec, tp, _SpecContext(path, construct_fn))
         result = _resolve_dict_spec(spec, tp, _SpecContext(path, construct_fn))
     elif callable(spec):
         result = spec
     else:
-        raise TypeCoercionError.wrong_shape(_src_type(spec), spec, "Callable", "str or dict", where)
+        raise TypeCoercionError.wrong_shape(_src_type(spec), spec, "Callable", "a callable, str or dict", where)
     if not callable(result):
         raise TypeCoercionError.not_callable(spec, result, where)
     _check_callable_signature(result, tp, where)
@@ -326,7 +331,8 @@ def _resolve_target(target: Any, tp: Any, ctx: _SpecContext, opener: str) -> Any
         return _import_target(target, ctx.where, tp)
     if isinstance(target, dict):
         target_ctx = ctx.at(opener)
-        obj = _resolve_dict_spec(target, tp, target_ctx)
+        # A call's value here is the target, not the field: a bare Callable, whose call shape is its own.
+        obj = _resolve_dict_spec(target, collections.abc.Callable if opens_a_call(target) else tp, target_ctx)
         if not callable(obj):
             where = _spelled_where(target_ctx.where)
             msg = f"{opener!r} target at {where}: {target!r} resolved to {obj!r}, which is not callable."
@@ -487,22 +493,19 @@ def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any:
         raise TypeCoercionError(msg) from e
 
 
-def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any:
-    """Resolve a 'call:' spec: call its target with call_kwargs, and use the return value as the callable.
+def _resolve_call_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
+    """Resolve the ``call:`` *spec* of a Callable *tp*: call its target, and read its value as *tp*.
 
+    The value is configuration written in the spec's place (:func:`_call_value`): a callable
+    is taken as it is, a dotted path or a spec is read as a Callable reads one, each checked
+    against *tp*'s call shape; anything else is refused as a file writing it is. *tp* is the
+    field's Callable, or a bare ``Callable`` where the spec is the target of another opener.
     The result keeps no trace of the spec: it dumps as what it is, never as the call.
 
     Dev Notes:
-        docs-dev/architecture/design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state
+        docs-dev/architecture/design-decisions/a-calls-value-is-read-by-construction.md#a-calls-value-is-configuration-written-in-its-place
     """
-    result = _call_factory(target, call_kwargs, ctx)
-    if not callable(result):
-        msg = (
-            f"'call:' at {_spelled_where(ctx.where)}: {target!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
-            " which is not callable."
-        )
-        raise TypeCoercionError(msg)
-    return result
+    return ctx.construct(tp, _call_value(spec, tp, ctx))
 
 
 #: The openers that compute over a target: its arguments are the mapping under ``args``.
@@ -602,6 +605,18 @@ def _spec_parts(spec: dict, where: str) -> tuple[str, dict]:
     return _computation_parts(spec, where)
 
 
+def opens_a_call(spec: dict) -> bool:
+    """Return whether construction reads the dict *spec* by its ``call`` opener (:func:`_spec_parts`).
+
+    An object opener beside ``call`` takes it as a field, so only a ``call`` competing to open
+    the spec opens a call; a ``bind`` beside it is a second opener, which the call refuses.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#an-openers-word-is-never-an-argument
+    """
+    return _defaults.CALL_KEY in _competing_openers(spec)
+
+
 def _competing_openers(spec: dict) -> list[str]:
     """Return the openers *spec* holds that compete to open it: its object openers, else its computation ones.
 
@@ -687,7 +702,7 @@ def _resolve_dict_spec(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
     """
     opener, args = _spec_parts(spec, ctx.where)
     if opener == _defaults.CALL_KEY:
-        return _resolve_call_spec(spec[opener], args, ctx)
+        return _resolve_call_spec(spec, tp, ctx)
     if opener == _defaults.BIND_KEY:
         return _resolve_bind_spec(spec[opener], args, tp, ctx)
     if opener == _defaults.CLASSFN_KEY:
@@ -716,7 +731,8 @@ def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
     """Return the value the ``call:`` *spec* on a field of type *tp* computes, bounded where it enters.
 
     Each value is checked as ``build()`` data is, counted from the node's depth
-    (:func:`~confarg._depth.refuse_overflow`). A value that is a call again at the node is
+    (:func:`~confarg._depth.refuse_overflow`). A value that is a call again at the node
+    (:func:`~confarg.typedload._construct.is_a_call_at`), on a typed field or a Callable, is
     made in its place, a link of a chain each of which is a level.
 
     Raises:
@@ -728,7 +744,7 @@ def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
         docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own
     """
     from confarg._depth import MAX_DEPTH, Copies, refuse_overflow  # noqa: PLC0415  # import cycle, through _types
-    from confarg.typedload._construct import _is_typed_call  # noqa: PLC0415  # import cycle
+    from confarg.typedload._construct import is_a_call_at  # noqa: PLC0415  # import cycle
 
     action = f"read the value of the call at {_spelled_where(ctx.where)}"
     made = [spec]
@@ -736,7 +752,7 @@ def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
         _opener, kwargs = _computation_parts(spec, ctx.where)
         value = _call_factory(spec[_defaults.CALL_KEY], kwargs, ctx)
         refuse_overflow(value, action, at=ctx.path, copies=Copies())
-        if not _is_typed_call(value, tp):
+        if not is_a_call_at(value, tp):
             return value
         targets = [repr(made_spec[_defaults.CALL_KEY]) for made_spec in made]
         if value in made:
@@ -752,16 +768,15 @@ def resolve_held_spec(spec: dict, path: FieldPath, construct_fn: Any) -> Any:
     """Build what a spec an ``Any`` node holds yields: an instance, a bound method, a partial or a value.
 
     Every opener is read, as on a Callable field (:func:`_spec_parts`), with no Callable to
-    check the result against: the class key builds any class, callable or not, and ``call:``
-    takes its target's value as it is.
+    check the result against: the class key builds any class, callable or not. A ``call:``
+    never reaches here: construction reads it first, as a typed call on ``Any``
+    (:func:`resolve_typed_call`).
 
     Dev Notes:
         docs-dev/architecture/callables.md#an-any-node-reads-every-opener
     """
     ctx = _SpecContext(path, construct_fn)
     opener, args = _spec_parts(spec, ctx.where)
-    if opener == _defaults.CALL_KEY:
-        return _call_factory(spec[opener], args, ctx)
     if opener == _defaults.CLASS_KEY:
         return _instantiate_class_spec(_ClassSpec(spec[opener], args), ctx)
     return _resolve_dict_spec(spec, None, ctx)
