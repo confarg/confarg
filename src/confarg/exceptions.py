@@ -46,6 +46,19 @@ def _spell_field_path(path: FieldPath) -> str:
     return spelled
 
 
+def _spelled_where(path: FieldPath | str) -> str:
+    """Return where a message says a value stands, from its *path* or the path as spelled: ``'port'``, or ``the root``.
+
+    The one spelling of a position, so no message quotes the empty path the root is spelled as
+    (:func:`_spell_field_path`) and every one names the root alike; a message writes ``at {where}``.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#a-construction-path-is-a-sequence-of-segments
+    """
+    spelled = path if isinstance(path, str) else _spell_field_path(path)
+    return f"'{spelled}'" if spelled else "the root"
+
+
 def _spell_long_path(path: FieldPath) -> str:
     """Spell *path* as :func:`_spell_field_path` does, its middle elided once it runs past eight segments.
 
@@ -311,7 +324,7 @@ class ConfargError(Exception):
             docs-dev/architecture/config-files/reserved-keys.md#reserved-file-only-keys
         """
         return cls(
-            f"Cannot dump the key {key!r} at '{path}': confarg reserves it, so a configuration file"
+            f"Cannot dump the key {key!r} at {_spelled_where(path)}: confarg reserves it, so a configuration file"
             " would read it as its own rather than as data.",
         )
 
@@ -326,9 +339,12 @@ class ConfargError(Exception):
             docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back
         """
         if value is None:
-            return cls(f"Cannot write None at '{path}' to {fmt}, which has no null. A YAML or a JSON file holds it.")
+            return cls(
+                f"Cannot write None at {_spelled_where(path)} to {fmt}, which has no null."
+                " A YAML or a JSON file holds it.",
+            )
         name = type(value).__name__
-        return cls(f"Cannot write the {name} at '{path}' to {fmt}: a {fmt} file holds no {name}.")
+        return cls(f"Cannot write the {name} at {_spelled_where(path)} to {fmt}: a {fmt} file holds no {name}.")
 
     @classmethod
     def unwritable_key(cls, key: Any, path: str, fmt: str) -> ConfargError:
@@ -337,7 +353,7 @@ class ConfargError(Exception):
         Dev Notes:
             docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-key-is-written-as-the-text-it-is-met-by
         """
-        return cls(f"Cannot write the key {key!r} at '{path}' to {fmt}: no {fmt} key reads back as it.")
+        return cls(f"Cannot write the key {key!r} at {_spelled_where(path)} to {fmt}: no {fmt} key reads back as it.")
 
     @classmethod
     def keys_written_alike(cls, first: Any, second: Any, text: str, path: str, fmt: str) -> ConfargError:
@@ -348,7 +364,7 @@ class ConfargError(Exception):
         """
         holds_both = "" if fmt == "YAML" else " A YAML file holds both."
         return cls(
-            f"Cannot write the keys {first!r} and {second!r} at '{path}' to {fmt}:"
+            f"Cannot write the keys {first!r} and {second!r} at {_spelled_where(path)} to {fmt}:"
             f" both are written {text!r}.{holds_both}",
         )
 
@@ -359,7 +375,10 @@ class ConfargError(Exception):
         Dev Notes:
             docs-dev/architecture/types/serialization.md#two-keys-written-as-one-are-refused
         """
-        return cls(f"Cannot serialize the keys {first!r} and {second!r} at '{path}': both are written {written!r}.")
+        return cls(
+            f"Cannot serialize the keys {first!r} and {second!r} at {_spelled_where(path)}:"
+            f" both are written {written!r}.",
+        )
 
     @classmethod
     def include_siblings_need_a_dict(cls, include_key: str, included: Any) -> ConfargError:
@@ -655,7 +674,7 @@ class TypeCoercionError(ConfargError):
         as a none word, offered only when *value* is a token and the union counts ``None``
         among its variants: anywhere else the remedy would ask for the value just refused.
         """
-        msg = f"Cannot coerce {src} {value!r} to {tp} at '{path}'"
+        msg = f"Cannot coerce {src} {value!r} to {tp} at {_spelled_where(path)}"
         return cls._refusal(_append_none_remedy(msg) if none_sentinel else msg, plain=(path, value))
 
     @classmethod
@@ -691,7 +710,7 @@ class TypeCoercionError(ConfargError):
     def subclass_refuses(cls, name: str, builtin: str, path: str, reason: str) -> TypeCoercionError:
         """Return the error for the subclass *name* of *builtin*, whose constructor takes no such value."""
         return cls(
-            f"{name} at '{path}' does not take a {builtin}: {reason};"
+            f"{name} at {_spelled_where(path)} does not take a {builtin}: {reason};"
             f" confarg.register_leaf_type({name}, ...) reads it another way",
         )
 
@@ -699,7 +718,8 @@ class TypeCoercionError(ConfargError):
     def forbidden_literal_member(cls, literal: str, member: Any, path: str) -> TypeCoercionError:
         """Return the error for a ``Literal`` holding *member*, which PEP 586 forbids, *literal* spelling it whole."""
         return cls(
-            f"Invalid annotation {literal} at '{path}': its member {member!r} is a {type(member).__name__};"
+            f"Invalid annotation {literal} at {_spelled_where(path)}:"
+            f" its member {member!r} is a {type(member).__name__};"
             " a Literal member is an int, str, bytes, bool, Enum member or None (PEP 586)",
         )
 
@@ -720,7 +740,7 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
-        message = f"Cannot construct {what} at '{path}': expected {accepted}, got {src} {value!r}"
+        message = f"Cannot construct {what} at {_spelled_where(path)}: expected {accepted}, got {src} {value!r}"
         return cls._refusal(message, plain=(path, value))
 
     @classmethod
@@ -734,7 +754,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
         """
         message = (
-            f"Cannot construct {what} at '{path}': got {src} {value!r}, which is no {what};"
+            f"Cannot construct {what} at {_spelled_where(path)}: got {src} {value!r}, which is no {what};"
             f" a {what}, or a dict of its fields, builds one."
         )
         return cls._refusal(message, plain=(path, value))
@@ -747,7 +767,8 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-built-instance-is-taken-as-it-is
         """
         return cls(
-            f"Cannot construct {what} at '{path}': it holds {value!r} at '{member_path}', which is no {member_type}.",
+            f"Cannot construct {what} at {_spelled_where(path)}:"
+            f" it holds {value!r} at '{member_path}', which is no {member_type}.",
         )
 
     @classmethod
@@ -762,7 +783,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
             docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
         """
-        message = f"Cannot construct {what} at '{path}': expected {expected} elements, got {len(value)}"
+        message = f"Cannot construct {what} at {_spelled_where(path)}: expected {expected} elements, got {len(value)}"
         return cls._refusal(message, plain=(path, value))
 
     @classmethod
@@ -776,7 +797,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-union-refusal-names-each-variants-reason
         """
         return cls._refusal(
-            f"Cannot construct {what} at '{path}': dict keys must be integer indices",
+            f"Cannot construct {what} at {_spelled_where(path)}: dict keys must be integer indices",
             plain=(path, value),
         )
 
@@ -793,7 +814,7 @@ class TypeCoercionError(ConfargError):
         """
         listed = f"{', '.join(map(repr, keys[:-1]))} and {keys[-1]!r}"
         reason = f"keys {listed} {'both' if len(keys) == 2 else 'all'} {reading}"  # noqa: PLR2004  # a pair
-        return cls._refusal(f"Cannot construct {what} at '{path}': {reason}", reason=reason)
+        return cls._refusal(f"Cannot construct {what} at {_spelled_where(path)}: {reason}", reason=reason)
 
     @classmethod
     def unknown_fields(cls, names: Any, what: str, path: str, valid: list[str]) -> TypeCoercionError:
@@ -808,7 +829,8 @@ class TypeCoercionError(ConfargError):
         """
         unknown = sorted(str(name) for name in names)
         reason = f"unknown field(s) {unknown}. Valid fields: {valid}"
-        return cls._refusal(f"Unknown field(s) {unknown} for {what} at '{path}'. Valid fields: {valid}", reason=reason)
+        message = f"Unknown field(s) {unknown} for {what} at {_spelled_where(path)}. Valid fields: {valid}"
+        return cls._refusal(message, reason=reason)
 
     @classmethod
     def cast_not_held(cls, cast: str, field: str, path: str) -> TypeCoercionError:
@@ -822,7 +844,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/design-decisions/a-cast-names-a-type-the-field-holds.md#a-cast-names-a-type-the-field-holds
         """
         return cls(
-            f"Cannot cast to {cast} at '{path}': the field's type {field} does not hold it."
+            f"Cannot cast to {cast} at {_spelled_where(path)}: the field's type {field} does not hold it."
             " A cast names one of the types the field itself holds.",
         )
 
@@ -835,7 +857,7 @@ class TypeCoercionError(ConfargError):
         importing nothing from ``confarg``; the value is never a token, as only a file writes
         the key.
         """
-        return cls(f"Cannot patch the list at '{path}': {key!r} must hold {what}, got {src} {value!r}")
+        return cls(f"Cannot patch the list at {_spelled_where(path)}: {key!r} must hold {what}, got {src} {value!r}")
 
     @classmethod
     def index_unset(cls, unset_key: str, delete_key: str, index: Any, path: str) -> TypeCoercionError:
@@ -849,7 +871,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/design-decisions/a-file-spells-an-op-in-its-value.md#where-a-delete-has-no-meaning
         """
         return cls(
-            f"Cannot patch the list at '{path}': index {index} holds {unset_key!r} alone, which would"
+            f"Cannot patch the list at {_spelled_where(path)}: index {index} holds {unset_key!r} alone, which would"
             f" leave nothing in its place. A list deletes an index with {delete_key!r}: [{index}].",
         )
 
@@ -865,7 +887,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/design-decisions/a-fixed-length-delete-unsets-a-position.md#a-fixed-length-delete-unsets-a-position
         """
         return cls(
-            f"Cannot apply {key!r} to the {what} at '{path}': a fixed-length sequence keeps its length,"
+            f"Cannot apply {key!r} to the {what} at {_spelled_where(path)}: a fixed-length sequence keeps its length,"
             f" so a position is unset in place rather than deleted. Write {{{unset_key}: true}} at the position:"
             f' {{"0": {{{unset_key}: true}}}}.',
         )
@@ -877,7 +899,7 @@ class TypeCoercionError(ConfargError):
         *key* is the reserved key a file writes the op with; *what* names the field's type
         as the message reads it: ``dict``, a fixed tuple, a namedtuple.
         """
-        return cls(f"Cannot apply {key!r} to the {what} at '{path}': it is an operation on a list.")
+        return cls(f"Cannot apply {key!r} to the {what} at {_spelled_where(path)}: it is an operation on a list.")
 
     @classmethod
     def not_a_subclass(cls, name: Any, parent: str, path: str) -> TypeCoercionError:
@@ -891,7 +913,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/design-decisions/messages-live-on-exceptions.md#a-user-facing-message-lives-on-the-exception-that-raises-it
         """
         reason = f"class {name!r} is not a subclass of {parent}"
-        return cls._refusal(f"Class {name!r} at '{path}' is not a subclass of {parent}.", reason=reason)
+        return cls._refusal(f"Class {name!r} at {_spelled_where(path)} is not a subclass of {parent}.", reason=reason)
 
     @classmethod
     def class_not_found(cls, name: str, path: str, cause: str) -> TypeCoercionError:
@@ -900,7 +922,7 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/types/dotted-imports.md#a-path-names-nothing-or-a-module-fails
         """
-        message = f"Cannot import class {name!r} at '{path}': {cause}."
+        message = f"Cannot import class {name!r} at {_spelled_where(path)}: {cause}."
         message += " Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'."
         return cls._refusal(message, reason=_as_clause(cause))
 
@@ -908,7 +930,7 @@ class TypeCoercionError(ConfargError):
     def not_a_class(cls, name: str, path: str, got: str) -> TypeCoercionError:
         """Return the error for the dotted path *name* of a ``type`` field, which imports a *got*, no class."""
         reason = f"expected a class, got {got!r}"
-        return cls._refusal(f"Cannot coerce {name!r} at '{path}': {reason}.", reason=reason)
+        return cls._refusal(f"Cannot coerce {name!r} at {_spelled_where(path)}: {reason}.", reason=reason)
 
     @classmethod
     def class_as_factory(cls, name: str, path: str, returns: str) -> TypeCoercionError:
@@ -921,7 +943,7 @@ class TypeCoercionError(ConfargError):
             f" declared return type). To use an instance of {name} as the callable, use the dict form:"
             f" 'class: {name}'"
         )
-        return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
+        return cls._refusal(f"Callable at {_spelled_where(path)}: {reason}.", reason=reason)
 
     @classmethod
     def call_shape_refused(cls, name: str, annotation: str, path: str, reason: str) -> TypeCoercionError:
@@ -931,13 +953,13 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/callables.md#a-callable-is-checked-by-its-call-shape
         """
         reason = f"{name} cannot be called as {annotation} calls it: {reason}"
-        return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
+        return cls._refusal(f"Callable at {_spelled_where(path)}: {reason}.", reason=reason)
 
     @classmethod
     def not_callable(cls, spec: Any, result: Any, path: str) -> TypeCoercionError:
         """Return the error for the Callable spec *spec*, which resolved to *result*, nothing callable."""
         reason = f"{spec!r} resolved to {result!r}, which is not callable"
-        return cls._refusal(f"Callable at '{path}': {reason}.", reason=reason)
+        return cls._refusal(f"Callable at {_spelled_where(path)}: {reason}.", reason=reason)
 
     @classmethod
     def openers_refused(cls, present: Sequence[str], openers: Sequence[str], path: str) -> TypeCoercionError:
@@ -947,13 +969,13 @@ class TypeCoercionError(ConfargError):
         else:
             *head, last = (repr(o) for o in openers)
             rule = f"must specify one of {', '.join(head)} or {last}"
-        return cls._refusal(f"Callable dict at '{path}' {rule}", reason=f"a callable dict {rule}")
+        return cls._refusal(f"Callable dict at {_spelled_where(path)} {rule}", reason=f"a callable dict {rule}")
 
     @classmethod
     def not_a_member(cls, src: str, value: Any, enum: str, path: str, members: Sequence[str]) -> TypeCoercionError:
         """Return the error for a value that names no member of the Enum *enum*, its *members* as spelled."""
         listed = ", ".join(members)
-        message = f"Cannot coerce {src} {value!r} to {enum} at '{path}'. Valid members: {listed}"
+        message = f"Cannot coerce {src} {value!r} to {enum} at {_spelled_where(path)}. Valid members: {listed}"
         return cls._refusal(message, reason=f"valid members {listed}")
 
     @classmethod
@@ -975,7 +997,8 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
         """
-        return cls._refusal(f"Unsupported leaf type {tp} at '{path}'", reason="no leaf type confarg reads")
+        message = f"Unsupported leaf type {tp} at {_spelled_where(path)}"
+        return cls._refusal(message, reason="no leaf type confarg reads")
 
     @classmethod
     def refused_empty_call(cls, name: Any, path: str, reason: str, beside: str) -> TypeCoercionError:
@@ -988,7 +1011,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-class-built-from-nothing
         """
         return cls(
-            f"Class {name!r} at '{path}' cannot be built with no arguments: {reason}."
+            f"Class {name!r} at {_spelled_where(path)} cannot be built with no arguments: {reason}."
             f" Supply the class's fields as keys beside the {beside}.",
         )
 
@@ -1001,7 +1024,10 @@ class TypeCoercionError(ConfargError):
         Dev Notes:
             docs-dev/architecture/design-decisions/class-names-the-type-it-builds.md#a-protocol-class-is-refused-before-it-is-called
         """
-        message = f"Class {name!r} at '{path}' is a Protocol, so it cannot be built: name a class that implements it."
+        message = (
+            f"Class {name!r} at {_spelled_where(path)} is a Protocol, so it cannot be built:"
+            " name a class that implements it."
+        )
         return cls._refusal(message, reason=f"class {name!r} is a Protocol")
 
     @classmethod
@@ -1016,7 +1042,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/design-decisions/class-names-a-subclass-call-computes.md#class-names-a-subclass-call-computes
         """
         return cls(
-            f"Class {name!r} at '{path}' is not a subclass of {parent}."
+            f"Class {name!r} at {_spelled_where(path)} is not a subclass of {parent}."
             f" A '{call}:' spec computes a value the field's type accepts, so it cannot build this class either.",
         )
 
@@ -1031,7 +1057,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
         """
         why = f"{tp} is built from one value, not from keys"
-        return cls(f"Cannot coerce dict {data!r} to {tp} at '{path}'. {_no_class_picked(why, call)}")
+        return cls(f"Cannot coerce dict {data!r} to {tp} at {_spelled_where(path)}. {_no_class_picked(why, call)}")
 
     @classmethod
     def union_takes_no_tag(cls, data: Any, tp: str, path: str, call: str) -> TypeCoercionError:
@@ -1045,7 +1071,7 @@ class TypeCoercionError(ConfargError):
             docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
         """
         why = f"no variant of {tp} is built from keys"
-        return cls(f"Cannot coerce dict {data!r} to {tp} at '{path}'. {_no_class_picked(why, call)}")
+        return cls(f"Cannot coerce dict {data!r} to {tp} at {_spelled_where(path)}. {_no_class_picked(why, call)}")
 
 
 class InvalidConfigFileError(ConfargError):
@@ -1330,7 +1356,7 @@ class MissingReferenceError(ConfargError):
         *depth* is the number of segments in *path*, given apart because a key holding a dot
         makes the dotted *path* ambiguous to count.
         """
-        where = f"'{path}'" if path else "the root"
+        where = _spelled_where(path)
         return cls(
             f"Relative reference '{'.' * dots}' at {where} climbs {dots} level(s) from a depth"
             f" of {depth}, above the {scope} root; use '::' for the configuration root",
@@ -1402,7 +1428,7 @@ class FloatOverflowWarning(ConfargWarning):
     def at_path(cls, text: str, infinity: float, path: str) -> FloatOverflowWarning:
         """Return the warning for *text*, a finite number construction reads as *infinity* at *path*."""
         return cls(
-            f"{_elided(text)} is too large for a float and reads as {infinity} at '{path}'."
+            f"{_elided(text)} is too large for a float and reads as {infinity} at {_spelled_where(path)}."
             " Write inf to mean infinity.",
         )
 

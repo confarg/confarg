@@ -1061,3 +1061,65 @@ class TestAMessageNamesATypeByWhatConfargReads:
         with pytest.raises(confarg.exceptions.MissingFieldError) as exc_info:
             confarg.build(int, {})
         assert str(exc_info.value).startswith("No value provided for target type int. ")
+
+
+@dataclass
+class _RootA:
+    a: int = 0
+
+
+@dataclass
+class _RootB:
+    b: int = 0
+
+
+class TestARefusalAtTheRootSaysSo:
+    """A refusal names the root as ``the root``, never as the empty path or the ``__root__`` key (BUG-290, REF-109)."""
+
+    @pytest.mark.parametrize(
+        ("target", "data", "first_line"),
+        [
+            pytest.param(int, {"__root__": "x"}, "Cannot coerce str 'x' to int at the root", id="leaf"),
+            pytest.param(
+                _RootA | _RootB,
+                {"zz": 1},
+                "Cannot coerce dict {'zz': 1} to _RootA | _RootB at the root:",
+                id="union",
+            ),
+            pytest.param(
+                _RootA,
+                {"zz": 1},
+                "Unknown field(s) ['zz'] for _RootA at the root. Valid fields: ['a']",
+                id="struct",
+            ),
+            pytest.param(
+                tuple[int, int],
+                {"__root__": [1]},
+                "Cannot construct tuple[int, int] at the root: expected 2 elements, got 1",
+                id="fixed-tuple",
+            ),
+            pytest.param(list[int], {"__root__": ["x"]}, "Cannot coerce str 'x' to int at '[0]'", id="element"),
+        ],
+    )
+    def test_build_names_the_root(self, target: Any, data: dict[str, Any], first_line: str) -> None:
+        """Every construction refusal of the root value says ``at the root``; a root element keeps its index."""
+        with pytest.raises(confarg.exceptions.ConfargError) as exc_info:
+            confarg.build(target, data)
+        assert str(exc_info.value).splitlines()[0] == first_line
+
+    def test_every_channel_names_the_root(self, tmp_path: Any) -> None:
+        """The file, the environment and ``from_dict()`` reach the same refusal as ``build()``."""
+        (tmp_path / "c.json").write_text('{"__root__": "x"}', encoding="utf-8")
+        expected = "Cannot coerce str 'x' to int at the root"
+        with pytest.raises(confarg.exceptions.ConfargError) as from_file:
+            confarg.load(int, argv=[], env={}, files=[str(tmp_path / "c.json")])
+        with pytest.raises(confarg.exceptions.ConfargError) as from_env:
+            confarg.load(int, argv=[], env={"APP": "x"}, env_prefix="APP")
+        with pytest.raises(confarg.exceptions.ConfargError) as from_dict:
+            confarg.from_dict(int, {"__root__": "x"})
+        assert [str(e.value) for e in (from_file, from_env, from_dict)] == [expected] * 3
+
+    def test_a_written_file_names_the_root(self, tmp_path: Any) -> None:
+        """``dump_file()`` refuses a root key with no text at the root, not at ``'__root__'``."""
+        with pytest.raises(confarg.exceptions.ConfargError, match=r"Cannot write the key \(1, 2\) at the root to JSON"):
+            confarg.dump_file({(1, 2): 1}, tmp_path / "x.json")

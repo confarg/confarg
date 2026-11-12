@@ -38,6 +38,7 @@ from confarg.exceptions import (
     SymbolNotFoundError,
     TypeCoercionError,
     _spell_field_path,
+    _spelled_where,
 )
 
 
@@ -202,7 +203,7 @@ def _maybe_bind_method(func: Any, path_str: str, where: str) -> Any:
     except TypeError as e:
         spec = "\n".join(filter(None, [f"  classfn: {path_str}", _format_constructor_params(owner)]))
         msg = (
-            f"Cannot instantiate {owner.__qualname__!r} with no arguments at '{where}': {e}.\n"
+            f"Cannot instantiate {owner.__qualname__!r} with no arguments at {_spelled_where(where)}: {e}.\n"
             f"{path_str} is an instance method, so its owner is built with no arguments. To build"
             f" {owner.__qualname__} with arguments, name the method with 'classfn:', its other keys"
             f" the constructor's arguments:\n{spec}\n"
@@ -327,11 +328,12 @@ def _resolve_target(target: Any, tp: Any, ctx: _SpecContext, opener: str) -> Any
         target_ctx = ctx.at(opener)
         obj = _resolve_dict_spec(target, tp, target_ctx)
         if not callable(obj):
-            msg = f"{opener!r} target at '{target_ctx.where}': {target!r} resolved to {obj!r}, which is not callable."
+            where = _spelled_where(target_ctx.where)
+            msg = f"{opener!r} target at {where}: {target!r} resolved to {obj!r}, which is not callable."
             raise TypeCoercionError(msg)
         return obj
     msg = (
-        f"{opener!r} at '{ctx.where}' takes a dotted path or a callable spec, got {_src_type(target)}."
+        f"{opener!r} at {_spelled_where(ctx.where)} takes a dotted path or a callable spec, got {_src_type(target)}."
         f" The target's arguments go under 'args': {{{opener}: <target>, args: {{<name>: <value>}}}}."
     )
     raise TypeCoercionError(msg)
@@ -427,7 +429,8 @@ def _coerce_kwargs(target: Any, kwargs: dict, ctx: _SpecContext, *, kind: str, s
     """
     invalid, valid = _unknown_argument_names(target, kwargs)
     if invalid:
-        msg = f"Unknown {kind} {invalid} for {subject} at '{ctx.where}'. Valid parameters: {sorted(valid)}."
+        where = _spelled_where(ctx.where)
+        msg = f"Unknown {kind} {invalid} for {subject} at {where}. Valid parameters: {sorted(valid)}."
         raise TypeCoercionError(msg)
     types = argument_types(target)
     return {k: ctx.at(k).construct(_resolve_type(types.get(k, Any)), v) for k, v in kwargs.items()}
@@ -455,7 +458,7 @@ def _split_arguments(target: Any, kwargs: dict, ctx: _SpecContext) -> tuple[list
     except _PositionalGapError as e:
         subject = getattr(target, "__qualname__", None) or repr(target)
         msg = (
-            f"Positional-only parameter {e.unset!r} of {subject} at '{ctx.where}' is unset and has no"
+            f"Positional-only parameter {e.unset!r} of {subject} at {_spelled_where(ctx.where)} is unset and has no"
             f" default, so no call reaches {e.later!r} after it: set {e.unset!r} too."
         )
         raise TypeCoercionError(msg) from None
@@ -480,7 +483,7 @@ def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any:
     try:
         return func(*args, **kwargs)
     except Exception as e:
-        msg = f"Failed to call {target!r} at '{ctx.where}': {e}"
+        msg = f"Failed to call {target!r} at {_spelled_where(ctx.where)}: {e}"
         raise TypeCoercionError(msg) from e
 
 
@@ -495,7 +498,7 @@ def _resolve_call_spec(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any
     result = _call_factory(target, call_kwargs, ctx)
     if not callable(result):
         msg = (
-            f"'call:' at '{ctx.where}': {target!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
+            f"'call:' at {_spelled_where(ctx.where)}: {target!r}(**{call_kwargs!r}) returned {type(result).__name__!r},"
             " which is not callable."
         )
         raise TypeCoercionError(msg)
@@ -663,13 +666,13 @@ def _computation_parts(spec: dict, where: str) -> tuple[str, dict]:
     stray = sorted(str(k) for k in spec if k not in (opener, _defaults.ARGS_KEY))
     if stray:
         msg = (
-            f"Callable dict at '{where}' holds {stray} beside {opener!r}: the target's arguments"
+            f"Callable dict at {_spelled_where(where)} holds {stray} beside {opener!r}: the target's arguments"
             f" go under 'args', {{{opener}: <target>, args: {{<name>: <value>}}}}."
         )
         raise TypeCoercionError(msg)
     args = spec.get(_defaults.ARGS_KEY, {})
     if not isinstance(args, dict):
-        msg = f"'args' at '{where}' takes the target's arguments by name, got {_src_type(args)}."
+        msg = f"'args' at {_spelled_where(where)} takes the target's arguments by name, got {_src_type(args)}."
         raise TypeCoercionError(msg)
     return opener, args
 
@@ -727,7 +730,7 @@ def _call_value(spec: dict, tp: Any, ctx: _SpecContext) -> Any:
     from confarg._depth import MAX_DEPTH, Copies, refuse_overflow  # noqa: PLC0415  # import cycle, through _types
     from confarg.typedload._construct import _is_typed_call  # noqa: PLC0415  # import cycle
 
-    action = f"read the value of the call at '{ctx.where}'"
+    action = f"read the value of the call at {_spelled_where(ctx.where)}"
     made = [spec]
     while True:
         _opener, kwargs = _computation_parts(spec, ctx.where)
@@ -827,13 +830,14 @@ def _resolve_classfn_spec(method_path: Any, init_kwargs: dict, ctx: _SpecContext
     """
     opener = _defaults.CLASSFN_KEY
     if not isinstance(method_path, str):
-        msg = f"{opener!r} at '{ctx.where}' takes the dotted path of an instance method, got {_src_type(method_path)}."
+        where = _spelled_where(ctx.where)
+        msg = f"{opener!r} at {where} takes the dotted path of an instance method, got {_src_type(method_path)}."
         raise TypeCoercionError(msg)
     _import_dotted(method_path)
     owner = _instance_method_owner(method_path)
     if owner is None:
         msg = (
-            f"{opener!r} at '{ctx.where}' names an instance method, and {method_path!r} is not one:"
+            f"{opener!r} at {_spelled_where(ctx.where)} names an instance method, and {method_path!r} is not one:"
             " a function, a class, a static or a class method needs no owner to be built."
             f" Name it with 'bind: {method_path}', its own arguments under 'args'."
         )
@@ -866,22 +870,22 @@ def _import_class_by_path(tag: Any, where: str) -> type:
         docs-dev/architecture/types/dotted-imports.md#a-tag-is-a-dotted-path
     """
     if not isinstance(tag, str):
-        msg = f"The {_defaults.CLASS_KEY!r} key at '{where}' takes a dotted path, got {_src_type(tag)}."
+        msg = f"The {_defaults.CLASS_KEY!r} key at {_spelled_where(where)} takes a dotted path, got {_src_type(tag)}."
         raise TypeCoercionError(msg)
     try:
         obj = _import_dotted(tag)
     except SymbolNotFoundError as e:
         msg = (
-            f"Cannot import class {tag!r} from the {_defaults.CLASS_KEY!r} key at '{where}': {e}."
+            f"Cannot import class {tag!r} from the {_defaults.CLASS_KEY!r} key at {_spelled_where(where)}: {e}."
             f" The value must be a full dotted path, e.g. 'mypackage.mymodule.MyClass'."
         )
         raise TypeCoercionError(msg) from e
     except SymbolImportError as e:
-        msg = f"Cannot import class {tag!r} from the {_defaults.CLASS_KEY!r} key at '{where}': {e}"
+        msg = f"Cannot import class {tag!r} from the {_defaults.CLASS_KEY!r} key at {_spelled_where(where)}: {e}"
         raise SymbolImportError(msg) from e
     if not isinstance(obj, type):
         msg = (
-            f"Value of the {_defaults.CLASS_KEY!r} key at '{where}' must be a class path,"
+            f"Value of the {_defaults.CLASS_KEY!r} key at {_spelled_where(where)} must be a class path,"
             f" but {tag!r} resolved to {type(obj).__name__!r}, not a class."
         )
         raise TypeCoercionError(msg)
@@ -911,7 +915,7 @@ def _resolve_class_spec(spec: _ClassSpec, ctx: _SpecContext) -> Any:
     instance = _instantiate_class_spec(spec, ctx)
     if not callable(instance):
         msg = (
-            f"Instance of {spec.cls_path!r} at '{ctx.where}' is not callable: the class must define"
+            f"Instance of {spec.cls_path!r} at {_spelled_where(ctx.where)} is not callable: the class must define"
             f" __call__ to be used as a Callable via '{_defaults.CLASS_KEY}:'. To use {spec.cls_path} as a"
             f" factory (calling it constructs an instance), give its bare name"
             f" '{spec.cls_path}', or 'bind: {spec.cls_path}' with its constructor args under 'args'."

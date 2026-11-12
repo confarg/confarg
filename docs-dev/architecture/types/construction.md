@@ -292,6 +292,8 @@ Construction carries the position it builds as a tuple, one segment per step: a 
 Text is spelled only for a message, by one function, `exceptions._spell_field_path`: each key after a dot, each index in brackets, the first key bare.
 Construction, the callable specs built below it and `dump()`'s diagnostics all name a path through it, and `MissingFieldError` holds the tuple itself, since its remedy spells the same segments as a flag.
 A call out to a helper that only words a message (`_coerce_leaf`, the merge's list operations, the `TypeCoercionError` factories) is handed the spelled text.
+Where a message says where, it says it through `exceptions._spelled_where`, which takes the tuple or its spelling: `at 'items[0].size'`, and `at the root` for the empty path the target itself is spelled as.
+The root was `at ''` in construction's refusals and `at '__root__'` in the dump's, a key a user may write in a file but no position of the configuration (BUG-290, REF-109).
 
 A path string threaded through construction and appended to at each step could not tell a key holding `[0]` from an index (BUG-169), and gave a field below a dict or namedtuple target a leading dot (`'.x.size'`), since only the struct step special-cased the empty root path.
 The public `construct(path=...)` takes the tuple too, `()` for the target itself: a string would have to be split back into segments, which is the loss the tuple removes (maintainer-chosen).

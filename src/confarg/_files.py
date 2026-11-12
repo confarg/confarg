@@ -1159,12 +1159,12 @@ def _writable(value: Any, fmt: _Format, path: FieldPath) -> Any:
     if not isinstance(value, dict):
         if fmt.holds(value):
             return value
-        raise ConfargError.unwritable_value(value, _spell_field_path(path) or _defaults.ROOT_KEY, fmt.name)
+        raise ConfargError.unwritable_value(value, _spell_field_path(path), fmt.name)
     written: dict[Any, Any] = {}
     spelled_by: dict[Any, Any] = {}
     for k, v in value.items():
         key = _written_key(k)
-        where = _spell_field_path(path) or _defaults.ROOT_KEY
+        where = _spell_field_path(path)
         if key is None:
             raise ConfargError.unwritable_key(k, where, fmt.name)
         if key in spelled_by:

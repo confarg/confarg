@@ -99,6 +99,7 @@ from confarg.exceptions import (
     SymbolNotFoundError,
     TypeCoercionError,
     _spell_field_path,
+    _spelled_where,
     _variant_reason,
 )
 from confarg.typedload._coerce import (
@@ -290,7 +291,7 @@ def _construct_struct_dispatch(tp: Any, data: Any, path: FieldPath) -> Any:
     if _demands_tag(tp):
         sub_names = ", ".join(dotted_name(_class_of(s)) for s in _direct_struct_subclasses(tp))
         msg = (
-            f"Cannot construct '{tp.__name__}' at '{_spell_field_path(path)}': it has subclasses ({sub_names})"
+            f"Cannot construct '{tp.__name__}' at {_spelled_where(path)}: it has subclasses ({sub_names})"
             f" but no {_defaults.CLASS_KEY!r} key was provided."
             f" Add a {_defaults.CLASS_KEY!r} key with the fully-qualified class name."
         )
@@ -333,7 +334,7 @@ def _construct_taggable_leaf(tp: Any, data: MergeDict, path: FieldPath) -> Any:
     if _defaults.CLASS_KEY in data:
         return _construct_struct_dispatch(tp, data, path)
     msg = (
-        f"Cannot coerce dict {data!r} to {tp.__name__} at '{_spell_field_path(path)}'."
+        f"Cannot coerce dict {data!r} to {tp.__name__} at {_spelled_where(path)}."
         f" {tp.__name__} is a registered leaf type: pass a value it coerces from, or add a"
         f" {_defaults.CLASS_KEY!r} key naming {dotted_name(tp)} to build it from its fields."
     )
@@ -744,7 +745,7 @@ def _indexed_dict_to_positions(
     for k, v in data.items():
         if isinstance(k, str) and k in MERGE_OP_KEYS:
             msg = (
-                f"Cannot construct {what} at '{_spell_field_path(path)}':"
+                f"Cannot construct {what} at {_spelled_where(path)}:"
                 f" {k!r} spells a list op, which only a configuration file writes"
             )
             raise TypeCoercionError(msg)
@@ -753,7 +754,8 @@ def _indexed_dict_to_positions(
             out[position] = v
         elif (index := _spelled_position(k)) is not None:
             spelled = _spell_field_path(path)
-            msg = f"Cannot construct {what} at '{spelled}': index {index} out of range for length {length}"
+            where = _spelled_where(spelled)
+            msg = f"Cannot construct {what} at {where}: index {index} out of range for length {length}"
             raise TypeCoercionError(msg)
         else:
             unknown.append(k)
@@ -976,7 +978,7 @@ def _build_items(et: Any, data: Any, path: FieldPath) -> list[Any]:
             return [construct(et, v, path=(*path, i)) for i, v in enumerate(working)]
         if ListOp.DELETE in data or ListOp.DELETE_AFTER in data:
             msg = (
-                f"List deletion (the '-' operator) at '{_spell_field_path(path)}' requires a base list to delete from,"
+                f"List deletion (the '-' operator) at {_spelled_where(path)} requires a base list to delete from,"
                 " but no base list was provided. Supply the full list via a config file or other source."
             )
             raise TypeCoercionError(msg)
@@ -992,7 +994,7 @@ def _build_items(et: Any, data: Any, path: FieldPath) -> list[Any]:
         neg = [k for k in positions if k < 0]
         if neg:
             msg = (
-                f"Negative index/indices {sorted(neg)} at '{_spell_field_path(path)}' require a base list to"
+                f"Negative index/indices {sorted(neg)} at {_spelled_where(path)} require a base list to"
                 " resolve against, but no base list was provided. Supply the full list via"
                 " a config file or other source."
             )
@@ -1001,7 +1003,7 @@ def _build_items(et: Any, data: Any, path: FieldPath) -> list[Any]:
         gaps = [i for i in range(max_idx + 1) if i not in positions]
         if gaps and not _allows_none(et):
             msg = (
-                f"List at '{_spell_field_path(path)}' has gap(s) at index/indices {gaps}:"
+                f"List at {_spelled_where(path)} has gap(s) at index/indices {gaps}:"
                 f" when using index-keyed form, all indices 0-{max_idx} must be provided,"
                 f" or the element type must be Optional."
             )
@@ -1320,7 +1322,7 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
     variant_classes = list(dict.fromkeys(c for c, _ in matching))
     if len(variant_classes) > 1:
         raise AmbiguousUnionError(
-            f"Class {tag!r} at '{_spell_field_path(path)}' matches multiple union variants: "
+            f"Class {tag!r} at {_spelled_where(path)} matches multiple union variants: "
             + ", ".join(dotted_name(c) for c in variant_classes),
         )
     if matching:
@@ -1331,7 +1333,7 @@ def _construct_union_by_tag(tp: Any, non_none: list[Any], data: MergeDict, path:
         return construct(reader, data, path=path)
     valid_variants = sorted(dotted_name(rv) for rv in structs)
     msg = (
-        f"Class {tag!r} at '{_spell_field_path(path)}' is not compatible with any union variant."
+        f"Class {tag!r} at {_spelled_where(path)} is not compatible with any union variant."
         f" Expected a subclass of one of: {valid_variants}"
     )
     raise TypeCoercionError(msg)
@@ -1769,7 +1771,7 @@ def _ambiguous_union_msg(matches: list[Any], data: MergeDict, path: FieldPath) -
     remedy offers the class key, naming the first match by the dotted path it imports by.
     """
     lines = [
-        f"Ambiguous union at '{_spell_field_path(path)}': cannot distinguish between "
+        f"Ambiguous union at {_spelled_where(path)}: cannot distinguish between "
         + ", ".join(m.__name__ for m in matches)
         + ".",
     ]

@@ -56,7 +56,13 @@ from confarg._types import (
     _union_args_no_none,
 )
 from confarg.dictexpr import contains_expression
-from confarg.exceptions import FloatOverflowWarning, SymbolImportError, SymbolNotFoundError, TypeCoercionError
+from confarg.exceptions import (
+    FloatOverflowWarning,
+    SymbolImportError,
+    SymbolNotFoundError,
+    TypeCoercionError,
+    _spelled_where,
+)
 
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
 _FALSY = frozenset({"false", "0", "no", "off"})
@@ -382,7 +388,7 @@ def _import_class(path_text: str, path: str) -> type:
     except SymbolNotFoundError as e:
         raise TypeCoercionError.class_not_found(path_text, path, str(e)) from e
     except SymbolImportError as e:
-        msg = f"Cannot import class {path_text!r} at '{path}': {e}"
+        msg = f"Cannot import class {path_text!r} at {_spelled_where(path)}: {e}"
         raise SymbolImportError(msg) from e
     if not isinstance(obj, type):
         raise TypeCoercionError.not_a_class(path_text, path, type(obj).__name__)
