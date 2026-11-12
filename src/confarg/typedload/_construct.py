@@ -118,7 +118,7 @@ from confarg.typedload._coerce import (
     _TypeKind,
     as_subclass,
 )
-from confarg.typedload._holding import _holds, _holds_anything, first_holding_variant, unheld_member
+from confarg.typedload._holding import _holds, _holds_anything, first_holding_variant, read_as, unheld_member
 
 
 def _try_pinned_dict(data: Any) -> _Pinned | None:
@@ -309,7 +309,8 @@ def _take_instance(tp: Any, data: Any, path: FieldPath) -> Any:
     if _holds(tp, data):
         return data
     spelled = _spell_type(tp)
-    if _holds(_class_of(tp), data) and (unheld := unheld_member(tp, data)) is not None:
+    bound = read_as(tp, data) if _holds(_class_of(tp), data) else None
+    if bound is not None and (unheld := unheld_member(bound, data)) is not None:
         name, member_type, value = unheld
         where = _spell_field_path(path)
         raise TypeCoercionError.unheld_member(

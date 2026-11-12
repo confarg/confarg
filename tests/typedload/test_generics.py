@@ -50,6 +50,18 @@ class _TwinChild(_TwinA, _TwinB):
     pass
 
 
+@dataclass
+class _Extended[T](_g.Tagged[T]):
+    """Declares a member of its own its binding types: ``extra`` is an int under ``Tagged[int]``."""
+
+    extra: T | None = None
+
+
+@dataclass
+class _HoldsTagged:
+    tagged: _g.Tagged[int] | None = None
+
+
 class TestMembersReadTheirBinding:
     """Every member reads its type with the class's parameters bound, from a file as from argv."""
 
@@ -118,6 +130,16 @@ class TestATagBindsTheClassItNames:
         data = {"b": {"item": 0}, "tagged": {"class": f"{_MOD}.Tagged", "item": "x"}}
         with pytest.raises(TypeCoercionError, match=re.escape("Cannot coerce str 'x' to int at 'tagged.item'")):
             confarg.from_dict(_g.Holder, data)
+
+    def test_a_built_instance_is_held_by_the_binding_its_class_reads_as(self) -> None:
+        """``_Extended(item=1, extra='x')`` is no ``Tagged[int]``, its tag spelling refused alike (BUG-330)."""
+        refusal = "Cannot construct Tagged[int] at 'tagged': it holds 'x' at 'tagged.extra', which is no int | None."
+        with pytest.raises(TypeCoercionError, match=re.escape(refusal)):
+            confarg.from_dict(_HoldsTagged, {"tagged": _Extended(item=1, extra="x")})
+        with pytest.raises(TypeCoercionError, match=re.escape("Cannot coerce str 'x' to int at 'tagged.extra'")):
+            confarg.from_dict(_HoldsTagged, {"tagged": {"class": f"{__name__}._Extended", "item": 1, "extra": "x"}})
+        held = _Extended(item=1, extra=2)
+        assert confarg.from_dict(_HoldsTagged, {"tagged": held}).tagged is held
 
     def test_a_tag_naming_no_subclass_is_refused(self) -> None:
         """An unrelated class is refused, the field's parameterized type named."""
