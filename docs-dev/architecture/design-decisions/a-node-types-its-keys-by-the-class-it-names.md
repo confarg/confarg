@@ -59,7 +59,7 @@ A framework splits argv into tokens by the arity registration gives each flag, b
 The record is one per holder, so a holder takes one target: a second one is refused (`cli._sources.refuse_a_second_target`, BUG-273), where it used to replace the first's record, the prefix half since BUG-2, and the first target's merge read the second's prefix and sources; the same target registered again replaces its record.
 A dataclass holding a field of each type covers two sections, as jsonargparse's `nested_key` puts each class under its own key; per-target records wait for a use (FEAT-56).
 
-- `merge_*` / `from_*` reuse a recorded option they are not given, and refuse one that differs from what registration read, its default included (`cli._sources.reconcile`): the framework split argv by those sources.
+- `merge_*` / `from_*` reuse a recorded option they are not given, and refuse one that differs from what registration read, its default included (`cli._sources.reconcile`, read by every adapter through `cli._sources.options_for`): the framework split argv by those sources.
   `argv` is each step's own, and an option registration read nothing by differs from nothing (the environment where no prefix and no `env_config` read it).
   The environment is read again at the merge.
 - Registration runs vanilla's own loop over argv (`cli._build._collect_loop_typed_specs`) and registers each flag the naming typed apart from the declared types in the shape of its widest occurrence: argv restating a naming can type one flag twice, and the framework must bind at least what vanilla takes.

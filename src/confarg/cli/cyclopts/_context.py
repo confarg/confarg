@@ -17,13 +17,12 @@ if TYPE_CHECKING:
     from confarg._defaults import MergeOptions, _Options
     from confarg._merge import ListOp, MergeDict
 
-from confarg._defaults import _resolve_options
 from confarg._files import Reads
 from confarg._parse_cli import _config_pairs_in
 from confarg.cli._argv import drop_bare_occurrences, refuse_bare_occurrences
 from confarg.cli._merge_tail import _construct_from_merged, _merge_from_argv
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
-from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, options_for, runs_of
 from confarg.cli.cyclopts._register import _app_meta
 
 
@@ -83,8 +82,8 @@ def _app_registration(app: cyclopts.App) -> Registration | None:
 
 
 def _app_options(app: cyclopts.App, caller: str, opts: Mapping[str, Any]) -> _Options:
-    """Return *caller*'s options: what *app*'s registration read, with *opts* beside them (:func:`reconcile`)."""
-    return _resolve_options(caller, reconcile(_app_registration(app), opts, caller))
+    """Return *caller*'s options: what *app*'s registration read, with *opts* beside them (``options_for``)."""
+    return options_for(_app_registration(app), caller, opts)
 
 
 def _app_prefix(app: cyclopts.App, options: _Options) -> str:
@@ -129,14 +128,13 @@ def _merge_app(target: object, app: cyclopts.App, options: _Options, reads: Read
     raw: dict[str, Any] = {k: v for k, v in bound.arguments.items() if v is not None}
     flat: dict[str, Any] = {name_map.get(k, k): v for k, v in raw.items()}
 
-    registration = _app_registration(app)
     return _merge_from_argv(
         flat,
         target,
         options,
         cli_prefix=prefix,
         binds_runs=True,
-        runs=None if registration is None else registration.runs,
+        runs=runs_of(_app_registration(app)),
         reads=reads,
     )
 

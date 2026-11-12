@@ -18,11 +18,10 @@ if TYPE_CHECKING:
     from confarg._defaults import _Options
     from confarg._merge import MergeDict
 
-from confarg._defaults import _resolve_options
 from confarg._files import Reads
 from confarg.cli._merge_tail import _construct_from_merged, _merge_from_argv
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
-from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, options_for, runs_of
 
 #: Name of the ``ParameterSource`` member meaning "the user typed it on argv".
 #: Compared by name rather than by identity because typer ships its own copy of the
@@ -75,8 +74,8 @@ def registration(ctx: Any) -> Registration | None:
 
 
 def ctx_options(ctx: Any, caller: str, opts: Mapping[str, Any]) -> _Options:
-    """Return *caller*'s options: what ``ctx``'s registration read, with *opts* beside them (:func:`reconcile`)."""
-    return _resolve_options(caller, reconcile(registration(ctx), opts, caller))
+    """Return *caller*'s options: what ``ctx``'s registration read, with *opts* beside them (``options_for``)."""
+    return options_for(registration(ctx), caller, opts)
 
 
 def ctx_prefix(ctx: Any, options: _Options) -> str:
@@ -86,14 +85,13 @@ def ctx_prefix(ctx: Any, options: _Options) -> str:
 
 def merge_from_ctx(target: object, ctx: Any, options: _Options, reads: Reads) -> MergeDict:
     """Flatten ``ctx`` and run the shared merge tail, reading through *reads*; see the adapters' merge_context."""
-    found = registration(ctx)
     return _merge_from_argv(
         flat_from_ctx(ctx),
         target,
         options,
         cli_prefix=ctx_prefix(ctx, options),
         binds_runs=False,
-        runs=None if found is None else found.runs,
+        runs=runs_of(registration(ctx)),
         reads=reads,
     )
 

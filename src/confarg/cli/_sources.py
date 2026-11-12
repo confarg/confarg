@@ -141,6 +141,21 @@ def reconcile(registration: Registration | None, given: Mapping[str, Any], calle
     return {**recorded, **given}
 
 
+def options_for(registration: Registration | None, caller: str, opts: Mapping[str, Any]) -> _Options:
+    """Return *caller*'s options: what *registration* read, with *opts* beside them (:func:`reconcile`).
+
+    Raises:
+        ConfargError: As :func:`reconcile`.
+        TypeError: If *opts* holds a keyword :class:`~confarg.MergeOptions` does not declare.
+    """
+    return _resolve_options(caller, reconcile(registration, opts, caller))
+
+
+def runs_of(registration: Registration | None) -> frozenset[str] | None:
+    """Return the flags *registration* registered to bind a run of tokens, ``None`` when confarg registered none."""
+    return None if registration is None else registration.runs
+
+
 def _same(key: str, given: Any, recorded: Any) -> bool:
     """Return whether the option *key* given as *given* names the sources registration read as *recorded*."""
     if key == "files":
