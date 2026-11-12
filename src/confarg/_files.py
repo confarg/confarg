@@ -1070,13 +1070,21 @@ JSON_NATIVE_TYPES: Final[tuple[type, ...]] = ()
 _SCALARS: Final = (str, int, float, bool)
 
 
+def _is_a_local_time(value: Any) -> bool:
+    """Return whether *value* is a ``time`` with no offset: the one time TOML holds."""
+    return type(value) is time and value.utcoffset() is None
+
+
 @dataclass(frozen=True)
 class _Format:
     """What a format's file holds, and how its text is rendered.
 
-    *natives* are the registered leaf types ``dump()`` keeps as objects for its writer. *holds*
-    answers for a value that is no dict and no list whether the format's reader reads it back
-    as it is. A key is text in every format (:func:`_written_key`).
+    *natives* are the registered leaf types ``dump()`` keeps as objects for its writer, and
+    the format's reader reads back as they are, with the scalars every format holds
+    (:func:`_holds`). The two things a format holds beyond them are stated here: *nullable*,
+    whether it spells a null, and *also*, a predicate for a value of a type *natives* cannot
+    name, such as TOML's local ``time`` (a ``time`` with an offset it does not hold). A key is
+    text in every format (:func:`_written_key`).
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-written-file-holds-what-its-reader-reads-back.md#a-written-file-holds-what-its-reader-reads-back
@@ -1084,30 +1092,23 @@ class _Format:
 
     name: str
     natives: tuple[type, ...]
-    holds: Callable[[Any], bool]
     render: Callable[[dict[str, Any]], str]
+    nullable: bool = True
+    also: Callable[[Any], bool] | None = None
 
 
-def _toml_holds(value: Any) -> bool:
-    """Return whether a TOML file holds *value*: a scalar, a date, a date-time or a local time, never None."""
-    if type(value) is time:
-        return value.utcoffset() is None
-    return type(value) in (*_SCALARS, date, datetime)
+def _holds(value: Any, fmt: _Format) -> bool:
+    """Return whether *fmt*'s reader reads *value*, a value that is no dict and no list, back as it is."""
+    if value is None:
+        return fmt.nullable
+    if type(value) in (*_SCALARS, *fmt.natives):
+        return True
+    return fmt.also is not None and fmt.also(value)
 
 
-def _yaml_holds(value: Any) -> bool:
-    """Return whether a YAML file holds *value*: a scalar, None, a date or a date-time."""
-    return value is None or type(value) in (*_SCALARS, date, datetime)
-
-
-def _json_holds(value: Any) -> bool:
-    """Return whether a JSON file holds *value*: a scalar or None."""
-    return value is None or type(value) in _SCALARS
-
-
-_TOML = _Format("TOML", TOML_NATIVE_TYPES, _toml_holds, _render_toml)
-_YAML = _Format("YAML", YAML_NATIVE_TYPES, _yaml_holds, _render_yaml)
-_JSON = _Format("JSON", JSON_NATIVE_TYPES, _json_holds, _render_json)
+_TOML = _Format("TOML", TOML_NATIVE_TYPES, _render_toml, nullable=False, also=_is_a_local_time)
+_YAML = _Format("YAML", YAML_NATIVE_TYPES, _render_yaml)
+_JSON = _Format("JSON", JSON_NATIVE_TYPES, _render_json)
 
 #: The format of each extension ``dump_file()`` writes.
 _FORMATS = {".toml": _TOML, ".yaml": _YAML, ".yml": _YAML, ".json": _JSON}
@@ -1157,7 +1158,7 @@ def _writable(value: Any, fmt: _Format, path: FieldPath) -> Any:
     if isinstance(value, list | tuple):
         return [_writable(v, fmt, (*path, i)) for i, v in enumerate(value)]
     if not isinstance(value, dict):
-        if fmt.holds(value):
+        if _holds(value, fmt):
             return value
         raise ConfargError.unwritable_value(value, _spell_field_path(path), fmt.name)
     written: dict[Any, Any] = {}
