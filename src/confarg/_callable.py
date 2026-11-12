@@ -854,12 +854,14 @@ class _ClassSpec:
     init_kwargs: dict
 
 
-def _import_class_by_path(tag: Any, where: str) -> type:
-    """Import the class the class key at *where* names by its full dotted path, *tag*.
+def _import_class_by_path(tag: Any, where: str, *, key: str | None = _defaults.CLASS_KEY) -> type:
+    """Import the class the dotted path *tag* at *where* names: the value of *key*, or of a ``type`` field.
 
-    The one reader of a class key's value: a union's and a struct field's, and a spec's on an
-    ``Any`` node or a Callable field. It must be a fully-qualified dotted path such as
-    ``'mypackage.mymodule.MyClass'``; a class object is refused, as ``call:`` refuses one.
+    The one reader of a class a configuration names by its path: a union's tag and a struct
+    field's, a ``class:`` spec's on an ``Any`` node or a Callable field, and a ``type`` /
+    ``type[X]`` field's text, for which *key* is None. A tag must be a fully-qualified dotted
+    path such as ``'mypackage.MyClass'``; a class object is refused, as ``call:`` refuses one.
+    A ``type`` field takes a class object itself, so its caller hands it text alone.
 
     Raises:
         TypeCoercionError: If the tag is no string, if nothing answers to the path, or if it
@@ -870,25 +872,16 @@ def _import_class_by_path(tag: Any, where: str) -> type:
         docs-dev/architecture/types/dotted-imports.md#a-tag-is-a-dotted-path
     """
     if not isinstance(tag, str):
-        msg = f"The {_defaults.CLASS_KEY!r} key at {_spelled_where(where)} takes a dotted path, got {_src_type(tag)}."
+        msg = f"The {key!r} key at {_spelled_where(where)} takes a dotted path, got {_src_type(tag)}."
         raise TypeCoercionError(msg)
     try:
         obj = _import_dotted(tag)
     except SymbolNotFoundError as e:
-        msg = (
-            f"Cannot import class {tag!r} from the {_defaults.CLASS_KEY!r} key at {_spelled_where(where)}: {e}."
-            f" The value must be a full dotted path, e.g. 'mypackage.mymodule.MyClass'."
-        )
-        raise TypeCoercionError(msg) from e
+        raise TypeCoercionError.class_not_found(tag, where, str(e), key=key) from e
     except SymbolImportError as e:
-        msg = f"Cannot import class {tag!r} from the {_defaults.CLASS_KEY!r} key at {_spelled_where(where)}: {e}"
-        raise SymbolImportError(msg) from e
+        raise SymbolImportError.class_import_failed(tag, where, str(e), key=key) from e
     if not isinstance(obj, type):
-        msg = (
-            f"Value of the {_defaults.CLASS_KEY!r} key at {_spelled_where(where)} must be a class path,"
-            f" but {tag!r} resolved to {type(obj).__name__!r}, not a class."
-        )
-        raise TypeCoercionError(msg)
+        raise TypeCoercionError.not_a_class(tag, where, type(obj).__name__, key=key)
     return obj
 
 

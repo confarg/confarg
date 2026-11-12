@@ -22,7 +22,8 @@ from uuid import UUID
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from confarg._import import _import_dotted, dotted_name
+from confarg._callable import _import_class_by_path
+from confarg._import import dotted_name
 from confarg._registry import LEAF_COERCIONS, LEAF_SERIALIZERS
 from confarg._types import (
     _builtin_read_as,
@@ -58,10 +59,7 @@ from confarg._types import (
 from confarg.dictexpr import contains_expression
 from confarg.exceptions import (
     FloatOverflowWarning,
-    SymbolImportError,
-    SymbolNotFoundError,
     TypeCoercionError,
-    _spelled_where,
 )
 
 _TRUTHY = frozenset({"true", "1", "yes", "on"})
@@ -367,31 +365,12 @@ def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
     if isinstance(value, type):
         obj, name = value, dotted_name(value)
     elif isinstance(value, str):
-        obj, name = _import_class(str(value), path), str(value)
+        obj, name = _import_class_by_path(str(value), path, key=None), str(value)
     else:
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, "type", path)
     if not _type_ref_admits(tp, obj):
         bounds = " | ".join(dotted_name(b) for b in _type_ref_bounds(tp))
         raise TypeCoercionError.not_a_subclass(name, bounds, path)
-    return obj
-
-
-def _import_class(path_text: str, path: str) -> type:
-    """Return the class the dotted path *path_text* of a ``type`` field at *path* names.
-
-    Raises:
-        TypeCoercionError: If nothing answers to the path, or what does is no class.
-        SymbolImportError: If a module on the path fails while it is imported.
-    """
-    try:
-        obj = _import_dotted(path_text)
-    except SymbolNotFoundError as e:
-        raise TypeCoercionError.class_not_found(path_text, path, str(e)) from e
-    except SymbolImportError as e:
-        msg = f"Cannot import class {path_text!r} at {_spelled_where(path)}: {e}"
-        raise SymbolImportError(msg) from e
-    if not isinstance(obj, type):
-        raise TypeCoercionError.not_a_class(path_text, path, type(obj).__name__)
     return obj
 
 

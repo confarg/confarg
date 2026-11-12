@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NewType, Optional
 from uuid import UUID
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests._loaders import ConfargLoader
 
 import re
@@ -627,6 +629,66 @@ class TestTheAmbiguityRemedyNamesTheClassPath:
         example = f"{__name__}._AmbiguousA"
         assert f"To select a variant add a 'class' key, e.g. 'class': {example!r}." in str(excinfo.value)
         assert confarg.from_dict(Holder, {"g": {"class": example}}).g == _AmbiguousA()
+
+
+@dataclass
+class _Ref101Base:
+    a: int = 0
+
+
+class TestAClassPathIsRefusedInOneWording:
+    """A ``type`` field's path, a tag and a ``class:`` spec are read by one reader, each refusal keeping its subject.
+
+    The ``type`` field's reader used to repeat the tag's step for step, in other words: a tag
+    naming nothing pointed at ``'mypackage.mymodule.MyClass'``, and one naming a function said
+    it "must be a class path" (REF-101).
+    """
+
+    #: Each place a class path is read, its field's type, and the data holding *path* there.
+    PLACES = (
+        pytest.param(type, lambda path: path, "at 'v'", id="type-field"),
+        pytest.param(_Ref101Base | None, lambda path: {"class": path}, "from the 'class' key at 'v'", id="tag"),
+        pytest.param(Any, lambda path: {"class": path}, "from the 'class' key at 'v'", id="any-spec"),
+    )
+
+    @pytest.mark.parametrize(("field_type", "spelled", "subject"), PLACES)
+    def test_a_path_naming_nothing(self, field_type: Any, spelled: Callable[[str], Any], subject: str) -> None:
+        """Nothing answers to it: the remedy is the full dotted path, as ``dump()`` writes one."""
+        Target = make_target("v", field_type, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            confarg.build(Target, {"v": spelled("nope.Nothing")})
+        assert str(excinfo.value) == (
+            f"Cannot import class 'nope.Nothing' {subject}: Cannot import 'nope.Nothing': no importable module"
+            " found in path. Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'."
+        )
+
+    @pytest.mark.parametrize(("field_type", "spelled", "subject"), PLACES)
+    def test_a_path_naming_no_class(self, field_type: Any, spelled: Callable[[str], Any], subject: str) -> None:
+        """What it names is no class."""
+        Target = make_target("v", field_type, default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            confarg.build(Target, {"v": spelled("os.path.join")})
+        assert str(excinfo.value) == f"Cannot coerce 'os.path.join' {subject}: expected a class, got 'function'."
+
+    @pytest.mark.parametrize(("field_type", "spelled", "subject"), PLACES)
+    def test_a_module_that_fails(
+        self,
+        field_type: Any,
+        spelled: Callable[[str], Any],
+        subject: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A module on the path fails while it is imported: the import error, naming the module."""
+        (tmp_path / "ref101_broken.py").write_text("raise RuntimeError('boom')\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        Target = make_target("v", field_type, default=None)
+        with pytest.raises(confarg.exceptions.SymbolImportError) as excinfo:
+            confarg.build(Target, {"v": spelled("ref101_broken.Thing")})
+        assert str(excinfo.value) == (
+            f"Cannot import class 'ref101_broken.Thing' {subject}: Cannot import 'ref101_broken.Thing':"
+            " error loading module 'ref101_broken': boom"
+        )
 
 
 class TestUnionWithACarriedBaseFailsAsItsSequenceVariant:

@@ -1072,7 +1072,7 @@ class TestClassDictForm:
     def test_class_non_class_raises(self, tmp_json: Any) -> None:
         """Class: dict with a function path raises TypeCoercionError."""
         cfg = tmp_json(json.dumps({"fn": {"class": f"{_MOD}._double"}}))
-        with pytest.raises(TypeCoercionError, match="must be a class path"):
+        with pytest.raises(TypeCoercionError, match=r"from the 'class' key at .*: expected a class, got 'function'"):
             confarg.load(WithBareCallable, argv=[], env={}, files=[cfg])
 
     def test_class_init_coercion(self, tmp_json: Any) -> None:
@@ -2257,7 +2257,7 @@ class TestAnyReadsSpecs:
 
     def test_a_class_naming_no_class_is_refused(self):
         """class: names a class; a function is refused."""
-        with pytest.raises(TypeCoercionError, match="must be a class path"):
+        with pytest.raises(TypeCoercionError, match=r"from the 'class' key at .*: expected a class, got 'function'"):
             confarg.build(_AnyHolder, {"anything": {"class": f"{__name__}._double"}})
 
     def test_two_openers_are_refused(self):
