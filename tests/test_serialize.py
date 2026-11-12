@@ -941,7 +941,10 @@ class TestDumpForeignValue:
         [
             pytest.param(_SubBase, _Foreign(b=1), {"class": f"{_MOD}._Foreign", "b": 1}, id="struct-other-struct"),
             pytest.param(
-                Optional[_SubBase], _Foreign(b=1), {"class": f"{_MOD}._Foreign", "b": 1}, id="optional-struct"
+                Optional[_SubBase],
+                _Foreign(b=1),
+                {"class": f"{_MOD}._Foreign", "b": 1},
+                id="optional-struct",
             ),
             pytest.param(_SubBase, 3, 3, id="struct-int"),
             pytest.param(int, "abc", "abc", id="int-str"),
@@ -2034,5 +2037,5 @@ class TestAUnionKeyDumps:
         with pytest.warns(ConfargWarning) as record:
             assert confarg.dump(_UnionKeyedState(u={"1": 5})) == {"u": {"1": 5}, "n": {}}
         assert [str(w.message) for w in record] == [
-            "Key '1' at 'u' will not read back as str: int, another variant of int | str, takes its text."
+            "Key '1' at 'u' will not read back as str: int, another variant of int | str, takes its text.",
         ]

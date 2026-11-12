@@ -168,7 +168,8 @@ class TestRegisterLeafType:
     def test_a_parameterized_class_names_the_class_to_register(self) -> None:
         """``re.Pattern[str]`` is no class, but its class is, and that registration reads it."""
         with pytest.raises(
-            TypeError, match=re.escape("Pattern[str] is no class; the registration of Pattern reads it")
+            TypeError,
+            match=re.escape("Pattern[str] is no class; the registration of Pattern reads it"),
         ):
             confarg.register_leaf_type(re.Pattern[str], re.compile)
 
@@ -177,7 +178,8 @@ class TestRegisterLeafType:
         with pytest.raises(TypeError, match=re.escape("register_leaf_type(int): confarg reads int itself")):
             confarg.register_leaf_type(int, int)
         with pytest.raises(
-            TypeError, match=re.escape("register_leaf_type(tuple[int, int]): tuple[int, int] is no class")
+            TypeError,
+            match=re.escape("register_leaf_type(tuple[int, int]): tuple[int, int] is no class"),
         ):
             confarg.register_leaf_type(tuple[int, int], tuple)
 

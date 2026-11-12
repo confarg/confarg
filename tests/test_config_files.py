@@ -1196,7 +1196,9 @@ class TestAFileRefusesAValueItsFormatDoesNotHold:
             confarg.dump_file({"a": [1, object()]}, tmp_path / "c.json")
 
     @pytest.mark.parametrize(
-        "value", [_Optional(), {"timeout": None}, _AnyHolder([1, None])], ids=["typed", "raw", "any-list"]
+        "value",
+        [_Optional(), {"timeout": None}, _AnyHolder([1, None])],
+        ids=["typed", "raw", "any-list"],
     )
     def test_toml_refuses_none(self, tmp_path: Path, value: Any) -> None:
         """TOML has no null: a None is refused, naming its path and the formats that hold it."""

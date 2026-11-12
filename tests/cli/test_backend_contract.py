@@ -2542,7 +2542,11 @@ class TestConfigFilesContract:
         ids=["json", "yaml", "toml"],
     )
     def test_a_file_int_sets_a_float_field(
-        self, loader: ConfargLoader, tmp_path: Path, filename: str, text: str
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        filename: str,
+        text: str,
     ) -> None:
         """A file's ``1`` builds the ``1.0`` the flag ``--timeout 1`` builds (BUG-154)."""
         path = tmp_path / filename
@@ -2569,7 +2573,9 @@ class TestConfigFilesContract:
             assert len(caught) == 1
 
     def test_an_overflowing_token_merges_as_inf_and_its_dump_reads_back(
-        self, loader: ConfargLoader, tmp_path: Path
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
     ) -> None:
         """``merge()`` holds the infinity the token reads as, so a dump of it loads the same value back."""
         with pytest.warns(confarg.exceptions.FloatOverflowWarning):
@@ -4652,7 +4658,10 @@ class TestCollectionPatchContract:
         ids=["index", "append"],
     )
     def test_a_patch_builds_an_int_default_as_floats(
-        self, loader: ConfargLoader, argv: list[str], expected: Any
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        expected: Any,
     ) -> None:
         """A patched default is built, so its ints are the floats its type holds; an untouched one stays (BUG-154)."""
         cfg = loader.load(_WithIntFloatDefaults, argv=argv, env={})
@@ -5033,7 +5042,9 @@ class TestCollectionPatchContract:
         assert loader.load(_WithDefaultedSection, argv=argv, env={}).sec == expected
 
     def test_delete_beside_a_root_json_cast_refined_by_a_flag_deletes_below(
-        self, loader: ConfargLoader, tmp_yaml
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
     ) -> None:
         """A key delete beside the root ``json`` object survives a flag refining its node (BUG-227).
 
@@ -6228,7 +6239,10 @@ class TestCallableBesideAnotherVariantRegistrationContract:
 
     @pytest.mark.parametrize("spelling", ["file", "blob", "shorthand"])
     def test_a_spec_another_channel_names_buys_its_arguments(
-        self, populating_loader: ConfargLoader, tmp_json, spelling: str
+        self,
+        populating_loader: ConfargLoader,
+        tmp_json,
+        spelling: str,
     ) -> None:
         """A ``bind:`` a file, a whole value or the shorthand names describes ``--f.args.<p>``, as a lone one does."""
         target = f"{__name__}._union_add"
@@ -6262,7 +6276,8 @@ class TestCallableBesideAnotherVariantRegistrationContract:
         assert not any(f.rsplit(".", 1)[-1] in {"bind", "call", "classfn"} for f in flags)
 
     def test_an_opener_a_struct_variant_owns_stays_its_field_typed_on_argv(
-        self, populating_loader: ConfargLoader
+        self,
+        populating_loader: ConfargLoader,
     ) -> None:
         """``--h.bind`` typed on argv is the struct's field, as statically: no opener's help, no ``args`` (BUG-274)."""
         argv = ["--h.bind", f"{__name__}._union_add"]
@@ -6899,7 +6914,11 @@ class TestACallsValueIsReadByConstructionContract:
         ],
     )
     def test_a_value_construction_refuses_is_refused(
-        self, loader: ConfargLoader, name: str, target: str, refusal: str
+        self,
+        loader: ConfargLoader,
+        name: str,
+        target: str,
+        refusal: str,
     ) -> None:
         """Each refused at its own position, as ``from_dict()`` refuses the same value."""
         with pytest.raises(TypeCoercionError, match=refusal):
@@ -6916,7 +6935,11 @@ class TestACallsValueIsReadByConstructionContract:
         ],
     )
     def test_a_value_is_built_as_build_data_is(
-        self, loader: ConfargLoader, name: str, target: str, expected: Any
+        self,
+        loader: ConfargLoader,
+        name: str,
+        target: str,
+        expected: Any,
     ) -> None:
         """Each item coerced at its own position, an instance taken and a dict built."""
         built = self._load(loader, name, target)
@@ -7043,7 +7066,11 @@ class TestCallOnTheCliRegistrationContract:
         ],
     )
     def test_a_key_no_spec_reads_buys_no_arguments(
-        self, populating_loader: ConfargLoader, target: type, argv: list[str], absent: str
+        self,
+        populating_loader: ConfargLoader,
+        target: type,
+        argv: list[str],
+        absent: str,
     ) -> None:
         """A dict's ``bind`` key is data, and so is an argument named ``bind``: neither opens a spec."""
         flags = populating_loader.registered_flags(target, argv=argv, config_flag="")
@@ -7089,7 +7116,7 @@ class TestOpenerHelpContract:
     def test_a_typed_calls_opener(self) -> None:
         """``--n.call`` names the function whose result is ``n``, not a value in a callable spec."""
         specs = _specs_by_name(
-            build_dynamic_flags(_TypedCallConfig, ["--n.call", f"{__name__}._twice"], config_flag="")
+            build_dynamic_flags(_TypedCallConfig, ["--n.call", f"{__name__}._twice"], config_flag=""),
         )
         assert specs["n.call"].metavar == "DOTTED.PATH"
         assert specs["n.call"].note == (
@@ -7463,7 +7490,11 @@ class TestATagSpelledKeyInAUnionWithADictContract:
             loader.load(_TagSpelledLabels, argv=["--job.class", "confidential"], env={})
 
     def test_the_entry_is_never_imported(
-        self, loader: ConfargLoader, tmp_path: Path, tmp_yaml, monkeypatch: pytest.MonkeyPatch
+        self,
+        loader: ConfargLoader,
+        tmp_path: Path,
+        tmp_yaml,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """No channel imports the module an entry spells: the tag pre-import and the default layer read it as data.
 
@@ -7472,7 +7503,7 @@ class TestATagSpelledKeyInAUnionWithADictContract:
         Nor does the pre-import import a tag the union refuses unimported, as ``int | str`` does.
         """
         (tmp_path / "bug276_entry.py").write_text(
-            "import pathlib\npathlib.Path(__file__).with_suffix('.ran').touch()\n"
+            "import pathlib\npathlib.Path(__file__).with_suffix('.ran').touch()\n",
         )
         ran = tmp_path / "bug276_entry.ran"
         monkeypatch.syspath_prepend(str(tmp_path))
@@ -8670,7 +8701,12 @@ class TestACNewLeafTakesNoTagContract:
 
     @pytest.mark.parametrize(("name", "tag", "params"), _C_NEW_TAGS)
     def test_the_file_tag_is_refused(
-        self, loader: ConfargLoader, tmp_yaml, name: str, tag: str, params: dict[str, str]
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        name: str,
+        tag: str,
+        params: dict[str, str],
     ) -> None:
         """A file's tag reaches construction, which reads the leaf from one value."""
         cfg = tmp_yaml(f"{name}:\n  class: {tag}\n" + "".join(f'  {k}: "{v}"\n' for k, v in params.items()))
@@ -10129,7 +10165,10 @@ class TestAnOverrideThatReplacesTheListBelow:
     def test_a_name_patch_beside_a_flags_whole_value_over_the_environment(self, loader: ConfargLoader) -> None:
         """``--pt 1 2 --pt.y 5`` over ``APP_PT='[7, 8]'`` builds as it does with no variable (5a)."""
         cfg = loader.load(
-            _WithOverPt, argv=["--pt", "1", "2", "--pt.y", "5"], env={"APP_PT": "[7, 8]"}, env_prefix="APP_"
+            _WithOverPt,
+            argv=["--pt", "1", "2", "--pt.y", "5"],
+            env={"APP_PT": "[7, 8]"},
+            env_prefix="APP_",
         )
         assert cfg.pt == _OverPt(1, 5)
 
@@ -11500,7 +11539,7 @@ class TestAnAliasedUnionVariantContract:
     def test_the_flags_are_the_inline_unions(self, populating_loader: ConfargLoader) -> None:
         """Each field registers the flags of its inline twin: casts, members and tag, none for a duplicate."""
         assert populating_loader.registered_flags(WithAliasedVariants) == populating_loader.registered_flags(
-            WithInlineVariants
+            WithInlineVariants,
         )
 
 
@@ -11651,7 +11690,7 @@ class TestANamingTypesWhatItsLayerBuildsContract:
             warnings.simplefilter("always")
             loader.merge(_NamingCfg, argv=[], env={"APP_F__X": "1"}, env_prefix="APP_", files=[spec])
         assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)].count(
-            "noisy module imported"
+            "noisy module imported",
         ) == 1
 
 
@@ -11760,7 +11799,12 @@ class TestALoneRootKeyInARootFileContract:
         ],
     )
     def test_files_and_the_config_flag(
-        self, loader: ConfargLoader, tmp_yaml, target: Any, text: str, expected: Any
+        self,
+        loader: ConfargLoader,
+        tmp_yaml,
+        target: Any,
+        text: str,
+        expected: Any,
     ) -> None:
         """``files=`` and ``--config`` read the value under the key, as the environment's pointer does."""
         path = tmp_yaml(text)
@@ -11816,7 +11860,12 @@ class TestAMixedRootIsSetWholeOrByFieldContract:
         files: list[Any] | None = None,
     ) -> Any:
         return loader.load(
-            target, argv=argv or [], env=env or {}, files=files or [], cli_prefix="app", env_prefix="APP_"
+            target,
+            argv=argv or [],
+            env=env or {},
+            files=files or [],
+            cli_prefix="app",
+            env_prefix="APP_",
         )
 
     def test_every_channel_sets_it_whole(self, loader: ConfargLoader, tmp_yaml) -> None:

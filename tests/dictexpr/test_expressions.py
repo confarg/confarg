@@ -2097,7 +2097,10 @@ class TestAnIntegerKeyIsReachedByItsDigits:
         ],
     )
     def test_the_reference_reads_the_resolved_value(
-        self, data: MergeDict, path: tuple[Any, ...], expected: object
+        self,
+        data: MergeDict,
+        path: tuple[Any, ...],
+        expected: object,
     ) -> None:
         """Whatever the order of the keys, the expression the reference reads has resolved first."""
         node: Any = resolve_expressions(data)
@@ -2116,7 +2119,10 @@ class TestAnIntegerKeyIsReachedByItsDigits:
             pytest.param({"0": "t", 0: "i"}, "${m[0]}", "'0' could be either the key '0' or the key 0", id="int"),
             pytest.param({0: "i", "0": "t"}, "${m['0']}", "'0' could be either the key '0' or the key 0", id="text"),
             pytest.param(
-                {"1": "t", True: "b"}, "${m[1]}", "'1' could be either the key '1' or the key True", id="bool"
+                {"1": "t", True: "b"},
+                "${m[1]}",
+                "'1' could be either the key '1' or the key True",
+                id="bool",
             ),
             pytest.param({"0": "t", 0: "i"}, "${key(m[0])}", "'0' could be either the key '0' or the key 0", id="key"),
             pytest.param({"0": "t", 0: "i"}, "${m[k]}", "'0' could be either the key '0' or the key 0", id="computed"),

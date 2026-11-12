@@ -324,14 +324,14 @@ class TestAPathNamesTheModuleThatPublishesTheObject:
             "    pass\n\n\n"
             "class Forged:\n"
             "    pass\n\n\n"
-            "Forged.__qualname__ = 'Dog'\n"
+            "Forged.__qualname__ = 'Dog'\n",
         )
         (tmp_path / "bug279_open" / "__init__.py").write_text(
-            "from bug279_open.models import Dog, _Hidden, _impl as run\n"
+            "from bug279_open.models import Dog, _Hidden, _impl as run\n",
         )
         (tmp_path / "bug279_closed" / "models.py").write_text("class Cat:\n    pass\n")
         (tmp_path / "bug279_closed" / "__init__.py").write_text(
-            "from bug279_closed.models import Cat\n\n__all__ = []\n"
+            "from bug279_closed.models import Cat\n\n__all__ = []\n",
         )
         (tmp_path / "bug279_lazy" / "thread.py").write_text("class Thread:\n    pass\n")
         (tmp_path / "bug279_lazy" / "process.py").write_text("class Process:\n    pass\n")
@@ -344,7 +344,7 @@ class TestAPathNamesTheModuleThatPublishesTheObject:
             "        raise ValueError('hook boom')\n"
             "    if name in __all__:\n"
             "        return getattr(importlib.import_module(f'bug279_lazy.{name.lower()}'), name)\n"
-            "    raise AttributeError(name)\n"
+            "    raise AttributeError(name)\n",
         )
         monkeypatch.syspath_prepend(str(tmp_path))
         yield

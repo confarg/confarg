@@ -408,7 +408,10 @@ def _union_args(tp: Any) -> list[Any]:
 
 
 def _spread_variants(
-    args: tuple[Any, ...], variants: list[Any], read_as: list[Any], spreading: tuple[Any, ...]
+    args: tuple[Any, ...],
+    variants: list[Any],
+    read_as: list[Any],
+    spreading: tuple[Any, ...],
 ) -> None:
     """Append to *variants* each of *args* that reads as no earlier variant, spreading one that is a union.
 

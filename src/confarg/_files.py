@@ -462,7 +462,13 @@ def _load_includes(  # noqa: PLR0913  # the walk's state: entries, location, cyc
             msg = f"Circular include detected: {inc_loc}"
             raise ConfargError(msg)
         loaded = _load_any(
-            inc_loc, seen | {key}, options=options, root=root, mount=mount, relative=relative, reads=reads
+            inc_loc,
+            seen | {key},
+            options=options,
+            root=root,
+            mount=mount,
+            relative=relative,
+            reads=reads,
         )
         if not at_root:
             loaded = _unwrap_root_key(loaded)
@@ -528,7 +534,15 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     """
     if isinstance(data, dict):
         return _resolve_dict(
-            data, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, reads=reads
+            data,
+            base,
+            seen,
+            path_in_file,
+            root,
+            mount,
+            read_ops=read_ops,
+            relative=relative,
+            reads=reads,
         )
     if isinstance(data, list):
         # A list replaces the layers below whole: a delete an item kept for them ends here.
@@ -536,7 +550,15 @@ def _resolve_node(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         for index, item in enumerate(data):
             at = (*path_in_file, str(index))
             resolved = _resolve_node(
-                item, base, seen, at, root, mount, read_ops=read_ops, relative=relative, reads=reads
+                item,
+                base,
+                seen,
+                at,
+                root,
+                mount,
+                read_ops=read_ops,
+                relative=relative,
+                reads=reads,
             )
             items.append(_as_list_item(resolved, base, at))
         return items
@@ -590,13 +612,29 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
         if not rest:
             return DICT_DELETE
         resolved_rest = _resolve_dict(
-            rest, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, reads=reads
+            rest,
+            base,
+            seen,
+            path_in_file,
+            root,
+            mount,
+            read_ops=read_ops,
+            relative=relative,
+            reads=reads,
         )
         return _written_within_source(DICT_DELETE, resolved_rest, at=root.at_path(_typed_path((*mount, *path_in_file))))
     if INCLUDE_KEY not in data:
         resolved = {
             k: _resolve_node(
-                v, base, seen, (*path_in_file, str(k)), root, mount, read_ops=read_ops, relative=relative, reads=reads
+                v,
+                base,
+                seen,
+                (*path_in_file, str(k)),
+                root,
+                mount,
+                read_ops=read_ops,
+                relative=relative,
+                reads=reads,
             )
             for k, v in data.items()
         }
@@ -612,7 +650,15 @@ def _resolve_dict(  # noqa: PLR0913, PLR0917  # the walk's state: document, cycl
     return _include_with_siblings(
         included,
         _resolve_dict(
-            siblings, base, seen, path_in_file, root, mount, read_ops=read_ops, relative=relative, reads=reads
+            siblings,
+            base,
+            seen,
+            path_in_file,
+            root,
+            mount,
+            read_ops=read_ops,
+            relative=relative,
+            reads=reads,
         ),
         root.at_path(here),
     )
@@ -857,7 +903,12 @@ def _load_mount_value(  # noqa: PLR0913  # the walk's state: value, location, ro
 
 
 def _load_mount(
-    value: Any, subpath: str, base: str | None = None, root: MergeAt = _SHAPE, *, reads: Reads
+    value: Any,
+    subpath: str,
+    base: str | None = None,
+    root: MergeAt = _SHAPE,
+    *,
+    reads: Reads,
 ) -> MergeDict:
     """Load one mount and return it nested at the dot-separated *subpath*.
 

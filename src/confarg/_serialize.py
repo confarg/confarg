@@ -589,7 +589,7 @@ def _unheld_member_error(tp: Any, instance: Any, path: FieldPath, name: str, *, 
         if hasattr(static, "__set__") and not hasattr(static, "__get__"):
             return ConfargError(
                 f"{where} field '{name}' of {cls_name} is set through its descriptor {static.__name__}, "
-                "which has no __get__ to read it back."
+                "which has no __get__ to read it back.",
             )
         return ConfargError(f"{where} field '{name}' of {cls_name} is not set on the instance.")
     constructor = getattr(_init_params(tp).constructor, "__name__", "__init__")

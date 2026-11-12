@@ -323,7 +323,11 @@ class _LayerReading:
         return working
 
     def _lay_index_patches(
-        self, working: list[Any], node: MergeDict, path: list[str], states: list[_WalkState]
+        self,
+        working: list[Any],
+        node: MergeDict,
+        path: list[str],
+        states: list[_WalkState],
     ) -> None:
         """Lay each index patch *node* holds over the item of *working* it reaches, in place.
 

@@ -334,7 +334,11 @@ class TestCycles:
         ids=["mapping", "sequence"],
     )
     def test_a_yaml_anchor_that_holds_its_alias_is_refused(
-        self, tmp_path: Path, text: str, where: str, holder: str
+        self,
+        tmp_path: Path,
+        text: str,
+        where: str,
+        holder: str,
     ) -> None:
         """It recursed until a raw RecursionError."""
         (tmp_path / "c.yaml").write_text(text, encoding="utf-8")
