@@ -33,6 +33,7 @@ from confarg.cli._build import (
     _build_leaf_spec,
     _callable_argument_targets,
     _collect_callable_field_specs,
+    _Descent,
     _holds_a_callable,
     _opener_specs,
     _whole_value_spec,
@@ -60,6 +61,7 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
     ctx: _WalkCtx,
     docstrings: dict[str, str],
     defaults: dict[str, Any],
+    descent: _Descent,
     *,
     concrete: bool,
     group: str | None,
@@ -72,6 +74,12 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
     the class key (without recursing into sibling variants), callable openers,
     and plain leaves.  Singleton literal fields are skipped when *concrete* is
     set — the class is already selected, so their value is determined.
+
+    A struct already on *descent*'s path keeps its whole-value flag and gets none of its members',
+    as in the static walk, which is asked through :meth:`_Descent.into`.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-node-already-on-the-path-is-not-entered.md#a-node-already-on-the-path-is-not-entered
     """
     specs: list[FlagSpec] = []
 
@@ -128,16 +136,19 @@ def _extend_walk_field(  # noqa: PLR0913, PLR0917, C901
                 ),
             )
             ctx.existing_dests.add(flag)
-        specs.extend(
-            _extend_walk_specs(
-                core,
-                ctx,
-                flag,
-                concrete=concrete,
-                group=flag,
-                group_description=_struct_doc(core),
-            ),
-        )
+        below = descent.into(flag, [_resolve_type(raw_type)])
+        if below is not None:
+            specs.extend(
+                _extend_walk_specs(
+                    core,
+                    ctx,
+                    flag,
+                    below,
+                    concrete=concrete,
+                    group=flag,
+                    group_description=_struct_doc(core),
+                ),
+            )
         return specs
 
     if _is_dict(core):
@@ -179,12 +190,18 @@ def _extend_walk_specs(  # noqa: PLR0913
     target: Any,
     ctx: _WalkCtx,
     prefix: str,
+    descent: _Descent | None = None,
     *,
     concrete: bool = False,
     group: str | None = None,
     group_description: str = "",
 ) -> list[FlagSpec]:
-    """Build FlagSpecs for all fields of a struct type during the completion walk."""
+    """Build FlagSpecs for all fields of a struct type during the completion walk.
+
+    *descent* is where the walk stands; ``None`` starts it at *target*, as a root call does.
+    """
+    if descent is None:
+        descent = _Descent().entering([target])
     setup = _resolve_struct(target)
     if setup is None:
         return []
@@ -210,6 +227,7 @@ def _extend_walk_specs(  # noqa: PLR0913
                 ctx,
                 docstrings,
                 defaults,
+                descent,
                 concrete=concrete,
                 group=group,
                 group_description=group_description,
@@ -218,11 +236,12 @@ def _extend_walk_specs(  # noqa: PLR0913
     return specs
 
 
-def _extend_walk(
+def _extend_walk(  # noqa: PLR0913  # the ignored group_target is kept for callers
     target: Any,
     ctx: _WalkCtx,
     group_target: argparse.ArgumentParser | argparse._ArgumentGroup,  # noqa: ARG001  # kept for callers
     prefix: str,
+    descent: _Descent | None = None,
     *,
     concrete: bool = False,
 ) -> None:
@@ -231,8 +250,9 @@ def _extend_walk(
     Group placement is driven by ``spec.group`` (consumed by
     :func:`load_flags_into_parser`), not by *group_target*, which is kept only
     for callers that predate the FlagSpec refactor.
+    *descent* is where the walk stands, as for :func:`_extend_walk_specs`.
     """
-    specs = _extend_walk_specs(target, ctx, prefix, concrete=concrete)
+    specs = _extend_walk_specs(target, ctx, prefix, descent, concrete=concrete)
     load_flags_into_parser(specs, ctx.parser)
 
 
@@ -268,7 +288,7 @@ def _pre_extend_parser_for_completion(
                 if cls is None:
                     _log.debug("dynamic union flags: %r names no importable struct", class_path)
                     continue
-                _extend_walk(cls, walk_ctx, parser, field_prefix, concrete=True)
+                _extend_walk(cls, walk_ctx, parser, field_prefix, _Descent().entering([target, cls]), concrete=True)
             except Exception:  # noqa: BLE001 — completion must never crash; any import/argparse failure is non-fatal
                 _log.debug("dynamic union flags: skipping %r", class_path, exc_info=True)
                 continue
