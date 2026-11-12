@@ -115,7 +115,7 @@ Both emit the typed parsers' ops (the `ListOp` markers, index keys, `DICT_DELETE
 
 ### Phase 5 — composing and writing
 
-`src/confarg/untyped/_compose.py` — `compose(...) -> dict`: the two-phase pipeline above, ending in `dictexpr.resolve_expressions` (skippable with `--no-resolve`, which keeps `${...}` verbatim — the seam [pipeline/api-seams.md](../../architecture/pipeline/api-seams.md#public-api-seams) describes).
+`src/confarg/untyped/_compose.py` — `compose(...) -> dict`: the two-phase pipeline above, ending in `dictexpr.resolve_expressions` (skippable with `--no-resolve`, which keeps `${...}` verbatim — the seam [pipeline/api-seams.md](../../architecture/pipeline/api-seams.md#round-trips) describes).
 
 `src/confarg/untyped/_write.py`:
 
@@ -166,7 +166,7 @@ Reused as-is, not reimplemented: `_files` (formats, `__include__`, mounting, dum
    - **Composition parity** — for a document whose values already have the right types, `compose(files=…, argv=…, env=…)` must equal `dump_file(merge(Target, …))`.
      This pins that the untyped path never diverges from confarg's composition semantics: includes, list layering, cycle detection, subpath mounting, the `+ - * ~ N` sentinels, expression anchoring.
    - **Idempotence** — `compose(compose(x))` byte-equals `compose(x)`.
-     The typed path deliberately does not guarantee this ([pipeline/api-seams.md](../../architecture/pipeline/api-seams.md#public-api-seams)); for a rewriter it is the point.
+     The typed path deliberately does not guarantee this ([pipeline/api-seams.md](../../architecture/pipeline/api-seams.md#round-trips)); for a rewriter it is the point.
    - **Round-trip fidelity** — comments, key order and quoting preserved with the extra installed; clean degradation with a clear message without it.
    - **Strictness** — `--db.prot 5433` raises `UnknownKeyError` naming the path; `--allow-new` creates it.
    - **Inference** — `PORT=8080` over `port: 80` yields int `8080`; over `port: "80"` yields `"8080"`; `--port.int 8080` yields `8080` as a bare scalar, never `{__cast__: …}`.

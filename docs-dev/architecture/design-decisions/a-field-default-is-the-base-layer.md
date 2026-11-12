@@ -9,7 +9,7 @@ So a default behaves as a lower configuration file holding the same value would:
 - a pending op where no default is laid applies over nothing, which is what construction would build, so an expression reads the list (`${len(xs)}` under `--xs+ a b`), not the op dict ([a pending list op is applied before resolution](a-pending-list-op-is-applied-before-resolution.md#a-pending-list-op-is-applied-before-resolution));
 - a patch that does not fit the default is refused as it would be over the file: a file's `t: {__append__: [1]}` on `t: tuple[int, int] = (0, 0)` overruns it, "expected 2 elements, got 3" (BUG-221), and a stray `t: {foo: 1}` is refused as with no default.
 
-`merge()` is untouched: it is still "save as written" ([api seams](../pipeline/api-seams.md#public-api-seams)), so `dump_file(merge(...))` never freezes a class default into a saved configuration, and a later change to the class still reaches it.
+`merge()` is untouched: it is still "save as written" ([api seams](../pipeline/api-seams.md#round-trips)), so `dump_file(merge(...))` never freezes a class default into a saved configuration, and a later change to the class still reaches it.
 
 Until then only the tuple was patched over its default, by `_construct._resolve_tuple_partial`, which skipped any key it read no index in.
 That skip dropped BUG-209's plain op spelling, BUG-210's cast pin and BUG-221's op marker in turn, three bugs at one spot; every other type ignored its default under a patch (a namedtuple raised `MissingFieldError` for the field the patch left out).

@@ -41,7 +41,7 @@ That is the stronger guarantee and it fails earlier, at parse time, but it costs
 |---|---|---|
 | Where it can be enforced | `merge()` only — refusing a write means knowing a source wrote it, and only `_merge_sources` holds the three source dicts apart | `build()` **and** `from_dict()`: comparing two resolved values needs no provenance |
 | A hand-assembled dict | unprotected | protected |
-| `dump()` → `load()` | breaks — the dump writes the derived path, which the reload then refuses, so `dump()` would have to learn to omit derived fields ([01](../../architecture/pipeline/api-seams.md#public-api-seams)) | unchanged: the dumped values agree, so the assertion passes |
+| `dump()` → `load()` | breaks — the dump writes the derived path, which the reload then refuses, so `dump()` would have to learn to omit derived fields ([01](../../architecture/pipeline/api-seams.md#round-trips)) | unchanged: the dumped values agree, so the assertion passes |
 | A correct but redundant value in a file | refused | kept, which is often how a configuration is meant to read |
 
 Provenance is the crux. confarg has none ([FEAT-8](FEAT-8-value-provenance.md)), so a refusal can only live where the sources are still separate — one seam of three.

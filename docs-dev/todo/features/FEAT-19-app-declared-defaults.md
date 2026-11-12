@@ -79,7 +79,7 @@ The side effect is that `prepare: {}` becomes the explicit "enable this node wit
 
 ## What decides the implementation
 
-- **`resolve()` takes the target since FEAT-37**, which lays the class's own defaults there rather than in `merge()` ([api seams](../../architecture/pipeline/api-seams.md#public-api-seams)), so a declared default could join the same layer in `build()`, `resolve()` and `from_dict()` (`_default_layer.lay_defaults`) instead of being injected by `merge()`; which of the two this feature takes is open again.
+- **`resolve()` takes the target since FEAT-37**, which lays the class's own defaults there rather than in `merge()` ([api seams](../../architecture/pipeline/api-seams.md#round-trips)), so a declared default could join the same layer in `build()`, `resolve()` and `from_dict()` (`_default_layer.lay_defaults`) instead of being injected by `merge()`; which of the two this feature takes is open again.
   `build()` applies the same pass for a hand-assembled dict; over `merge()`'s output it is idempotent.
 - The pass belongs beside `_apply_locals_layer` in `_pipeline._merge_sources`, which is the precedent for a target-guided walk over the three source dicts and the one place all five front-ends delegate to — so cross-channel parity is free ([09](../../architecture/invariants.md#cross-channel-parity)).
 - It has to be *computed* after the sources are merged, so a union's variant is known, and *merged* underneath them.

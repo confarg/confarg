@@ -8,7 +8,7 @@ The exception is the whole-value predicate, which runs *before* construction and
 The distinction has teeth because `_is_struct` is structural: a class whose constructor signature reads is a struct ([a struct's members are its constructor's parameters](a-structs-members-are-its-constructors-parameters.md#a-structs-members-are-its-constructors-parameters)), and `UUID.__init__` takes seven, all with defaults.
 So a field typed `Release | UUID` — where `Release` is a struct with a `version` field, a name `UUID.__init__` also uses — read as a union of two structs.
 `build()` refused `{"version": 2}` with `AmbiguousUnionError`, and `dump()` emitted a `class` tag for a union holding exactly one struct.
-The two defects hid each other: the spurious tag is what kept `load(dump(x)) == x` working, so fixing either alone would have broken the round trip ([pipeline](../pipeline/api-seams.md#public-api-seams)).
+The two defects hid each other: the spurious tag is what kept `load(dump(x)) == x` working, so fixing either alone would have broken the round trip ([pipeline](../pipeline/api-seams.md#round-trips)).
 
 This narrows what `build()` rejects: data that used to be ambiguous now constructs the struct.
 That is the intended direction — registration is a promise that the type is opaque, and a promise that holds in one direction only is worse than none.

@@ -34,6 +34,8 @@ It keeps `help()` and `inspect.signature` listing the names, but every signature
 The precedents for the chosen shape are pydantic's `ConfigDict` and pydantic-settings' `SettingsConfigDict` (options as a public TypedDict) and PEP 692's own motivating case.
 Also set aside: an options *object* passed as one argument, which would change every call site where this keeps every one of them as it was.
 
+## Round trips
+
 **Round-trip fidelity comes from the seam, not from a reverse pass.**
 The two dumps write two different things ([design decision](../design-decisions/the-object-dump-writes-state.md#the-object-dump-writes-state)).
 `merge()` keeps `${...}` and every callable spec verbatim and `dump_file(raw_dict, path)` writes them back, so a merged config can be saved as written: how its values are produced.

@@ -1,7 +1,7 @@
 # A stolen leaf dumps with its cast
 
 `dump()` writes `{__cast__, __value__}` for a union **leaf** whose bare scalar another variant would take back — the typed sibling of the pin `_serialize_untyped` already writes ([types](../types/stealing-rule.md#casting-a-stolen-leaf)).
-`Color | str` holding `"FOO"` dumped `"FOO"` and rebuilt as `Color.FOO`, breaking the one round trip the library promises ([pipeline](../pipeline/api-seams.md#public-api-seams); BUG-15, closed).
+`Color | str` holding `"FOO"` dumped `"FOO"` and rebuilt as `Color.FOO`, breaking the one round trip the library promises ([pipeline](../pipeline/api-seams.md#round-trips); BUG-15, closed).
 The cast is emitted only where the bare form fails to read back, so every dump that round-tripped before is unchanged.
 
 Rejected alternatives:
