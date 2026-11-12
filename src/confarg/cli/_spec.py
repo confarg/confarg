@@ -247,7 +247,7 @@ def _struct_doc(tp: type) -> str:
             generated = tp.__name__
         if own == generated:
             return ""
-    return inspect.getdoc(tp) or ""
+    return inspect.cleandoc(own) if own else ""
 
 
 @_per_class_cache

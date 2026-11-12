@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import abc
 import argparse
 from dataclasses import dataclass, field, make_dataclass
 from enum import Enum
@@ -16,7 +17,7 @@ import pytest
 import confarg
 import confarg.cli.argparse as confargargparse
 from confarg.cli import FieldMeta
-from confarg.cli._spec import _get_field_docstrings
+from confarg.cli._spec import _get_field_docstrings, _struct_doc
 from confarg.cli.argparse import from_namespace, make_parser, populate_parser
 
 # ---------------------------------------------------------------------------
@@ -766,6 +767,44 @@ def test_a_group_has_no_description_python_wrote() -> None:
     text = make_parser(_WithGroups).format_help()
     assert "The documented variant." in text
     assert "_UndocumentedVariant(xs:" not in text
+
+
+class _PlainBase(abc.ABC):
+    def __init__(self, n: int = 1) -> None:
+        self.n = n
+
+    @abc.abstractmethod
+    def run(self) -> None: ...  # abstract, so ABC is no lint noise
+
+
+class _PlainGeneric[T]:
+    def __init__(self, n: int = 1) -> None:
+        self.n = n
+
+
+class _ProseBase:
+    """The author's prose."""
+
+    def __init__(self, n: int = 1) -> None:
+        self.n = n
+
+
+class _ProseChild(_ProseBase):
+    pass
+
+
+class _ProseBoom(Exception):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("cls", "expected"),
+    [(_PlainBase, ""), (_PlainGeneric, ""), (_ProseChild, ""), (_ProseBoom, ""), (_ProseBase, "The author's prose.")],
+    ids=["abc", "generic", "child-of-documented", "exception", "documented"],
+)
+def test_a_group_is_headed_by_its_own_docstring_only(cls: type, expected: str) -> None:
+    """A class with no docstring of its own heads its group with none, not with one a base gave it (BUG-292)."""
+    assert _struct_doc(cls) == expected
 
 
 @dataclass
