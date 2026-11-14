@@ -1360,7 +1360,11 @@ class TestKeyIdentityOnAnUntypedNode:
         """``true``, ``null`` and ``1.5`` meet the string JSON writes them as."""
         files = [_yaml(tmp_path, "a: {!!bool true: 5, !!null null: 6, !!float 1.5: 7}\n")]
         merged = confarg.merge(
-            _Keyed, files=files, argv=["--a.true", "9", "--a.null-"], env={"APP_A__1.5": "8"}, env_prefix="APP_"
+            _Keyed,
+            files=files,
+            argv=["--a.true", "9", "--a.null-"],
+            env={"APP_A__1.5": "8"},
+            env_prefix="APP_",
         )
         assert merged == {"a": {True: "9", 1.5: "8"}}
 
@@ -1422,13 +1426,20 @@ class TestOneValueHoldsEachKeyOnce:
         ("lower", "upper", "merged"),
         [
             pytest.param(
-                "d: {7: 1}\n", "d: {0: 2, 00: 3}\n", {"d": {"7": 1, "0": 2, "00": 3}}, id="beside-a-lower-key"
+                "d: {7: 1}\n",
+                "d: {0: 2, 00: 3}\n",
+                {"d": {"7": 1, "0": 2, "00": 3}},
+                id="beside-a-lower-key",
             ),
             pytest.param("d: {00: 1}\n", "d: {0: 2, 00: 3}\n", {"d": {"0": 2, "00": 3}}, id="over-one-spelling"),
         ],
     )
     def test_a_layer_below_keeps_both_spellings(
-        self, tmp_path: Path, lower: str, upper: str, merged: MergeDict
+        self,
+        tmp_path: Path,
+        lower: str,
+        upper: str,
+        merged: MergeDict,
     ) -> None:
         """``merge()`` holds what the source wrote; ``load()`` refuses it."""
         files = [_yaml(tmp_path, lower, "lower.yaml"), _yaml(tmp_path, upper, "upper.yaml")]

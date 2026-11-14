@@ -310,7 +310,11 @@ def _take_instance(tp: Any, data: Any, path: FieldPath) -> Any:
         name, member_type, value = unheld
         where = _spell_field_path(path)
         raise TypeCoercionError.unheld_member(
-            spelled, where, _spell_field_path((*path, name)), value, _spell_type(member_type)
+            spelled,
+            where,
+            _spell_field_path((*path, name)),
+            value,
+            _spell_type(member_type),
         )
     raise TypeCoercionError.no_instance_of(spelled, _src_type(data), data, _spell_field_path(path))
 
@@ -902,7 +906,10 @@ def _construct_named(cls: Any, data: MergeDict, path: FieldPath, naming: _Naming
     flds = _struct_fields(cls)
     if _defaults.CLASS_KEY in data and _defaults.CLASS_KEY not in flds:
         raise TypeCoercionError.unknown_fields(
-            [_defaults.CLASS_KEY], cls.__name__, _spell_field_path(path), sorted(flds)
+            [_defaults.CLASS_KEY],
+            cls.__name__,
+            _spell_field_path(path),
+            sorted(flds),
         )
     if data:
         return _construct_struct(cls, data, path)
@@ -1135,7 +1142,10 @@ def _construct_dict(tp: Any, data: Any, path: FieldPath) -> dict[Any, Any]:
 
 
 def _refuse_keys_read_as_one(
-    what: Callable[[], str], index: dict[Any, list[Any]], path: FieldPath, reading: Callable[[Any, list[Any]], str]
+    what: Callable[[], str],
+    index: dict[Any, list[Any]],
+    path: FieldPath,
+    reading: Callable[[Any, list[Any]], str],
 ) -> None:
     """Refuse the value *what* names at *path* if *index* files two of its keys under one identity.
 

@@ -282,7 +282,7 @@ _BUDGET = 10_000_000
 
 #: One conversion of a printf-style format: its mapping key, width and precision, and type.
 _FORMAT_SPEC_RE = re.compile(
-    r"%(?:\((?P<key>[^)]*)\))?[#0\- +]*(?P<width>\*|\d+)?(?:\.(?P<precision>\*|\d*))?[hlL]?(?P<type>.)"
+    r"%(?:\((?P<key>[^)]*)\))?[#0\- +]*(?P<width>\*|\d+)?(?:\.(?P<precision>\*|\d*))?[hlL]?(?P<type>.)",
 )
 
 
@@ -557,7 +557,11 @@ class _Namespace(dict[Any, Any]):
     """
 
     def __init__(
-        self, data: MergeDict, read: Reader | None = None, write: Writer | None = None, copies: Copies | None = None
+        self,
+        data: MergeDict,
+        read: Reader | None = None,
+        write: Writer | None = None,
+        copies: Copies | None = None,
     ) -> None:
         super().__init__(data)
         self.read = read
@@ -941,7 +945,8 @@ def _segment(node: ast.Attribute | ast.Subscript, namespace: _Namespace | None =
 
 
 def _attribute_chain(
-    node: ast.Attribute | ast.Subscript, namespace: _Namespace | None = None
+    node: ast.Attribute | ast.Subscript,
+    namespace: _Namespace | None = None,
 ) -> list[str | ListOp] | None:
     """Return the config path *node* reads, segment by segment, or ``None`` when it reads none.
 
@@ -1269,7 +1274,9 @@ def _container_miss(data: MergeDict, parts: Sequence[Hashable]) -> int | None:
 
 
 def _path_miss(
-    node: ast.Attribute | ast.Subscript, parts: Sequence[Hashable], missing: MissingReferenceError
+    node: ast.Attribute | ast.Subscript,
+    parts: Sequence[Hashable],
+    missing: MissingReferenceError,
 ) -> MissingReferenceError:
     """Return the miss of the path *parts* that *node* spells: *missing*, or how to call the method a dot names."""
     if isinstance(node, ast.Attribute) and node.attr in _SAFE_METHODS:

@@ -1047,7 +1047,11 @@ def _bound_method_spec(path_str: str, method: Any, owner_fields: Callable[[Any],
 
 
 def _object_spec(
-    opener: str, path_str: str, obj: Any, value: Any, owner_fields: Callable[[Any], dict[str, Any]]
+    opener: str,
+    path_str: str,
+    obj: Any,
+    value: Any,
+    owner_fields: Callable[[Any], dict[str, Any]],
 ) -> dict:
     """Return the *opener* spec naming *path_str* that builds *obj* with the state it holds.
 

@@ -784,7 +784,8 @@ class _Positions:
 
 
 def _base(
-    tmp_path, body: str = "pt: [7, 8]\npf: [7, 8]\nrq: [7, 8]\nt: [7, 8]\nto: [7, 8]\nopt: [7, 8]\n"
+    tmp_path,
+    body: str = "pt: [7, 8]\npf: [7, 8]\nrq: [7, 8]\nt: [7, 8]\nto: [7, 8]\nopt: [7, 8]\n",
 ) -> list[str]:
     path = tmp_path / "base.yaml"
     path.write_text(body)
@@ -813,7 +814,8 @@ class TestAPositionDeleteUnsetsIt:
     def test_a_later_set_fills_the_unset_position(self, tmp_path) -> None:
         """``--rq.x- --rq.x 1`` sets what the delete cleared, and nothing else moves."""
         assert confarg.load(_Positions, files=_base(tmp_path), argv=["--rq.x-", "--rq.x", "1"], env={}).rq == Point(
-            1, 8
+            1,
+            8,
         )
 
     def test_a_fixed_tuple_position_is_missing(self, tmp_path) -> None:
@@ -850,18 +852,29 @@ class TestAPositionDeleteUnsetsIt:
     def test_the_delete_survives_a_higher_layer(self, tmp_path) -> None:
         """The environment's delete is still a delete under a flag that patches the other position."""
         cfg = confarg.load(
-            _Positions, files=_base(tmp_path), argv=["--pt.y", "5"], env={"APP_PT__X-": ""}, env_prefix="APP_"
+            _Positions,
+            files=_base(tmp_path),
+            argv=["--pt.y", "5"],
+            env={"APP_PT__X-": ""},
+            env_prefix="APP_",
         )
         assert cfg.pt == _DefPt(1, 5)
         cfg = confarg.load(
-            _Positions, files=_base(tmp_path), argv=["--pt.x", "3"], env={"APP_PT__X-": ""}, env_prefix="APP_"
+            _Positions,
+            files=_base(tmp_path),
+            argv=["--pt.x", "3"],
+            env={"APP_PT__X-": ""},
+            env_prefix="APP_",
         )
         assert cfg.pt == _DefPt(3, 8)
 
     def test_the_merge_keeps_the_delete_in_the_keyed_form(self, tmp_path) -> None:
         """Over a base list the position delete keys the base and stays in it, for the default below."""
         merged = confarg.merge(
-            _Positions, files=_base(tmp_path, "pt: [7, 8]\nt: [7, 8]\n"), argv=["--pt.0-", "--t.0-"], env={}
+            _Positions,
+            files=_base(tmp_path, "pt: [7, 8]\nt: [7, 8]\n"),
+            argv=["--pt.0-", "--t.0-"],
+            env={},
         )
         assert merged == {"pt": {"x": DICT_DELETE, "y": 8}, "t": {"0": DICT_DELETE, "1": 8}}
 
