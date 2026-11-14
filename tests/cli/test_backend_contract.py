@@ -5518,13 +5518,14 @@ class TestCollectionPatchContract:
 
 @dataclass
 class _DecodedInto:
-    """A struct, a dict, an ``Any`` and a list of structs, each with a file value below."""
+    """A struct, a dict, an ``Any`` and a list of structs, each with a file value below, and a text-or-dict union."""
 
     name: str = "default"
     sec: _DefaultedSection = dataclasses.field(default_factory=_DefaultedSection)
     d: dict[str, int] = dataclasses.field(default_factory=dict)
     anything: Any = None
     rows: list[_DefaultedSection] = dataclasses.field(default_factory=list)
+    either: str | dict[str, int] = ""
 
 
 class TestADecodedValueIsData:
@@ -5625,6 +5626,52 @@ class TestADecodedValueIsData:
     ) -> None:
         """A key confarg reserves is refused in a value as on a flag's path: only a file writes one."""
         with pytest.raises(ConfargError, match=re.escape(f"Cannot set {flag!r}: {key!r} is a key confarg reserves")):
+            loader.load(_DecodedInto, argv=argv, env={})
+
+    @pytest.mark.parametrize(
+        ("argv", "reason"),
+        [
+            pytest.param(
+                ["--d", '{"k": 1, "k": 2}'],
+                "key 'k' is written twice in the object at 'd'",
+                id="whole-value",
+            ),
+            pytest.param(
+                ["--json", '{"name": "a", "name": "b"}'],
+                "key 'name' is written twice in the top-level object",
+                id="root-cast",
+            ),
+            pytest.param(
+                ["--anything.json", '{"x": {"k": 1, "k": 1}}'],
+                "key 'k' is written twice in the object at 'anything.x'",
+                id="field-cast",
+            ),
+            pytest.param(
+                ["--rows+", '{"a": 1, "a": 2}'],
+                "key 'a' is written twice in the object at 'rows[0]'",
+                id="appended-item",
+            ),
+            pytest.param(
+                ["--rows", '[{}, {"a": 1, "a": 2}]'],
+                "key 'a' is written twice in the object at 'rows[1]'",
+                id="whole-list",
+            ),
+            # A union holding text: the value must not fall back to it.
+            pytest.param(
+                ["--either", '{"k": 1, "k": 2}'],
+                "key 'k' is written twice in the object at 'either'",
+                id="text-or-dict",
+            ),
+        ],
+    )
+    def test_a_key_written_twice_in_a_decoded_value_is_refused(
+        self,
+        loader: ConfargLoader,
+        argv: list[str],
+        reason: str,
+    ) -> None:
+        """A JSON object writing one key twice is refused, never read as text nor kept last (BUG-313)."""
+        with pytest.raises(ConfargError, match=re.escape(f"Cannot set {argv[0]!r}: {reason}.")):
             loader.load(_DecodedInto, argv=argv, env={})
 
 

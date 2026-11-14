@@ -1220,12 +1220,13 @@ class TestEnvAppend:
 
 @_dc
 class _EnvDecodedInto:
-    """A scalar, a dict, an ``Any`` and a list, each with a file value below."""
+    """A scalar, a dict, an ``Any`` and a list, each with a file value below, and a text-or-dict union."""
 
     name: str = "default"
     d: dict[str, int] = field(default_factory=dict)
     anything: Any = None
     xs: list[int] = field(default_factory=list)
+    either: str | dict[str, int] = ""
 
 
 class TestEnvDecodedValueIsData:
@@ -1287,6 +1288,47 @@ class TestEnvDecodedValueIsData:
             confarg.exceptions.ConfargError,
             match=re.escape(f"Cannot set {name!r}: {key!r} is a key confarg reserves"),
         ):
+            loader.load(_EnvDecodedInto, argv=[], env={name: value}, env_prefix="APP_")
+
+    @pytest.mark.parametrize(
+        ("name", "value", "reason"),
+        [
+            pytest.param(
+                "APP_D",
+                '{"k": 1, "k": 2}',
+                "key 'k' is written twice in the object at 'd'",
+                id="whole-value",
+            ),
+            pytest.param(
+                "APP_JSON",
+                '{"name": "a", "name": "b"}',
+                "key 'name' is written twice in the top-level object",
+                id="root-cast",
+            ),
+            pytest.param(
+                "APP_ANYTHING__JSON",
+                '{"x": {"k": 1, "k": 1}}',
+                "key 'k' is written twice in the object at 'anything.x'",
+                id="field-cast",
+            ),
+            # The environment reads text where a union holding it meets no JSON: the value must not fall back to it.
+            pytest.param(
+                "APP_EITHER",
+                '{"k": 1, "k": 2}',
+                "key 'k' is written twice in the object at 'either'",
+                id="text-or-dict",
+            ),
+        ],
+    )
+    def test_a_key_written_twice_in_a_decoded_value_is_refused(
+        self,
+        loader: ConfargLoader,
+        name: str,
+        value: str,
+        reason: str,
+    ) -> None:
+        """A JSON object writing one key twice is refused, never read as text nor kept last (BUG-313)."""
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape(f"Cannot set {name!r}: {reason}.")):
             loader.load(_EnvDecodedInto, argv=[], env={name: value}, env_prefix="APP_")
 
 

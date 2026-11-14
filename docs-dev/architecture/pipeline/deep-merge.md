@@ -108,6 +108,7 @@ The identity is the one above, so the rule reaches every kind the merge reads ke
 It holds whatever the two values are, equal ones included: the keys are checked before any value is built.
 
 Such a value comes from one source handing it whole: a caller's dict, a file's mapping (`0:` beside `!!int 0:`, `0:` beside `00:`, a key YAML's `<<` merges in beside an own key spelled otherwise), a `{…}` value on argv or in the environment.
+A key written twice alike never reaches construction: its parser refuses it ([a document writes each key once](#a-document-writes-each-key-once)).
 Two flags or two variables are two writes, and the later writes over the earlier spelling as above (`--m.0 a --m.00 b` builds `{0: 'b'}`).
 Until BUG-312 construction built such a dict by a comprehension, the last spelling winning, and the merge did the same wherever a layer lay below the dict, a non-empty default included: `_deep_merge` indexed each key of the override as it wrote it, so the second spelling met the first.
 Neither said a value was dropped.
@@ -126,6 +127,38 @@ Rejected:
 - **Refusing in `_deep_merge`**: its error names only the innermost key, merge errors carrying no path, and the merges the walk makes ahead of the pipeline (`_naming`, `_tags`) would raise it too.
 - **Typed nodes only**: an untyped node would keep both keys with nothing below it and lose one with a layer below.
 - **Letting a YAML merge key's own key win**: the loader cannot tell `0` from `00` without the type, so it would hand construction which pair came from a merge, for one format.
+
+## A document writes each key once
+
+A YAML or JSON mapping writing one key twice is refused where it is parsed, naming the key and where it stands (BUG-313): `s: a` then `s: b` is `Cannot read c.yaml: key 's' is written twice in one mapping, at lines 1 and 2.`, and `{"d": {"host": "a", "host": "b"}}` is `Cannot read c.json: key 'host' is written twice in the object at 'd'.` It is the parsers' half of [one value holds each key once](#one-value-holds-each-key-once): a parser building a dict keeps one value of a key written twice, so construction never sees the other.
+TOML refused it already (tomllib), and a CSV header a column named twice.
+
+What counts is what a dict would drop:
+
+- The same key however it is spelled, equal values included: `s` beside `'s'`, `"s"` beside `"s"`, an anchored key beside its alias.
+- Two keys YAML tells apart that a dict holds as one: `!!int 1` beside `!!bool true` or `!!float 1.0` (`keys 1 and True both read as the key 1`), and `!!float .nan` twice, which PyYAML builds as one object; a `!!set` too, being a mapping.
+- A second `<<` in one mapping, which merged the opposite way to `<<: [*a, *b]`, the later mapping winning; the sequence is the spelling, its order the one YAML's merge defines.
+
+A key a merge key brings in is none of them: a mapping's own key overrides it, and the earliest merged mapping wins, as YAML's merge says.
+
+A JSON value on argv or in the environment is refused alike, naming the flag or the variable and the object's path from where the value lands: `Cannot set '--cfg': key 'host' is written twice in the object at 'cfg.db'.` It is a refusal of its own, as a reserved key's is ([a decoded value is data](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)), not invalid JSON: a variable whose value is no JSON at a `str | dict` field is read as text, which a key written twice must not be.
+
+`_json.loads` is the one JSON decode: a `.json` document (`_files._load_json_item`), a mount value spelled as JSON (`_files._decode_mount_value`), and every decode of argv and the environment through `_cast.decode_json`.
+Its `object_pairs_hook` builds each object with `dict` and compares the lengths, so a value writing each key once pays nothing more; the decoder hands the hook no position and no parent, so the first object writing a key twice is only noted, and its path found by identity once the whole value is decoded.
+The YAML loader (`_files._yaml_loader`) checks a mapping's own keys from `flatten_mapping` (`_files._refuse_yaml_key_written_twice`), the first time it meets the node, before a merge key's pairs are spliced in: the splice keeps one pair a key, which would hide two own pairs overriding a merged one, and a node flattened as a merge's source holds what it merged by the time it is built.
+Each key is built to be compared, as the mapping builds it next; an unhashable one is left to PyYAML, which refuses it.
+A YAML refusal names the lines of both keys, which the nodes carry (one line when both stand on it: a flow mapping, or an alias, whose node is the anchored key's); a JSON one names the object's path, having no line to name.
+
+Precedent: ruamel.yaml refuses a duplicate key, two spellings of one and `!!int 1` beside `!!bool true` included, and a second `<<` even where it allows duplicates (`allow_duplicate_keys`); OmegaConf's YAML loader refuses a duplicate key and takes a second `<<`; tomllib refuses one, YAML 1.2 calls one an error, and RFC 8259 says an object's names SHOULD be unique.
+jsonargparse, pydantic, msgspec, orjson, PyYAML and `json.loads` keep the last (run).
+
+Rejected:
+
+- **Reading it as invalid JSON** on argv and in the environment: where invalid JSON is read as text, so would the value be, another silent outcome.
+- **Naming only the key** of a JSON object: a common key (`host`, `name`) does not say which object of a large file to fix.
+- **Taking a second `<<`**, in either order: YAML gives a mapping each key once, `<<` included, and the sequence already spells the case.
+- **Refusing only keys YAML calls equal**: `!!int 1` beside `!!bool true` would still build `{1: 'b'}` with no error.
+- **An opt-out keeping the last**, as ruamel.yaml offers: API every reader of a configuration would have to know was set, for files that can be fixed; tomllib has none.
 
 ## No channel types an op
 

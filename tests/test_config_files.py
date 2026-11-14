@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import enum
 import math
+import re
 import threading
 from dataclasses import dataclass, field
 from datetime import date
@@ -595,6 +596,140 @@ class TestInvalidConfigFiles:
         p.write_text(content)
         result = loader.load(WithDefaults, argv=[], env={}, files=[p])
         assert result.name == "default"
+
+
+@dataclass
+class _Untyped:
+    """Fields typing nothing, so a document's keys reach the merge as its parser built them."""
+
+    s: Any = None
+    d: Any = None
+    rows: Any = None
+
+
+class TestADocumentWritesEachKeyOnce:
+    """A mapping writing one key twice is refused where it is parsed, never kept last (BUG-313)."""
+
+    @pytest.mark.parametrize(
+        ("text", "reason"),
+        [
+            pytest.param("s: a\ns: b\n", "key 's' is written twice in one mapping, at lines 1 and 2", id="same"),
+            pytest.param("s: a\ns: a\n", "key 's' is written twice in one mapping, at lines 1 and 2", id="same-value"),
+            pytest.param("s: a\n's': b\n", "key 's' is written twice in one mapping, at lines 1 and 2", id="quoted"),
+            pytest.param(
+                "d:\n  x: 1\n  x: 2\n",
+                "key 'x' is written twice in one mapping, at lines 2 and 3",
+                id="nested",
+            ),
+            pytest.param("d: {x: 1, x: 2}\n", "key 'x' is written twice in one mapping, both on line 1", id="flow"),
+            pytest.param("&k s: a\n*k : b\n", "key 's' is written twice in one mapping, both on line 1", id="alias"),
+            pytest.param(
+                "d:\n  !!int 1: a\n  !!int 01: b\n",
+                "key 1 is written twice in one mapping, at lines 2 and 3",
+                id="int-spellings",
+            ),
+            pytest.param(
+                "d:\n  !!int 1: a\n  !!bool true: b\n",
+                "keys 1 and True both read as the key 1 in one mapping, at lines 2 and 3",
+                id="int-and-bool",
+            ),
+            pytest.param(
+                "d:\n  !!int 1: a\n  !!float 1.0: b\n",
+                "keys 1 and 1.0 both read as the key 1 in one mapping, at lines 2 and 3",
+                id="int-and-float",
+            ),
+            pytest.param(
+                "b1: &b1 {x: 1}\nb2: &b2 {y: 2}\nd:\n  <<: *b1\n  <<: *b2\n",
+                "key '<<' is written twice in one mapping, at lines 4 and 5",
+                id="merge-key",
+            ),
+            pytest.param(
+                "b: &b {x: 0}\nd:\n  <<: *b\n  x: 1\n  x: 2\n",
+                "key 'x' is written twice in one mapping, at lines 4 and 5",
+                id="own-twice-over-merged",  # the merge keeps one pair a key, which must not hide the second
+            ),
+            pytest.param("d: !!set {a, a}\n", "key 'a' is written twice in one mapping, both on line 1", id="set"),
+            pytest.param(
+                "d: {!!float .nan: a, !!float .nan: b}\n",
+                "key nan is written twice in one mapping, both on line 1",
+                id="nan",  # PyYAML builds every .nan as one object, which a dict holds once
+            ),
+        ],
+    )
+    def test_yaml_names_both_lines(self, tmp_path: Path, text: str, reason: str) -> None:
+        """YAML calls a duplicate key an error, and so does a key two spellings build alike in a dict."""
+        p = tmp_path / "dup.yaml"
+        p.write_text(text)
+        with pytest.raises(
+            confarg.exceptions.InvalidConfigFileError,
+            match=rf"^Cannot read .*dup\.yaml: {re.escape(reason)}\.$",
+        ):
+            confarg.merge(_Untyped, argv=[], env={}, files=[p])
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param("b: &b {x: 1}\nd:\n  <<: *b\n  x: 2\n", {"x": 2}, id="own-over-merged"),
+            pytest.param(
+                "b: &b {!!int 1: merged}\nd:\n  <<: *b\n  !!int 01: own\n",
+                {1: "own"},
+                id="own-spelled-otherwise",
+            ),
+            pytest.param("b1: &b1 {x: 1}\nb2: &b2 {x: 2}\nd:\n  <<: [*b1, *b2]\n", {"x": 1}, id="earlier-merged"),
+            pytest.param(
+                "a: &a {!!int 1: a}\nb: &b {<<: *a, !!int 01: b}\nd:\n  <<: *b\n",
+                {1: "b"},
+                id="merged-source-merges",  # b is flattened as d's source before it is built itself
+            ),
+        ],
+    )
+    def test_a_merged_key_is_no_duplicate(self, tmp_path: Path, text: str, expected: Any) -> None:
+        """A mapping's own key overrides one ``<<`` merges in, and the earliest merged mapping wins, as YAML says."""
+        p = tmp_path / "merged.yaml"
+        p.write_text(text)
+        assert confarg.merge(_Untyped, argv=[], env={}, files=[p])["d"] == expected
+
+    @pytest.mark.parametrize(
+        ("text", "reason"),
+        [
+            pytest.param('{"s": "a", "s": "b"}', "key 's' is written twice in the top-level object", id="top-level"),
+            pytest.param(
+                '{"s": "a", "\\u0073": "b"}',
+                "key 's' is written twice in the top-level object",
+                id="escaped",
+            ),
+            pytest.param(
+                '{"d": {"host": "a", "port": 1, "host": "b"}}',
+                "key 'host' is written twice in the object at 'd'",
+                id="nested",
+            ),
+            pytest.param(
+                '{"rows": [{"x": 1}, {"x": 1, "x": 2}]}',
+                "key 'x' is written twice in the object at 'rows[1]'",
+                id="in-a-list",
+            ),
+        ],
+    )
+    def test_json_names_the_object(self, tmp_path: Path, text: str, reason: str) -> None:
+        """JSON's parser gives an object no position, so the refusal names its path in the document."""
+        p = tmp_path / "dup.json"
+        p.write_text(text)
+        with pytest.raises(
+            confarg.exceptions.InvalidConfigFileError,
+            match=rf"^Cannot read .*dup\.json: {re.escape(reason)}\.$",
+        ):
+            confarg.merge(_Untyped, argv=[], env={}, files=[p])
+
+    def test_a_mount_value_spelled_as_json(self, tmp_path: Path) -> None:
+        """The dict form of a ``--config.<path>`` value is JSON, read by the same decoder."""
+        value = f'{{"path": "{(tmp_path / "a.json").as_posix()}", "path": "b.json"}}'
+        with pytest.raises(
+            ConfargError,
+            match=re.escape(
+                f"Cannot read the config-file value {value!r}: key 'path' is written twice in the top-level object.",
+            ),
+        ):
+            confarg.merge(_Untyped, argv=["--config.d", value], env={})
 
 
 # ---------------------------------------------------------------------------

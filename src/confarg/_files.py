@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, Final
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-from confarg import _defaults, _sources
+from confarg import _defaults, _json, _sources
 from confarg._depth import MAX_DEPTH, Copies, refuse_overflow
 from confarg._merge import (
     _SHAPE,
@@ -121,11 +121,14 @@ def _yaml_loader() -> Any:
     anchored key aliased as a value is that text too.
 
     A merge key's pairs are merged once each (:meth:`flatten_mapping`), and charged to the
-    configuration's copy budget.
+    configuration's copy budget. A mapping writing one key twice is refused, ``<<`` included,
+    and so are two keys a dict holds as one (``!!int 1`` and ``!!bool true``); a mapping's own
+    key overriding one a merge key brings in is no such key.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-yaml-key-is-its-text.md#a-yaml-key-is-its-text
         docs-dev/architecture/design-decisions/a-configuration-copies-at-most-100000-positions.md#what-copies
+        docs-dev/architecture/pipeline/deep-merge.md#a-document-writes-each-key-once
     """
     import yaml  # noqa: PLC0415  # imported once _load_yaml_item found PyYAML
 
@@ -140,6 +143,7 @@ def _yaml_loader() -> Any:
             super().__init__(stream)
             self._loc = loc
             self._copies = copies
+            self._checked: set[Any] = set()  # the mappings whose own keys were checked
 
         def flatten_mapping(self, node: Any) -> None:
             """Splice the pairs *node*'s merge keys name into it, each key once, charging what it copied.
@@ -149,7 +153,12 @@ def _yaml_loader() -> Any:
             held 10**n pairs. A later pair wins in that dict, so the one kept for a key is the
             last, in the place of the first: a mapping's own key wins, then the earliest merged
             mapping, as YAML's merge says.
+
+            The node's own keys are checked first (:func:`_refuse_yaml_key_written_twice`), on
+            the first call only: a node flattened as the source of a merge is flattened again
+            when it is built, and its pairs then hold the ones it merged in.
             """
+            _refuse_yaml_key_written_twice(node, self.construct_object, self._loc, self._checked)
             own = sum(1 for key, _ in node.value if key.tag != _YAML_MERGE_TAG)
             super().flatten_mapping(node)
             merged = len(node.value) - own  # PyYAML puts the merged pairs first
@@ -188,10 +197,52 @@ _YAML_STR_TAG: Final = "tag:yaml.org,2002:str"
 _YAML_MERGE_TAG: Final = "tag:yaml.org,2002:merge"
 
 
+def _refuse_yaml_key_written_twice(node: Any, construct: Callable[[Any], Any], loc: str, checked: set[Any]) -> None:
+    """Raise if the YAML mapping *node*, as the document wrote it, holds a key twice, ``<<`` included.
+
+    Two keys a dict holds as one count (``!!int 1`` and ``!!bool true``): each key is built by
+    *construct* to be compared, as the mapping builds it next, and one no dict holds is left to
+    PyYAML, which refuses it there. A node already in *checked* is not checked again, its pairs
+    by then holding the ones a merge key brought in; it is added to it.
+
+    Raises:
+        InvalidConfigFileError: Naming the two keys and their lines in the document *loc*.
+    """
+    if node in checked:
+        return
+    checked.add(node)
+    seen: dict[Any, tuple[Any, Any]] = {}  # each key as built, and the node spelling it
+    merge_key = None
+    for key_node, _ in node.value:
+        if key_node.tag == _YAML_MERGE_TAG:
+            if merge_key is not None:
+                raise _yaml_key_written_twice((merge_key.value, merge_key), (key_node.value, key_node), loc)
+            merge_key = key_node
+            continue
+        key = construct(key_node)
+        try:
+            first = seen.get(key)
+        except TypeError:  # unhashable
+            continue
+        if first is not None:
+            raise _yaml_key_written_twice(first, (key, key_node), loc)
+        seen[key] = (key, key_node)
+
+
+def _yaml_key_written_twice(first: tuple[Any, Any], second: tuple[Any, Any], loc: str) -> ConfargError:
+    """Return the refusal of two keys, each as built and the node spelling it, in the document's order."""
+    lines = (first[1].start_mark.line + 1, second[1].start_mark.line + 1)
+    return InvalidConfigFileError.key_written_twice(f"read {loc}", (first[0], second[0]), lines=lines)
+
+
 def _load_json_item(data: bytes, loc: str, _copies: Copies) -> Any:
-    """Parse JSON bytes, returning the raw top-level value (dict, list, or scalar); nothing in JSON copies."""
+    """Parse JSON bytes, returning the raw top-level value (dict, list, or scalar); nothing in JSON copies.
+
+    An object writing one key twice is refused (:func:`confarg._json.loads`).
+    """
     try:
-        return json.loads(data)  # json.loads on bytes tolerates a BOM; on str it would not
+        # json.loads on bytes tolerates a BOM; on str it would not
+        return _json.loads(data, f"read {loc}", error=InvalidConfigFileError)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         msg = "JSON"
         raise InvalidConfigFileError.malformed(msg, loc, e) from e
@@ -857,7 +908,7 @@ def _decode_mount_value(value: Any) -> Any:
         return str(value)
     if isinstance(value, str) and value[:1] in ("{", "["):
         try:
-            return json.loads(value)
+            return _json.loads(value, f"read the config-file value {value!r}")
         except json.JSONDecodeError as e:
             msg = f"Invalid JSON in config-file value {value!r}: {e}"
             raise ConfargError(msg) from e

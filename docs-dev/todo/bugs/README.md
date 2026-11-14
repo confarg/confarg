@@ -9,8 +9,8 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-313 — A document's duplicate key keeps the last, silently](BUG-313-a-documents-duplicate-key-keeps-the-last-silently.md) | critical |  | M | medium | config | PR-5 |
 | [BUG-318 — `dump()` writes text spelling `${...}` as an expression, which the reload evaluates](BUG-318-dump-writes-text-spelling-an-expression-as-an-expression.md) | critical |  | M | medium | behavior | PR-5 |
+| [BUG-323 — A variable's malformed JSON reads as text where argv refuses it](BUG-323-a-variables-malformed-json-reads-as-text-where-argv-refuses-it.md) | critical |  | M | medium | config | PR-5 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
 | [BUG-319 — Construction refuses a combination of `enum.Flag` members](BUG-319-construction-refuses-a-combination-of-enum-flag-members.md) | major |  | M | low | behavior | PR-46 |

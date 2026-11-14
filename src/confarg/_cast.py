@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from confarg import _defaults
+from confarg import _defaults, _json
 from confarg._depth import MAX_DEPTH, refuse_overflow
 from confarg._merge import MergeAt, MergeDict, _deep_merge, _merge_within_source
 from confarg._types import _is_union, _Pinned, _registered_class, _resolve_type, _StrToken, _union_args_no_none
@@ -53,7 +53,8 @@ def decode_json(raw: str, spelling: str, at: Sequence[str | int] = ()) -> Any:
     The one decoder of a value argv or the environment spells as JSON: a ``.json`` cast, the
     root cast, a whole-value flag or variable, and an item appended as JSON. A decoded value is
     data, so none of its keys is ever read as a merge op; only a file's are. A key confarg
-    reserves is refused at any depth, as it is on a flag's path. The value is counted from
+    reserves is refused at any depth, as it is on a flag's path, and so is an object writing
+    one key twice, as a document's is (:func:`confarg._json.loads`). The value is counted from
     *at*, where it lands, before anything walks it.
 
     Args:
@@ -66,16 +67,18 @@ def decode_json(raw: str, spelling: str, at: Sequence[str | int] = ()) -> Any:
 
     Raises:
         json.JSONDecodeError: If *raw* is no JSON, for the caller to report or fall back on.
-        ConfargError: If an object in the value holds a key of ``_defaults.RESERVED_KEYS``, or
-            the value nests deeper than ``_depth.MAX_DEPTH`` levels counted from *at*.
+        ConfargError: If an object in the value writes a key twice or holds a key of
+            ``_defaults.RESERVED_KEYS``, or the value nests deeper than ``_depth.MAX_DEPTH``
+            levels counted from *at*.
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data
+        docs-dev/architecture/pipeline/deep-merge.md#a-document-writes-each-key-once
         docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-configuration-nests-at-most-64-levels
     """
     action = f"set {spelling!r}"
     try:
-        value = json.loads(raw)
+        value = _json.loads(raw, action, at=at)
     except RecursionError as e:  # the decoder's own walk, at a few thousand levels
         raise ConfargError.too_deep(action, None, MAX_DEPTH) from e
     refuse_overflow(value, action, at=at)
