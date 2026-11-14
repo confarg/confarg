@@ -26,7 +26,6 @@ from unittest import mock
 import pytest
 import typer
 import typer.rich_utils
-from typer._types import TyperChoice
 from typer.core import TyperOption
 from typer.main import get_command
 
@@ -65,7 +64,7 @@ class WithMeta:
 
 @dataclass
 class WithChoices:
-    """Dataclass with a Literal field, which typer validates through TyperChoice."""
+    """Dataclass with a Literal field, which typer types as a choice."""
 
     level: Literal["debug", "info"] = "info"
 
@@ -153,11 +152,20 @@ class TestRegistration:
         load_flags_into_command([FlagSpec(name="host")], command)
         assert len(command.params) == before
 
-    def test_choices_use_an_expression_tolerant_typer_choice(self) -> None:
-        """A Literal field is registered with typer's choice type, subclassed."""
+    def test_choices_are_typed_as_a_typer_choice(self) -> None:
+        """A Literal field is typed by a Literal, which typer reads its choices from."""
         command = _make_command(WithChoices, argv=[])
         param = next(p for p in command.params if p.name == "level")
-        assert isinstance(param.type, TyperChoice)
+        assert param.type_descriptor.choices == ("debug", "info")
+
+    def test_choices_still_reject_a_plain_out_of_domain_value(self) -> None:
+        """Letting ``${...}`` through must not disable typer's check for ordinary values."""
+        out = _invoke(_make_command(WithChoices, argv=["--level", "nope"]), ["--level", "nope"])
+        assert "'nope' is not one of" in out
+
+    def test_choices_still_render_natively_in_help(self) -> None:
+        """The choice keeps typer's own ``<debug|info>`` rendering."""
+        assert "<debug|info>" in _invoke(_make_command(WithChoices, argv=["--help"]), ["--help"])
 
     def test_list_field_is_multiple(self) -> None:
         """A list field uses multiple=True: typer inherits click's repeated-flag syntax."""

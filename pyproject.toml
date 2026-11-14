@@ -39,6 +39,7 @@ dev = [
     "mkdocstrings-python>=2.0.3",
     "mkdocstrings>=1.0.4",
     "pre-commit>=4.5.1",
+    "pydantic>=2.5.3",
     "pytest-cov>=7.0.0",
     "pytest-markdown-console>=0.0.1",
     "pytest-xdist>=3.8.0",
@@ -47,7 +48,7 @@ dev = [
     "ruff==0.16.9",
     "tomli-w>=1.0",
     "ty==0.0.99",
-    "typer>=0.27",
+    "typer>=0.29",
     "typing-extensions>=4.16.0",
     "zensical>=0.0.59",
 ]

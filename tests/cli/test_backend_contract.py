@@ -5794,6 +5794,20 @@ class TestExpressionIntoRestrictedFieldContract:
     the domain check belongs to ``build()``.
     """
 
+    @pytest.fixture(autouse=True, params=[False, True], ids=["pydantic-absent", "pydantic-imported"])
+    def _pydantic_imported(self, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Run each case with pydantic out of ``sys.modules`` and in it.
+
+        An application importing pydantic anywhere is enough for cyclopts to re-validate
+        a converted value through it, past the gate (BUG-353).
+        """
+        if request.param:
+            import pydantic  # noqa: PLC0415  # only this parameter wants it loaded
+
+            monkeypatch.setitem(sys.modules, "pydantic", pydantic)
+        else:
+            monkeypatch.delitem(sys.modules, "pydantic", raising=False)
+
     def test_expr_into_literal_field(self, loader: ConfargLoader) -> None:
         """An expression naming another field resolves into a Literal field."""
         cfg = loader.load(_ChoiceConfig, argv=["--name", "b", "--lit", "${name}"], env={})

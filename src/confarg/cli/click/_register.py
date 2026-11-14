@@ -18,10 +18,26 @@ if TYPE_CHECKING:
     from confarg.cli._spec import FlagSpec
 
 from confarg.cli import _clicklike
+from confarg.dictexpr import contains_expression
 
 
-class _ExpressionTolerantChoice(_clicklike.ExpressionTolerantChoiceMixin, click.Choice):
-    """A ``click.Choice`` that also admits unresolved ``${...}`` tokens."""
+class _ExpressionTolerantChoice(click.Choice):
+    """A ``click.Choice`` that also admits an unresolved ``${...}`` token.
+
+    ``Choice.convert`` validates through a normalized mapping rather than the container,
+    so the bypass sits there.  Everything else is inherited: ``--help`` still renders the
+    declared values, completion still offers them, and a real out-of-domain value still
+    fails with click's own error.  ``build()`` validates the resolved expression.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/parity.md#expression-tolerant-choice-gates
+    """
+
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:
+        """Pass an expression token through untouched; validate anything else normally."""
+        if contains_expression(value):
+            return value
+        return super().convert(value, param, ctx)
 
 
 class _ConfargOption(_clicklike.DottedNameMixin, _clicklike.StandsBareMixin, click.Option):
@@ -48,7 +64,7 @@ def _spec_to_option(spec: FlagSpec) -> click.Option:
         stands_bare=spec.stands_bare,
         **_clicklike.option_kwargs(
             spec,
-            choice_cls=_ExpressionTolerantChoice,
+            choice_type=_ExpressionTolerantChoice,
             completer_kwargs=_completer_kwargs,
         ),
     )
