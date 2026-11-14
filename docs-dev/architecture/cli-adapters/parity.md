@@ -16,6 +16,12 @@ Each adapter defers expression tokens via `dictexpr.contains_expression` at the 
 |---|---|---|
 | argparse | `_ExpressionTolerantChoices.__contains__` | argparse checks `value not in choices` and renders help by iterating the same object |
 | click | `_ExpressionTolerantChoice.convert` | `Choice.convert` validates through a normalized mapping, not the container |
-| cyclopts | `_expression_tolerant_convert` as `Parameter(converter=…)` | cyclopts enforces `Literal` by converting; the annotation stays for help |
+| cyclopts | `_expression_tolerant_convert` as `Parameter(converter=…)`, and `_ExpressionTolerantPydantic` in the `Annotated` metadata | cyclopts enforces `Literal` by converting; the annotation stays for help |
 
 `build()` validates the resolved value with the same `TypeCoercionError` everywhere.
+
+cyclopts has a second check: whenever `pydantic` is in `sys.modules` — which any application importing pydantic anywhere puts there, typer ≥ 0.29 included — it re-validates the converter's result against the annotation through a pydantic `TypeAdapter`, and has no switch to turn that off (BUG-353).
+So the annotation carries a metadata object implementing pydantic's documented `__get_pydantic_core_schema__` hook, which wraps the `Literal`'s schema to let an expression through.
+confarg imports nothing from pydantic for it: pydantic finds the hook by duck typing, and calls it only when it is loaded.
+Rejected: annotating the flag `Literal[...] | str` and converting against the `Literal` in the converter.
+It needs no pydantic hook, but cyclopts renders the union in help as `CHOICE|STR`, where the hook leaves help, errors and completion byte-identical with or without pydantic.

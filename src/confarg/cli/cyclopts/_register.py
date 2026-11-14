@@ -60,6 +60,28 @@ def _expression_tolerant_convert(type_: Any, tokens: Any) -> Any:
     return cyclopts_convert(type_, tokens)
 
 
+class _ExpressionTolerantPydantic:
+    """``Annotated`` metadata passing an unresolved ``${...}`` value through pydantic's check.
+
+    cyclopts re-validates every converted value against the annotation through pydantic
+    whenever ``pydantic`` is imported.  This object implements pydantic's
+    ``__get_pydantic_core_schema__`` hook, so confarg imports nothing from pydantic, and
+    pydantic only calls it when it is loaded.  Any other value is validated as before.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/parity.md#expression-tolerant-choice-gates
+    """
+
+    def __get_pydantic_core_schema__(self, source: Any, handler: Callable[[Any], Any]) -> Any:
+        """Wrap the schema pydantic builds for *source* with the expression bypass."""
+        from pydantic_core import core_schema  # noqa: PLC0415  # pydantic is loaded whenever this runs, and only then
+
+        def validate(value: Any, validate_inner: Callable[[Any], Any]) -> Any:
+            return value if contains_expression(value) else validate_inner(value)
+
+        return core_schema.no_info_wrap_validator_function(validate, handler(source))
+
+
 def _escape_char(c: str) -> str:
     """Spell *c* as an escape of :func:`_pyname`: ``_`` doubled, any other character ``_<hex>_``."""
     return "__" if c == "_" else f"_{ord(c):x}_"
@@ -181,7 +203,12 @@ def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape
         param_kwargs["group"] = groups[spec.group]
 
     cyclopts_param = CycloptsParam(**param_kwargs)
-    annotated = Annotated[annotation_type, cyclopts_param]
+    annotated = (
+        # The converter's bypass alone does not survive pydantic's re-validation of its result.
+        Annotated[annotation_type, cyclopts_param, _ExpressionTolerantPydantic()]
+        if spec.choices
+        else Annotated[annotation_type, cyclopts_param]
+    )
 
     return inspect.Parameter(
         name=py_name,
