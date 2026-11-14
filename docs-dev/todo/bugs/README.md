@@ -9,11 +9,11 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
-| [BUG-309 — `dump()` writes a registered leaf's unregistered subclass by its parent's serializer, silently](BUG-309-dump-writes-a-registered-leafs-subclass-by-the-parents-serializer.md) | critical |  | M | medium | behavior | BUG-11 |
 | [BUG-313 — A document's duplicate key keeps the last, silently](BUG-313-a-documents-duplicate-key-keeps-the-last-silently.md) | critical |  | M | medium | config | PR-5 |
-| [BUG-317 — `dump()` writes a value its type holds but construction refuses without a warning](BUG-317-dump-writes-a-value-its-type-holds-but-construction-refuses-without-a-warning.md) | critical |  | M | medium | behavior | PR-5, FEAT-51 |
+| [BUG-318 — `dump()` writes text spelling `${...}` as an expression, which the reload evaluates](BUG-318-dump-writes-text-spelling-an-expression-as-an-expression.md) | critical |  | M | medium | behavior | PR-5 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
+| [BUG-319 — Construction refuses a combination of `enum.Flag` members](BUG-319-construction-refuses-a-combination-of-enum-flag-members.md) | major |  | M | low | behavior | PR-46 |
 | [BUG-118 — `merge()`'s loading order names the env config pointer without its prefix](BUG-118-merge-docstring-names-the-env-config-pointer-without-its-prefix.md) | minor |  | S | low | behavior | PR-23 |
 | [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
@@ -37,5 +37,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-269 — A constructor's own exception escapes construction raw, with no path](BUG-269-a-constructors-own-exception-escapes-construction-raw.md) | minor |  | L | high | api | PR-5 |
 | [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 | [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |
+| [BUG-320 — Console examples fail on Windows, decoding their output as the locale](BUG-320-console-examples-fail-on-windows-decoding-their-output-as-the-locale.md) | trivial |  | S | low | none | PR-35 |
 
 <!-- tickets:end -->

@@ -17,7 +17,7 @@ Until BUG-202 a delete reached the writer, which raised its own error.
   These rules read the *value*, not the declared type, which is why the untyped path can share them; only widening an `int` to a `float` needs a type, so it never happens on a raw dict ([pipeline](../pipeline/api-seams.md#public-api-seams)).
   An instance of a builtin's subclass is written as the builtin, whatever the field's type, since PyYAML's writer refuses a subclass, and it reads back as the subclass where the field is one ([design decisions](../design-decisions/a-builtins-subclass-is-that-builtin.md#a-subclass-is-built-by-its-constructor)).
   The `_StrToken` unwrap comes before the registry lookup, so a token cannot be captured by a serializer registered for `str`.
-  A registered leaf is written by the serializer of its most specific registered type (`_coerce._registered_leaf_of`), so a `datetime` by `datetime.isoformat`, not `date`'s ([design decisions](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#an-instance-is-its-most-specific-registered-type)).
+  A registered leaf is written by the serializer of its most specific registered type (`_coerce._registered_leaf_of`), so a `datetime` by `datetime.isoformat`, not `date`'s ([design decisions](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#an-instance-is-its-most-specific-registered-type)), unless that form does not read back and its class tag does ([below](#a-leaf-is-asked-whether-it-reads-back)).
 - A registered leaf whose type `native_types` names is written as the object it is, for a writer that holds it: `dump_file()` passes its format's set, a `date` and a `datetime` for YAML and TOML, none for JSON.
   `_DumpOptions` carries the set and the tag policy down every serializer, and `_serialize_untyped` takes the set too ([design decisions](../design-decisions/the-date-and-time-types-are-built-in-leaves.md#a-writer-may-hold-a-date-natively)).
 - A dataclass is written as the fields it stores, an `init=False` one included and an `InitVar` never; a plain class as its constructor's parameters, each read from the same-named attribute, slot or property the instance holds, never from a plain class attribute ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
@@ -40,7 +40,7 @@ An `Any` node still writes what it holds untyped, with a warning, since an `Any`
 
 ## An `Any` node dumps the spec that rebuilds it
 
-An `Any` node reads every opener ([callables](../callables.md#an-any-node-reads-every-opener)), so `_serialize._serialize_any` writes what one holds by its runtime type, as the spec that rebuilds it: a dict and a list walked, each item an `Any` node in turn; a struct as `{class: <its path>, <fields>}`, its fields serialized as their types say; a callable as a Callable field writes it ([callables](../callables.md#round-trip)), with a bare path opened into `{bind: <path>}`, since an `Any` node reads a bare string as text; a leaf through `_serialize_leaf`.
+An `Any` node reads every opener ([callables](../callables.md#an-any-node-reads-every-opener)), so `_serialize._serialize_any` writes what one holds by its runtime type, as the spec that rebuilds it: a dict and a list walked, each item an `Any` node in turn; a struct as `{class: <its path>, <fields>}`, its fields serialized as their types say; a callable as a Callable field writes it ([callables](../callables.md#round-trip)), with a bare path opened into `{bind: <path>}`, since an `Any` node reads a bare string as text; a registered leaf that is a struct as that same spec ([a leaf is asked whether it reads back](#a-leaf-is-asked-whether-it-reads-back)); a leaf through `_serialize_leaf`.
 `_held_object_form` is the one place that picks the form of a value that is no container.
 
 A form is kept only if an `Any` node reads it back as the value it came from, which `_reads_back` decides by running the reader.
@@ -75,11 +75,55 @@ A plain class's `*args` member is typed as the tuple Python hands the constructo
 Before, each shape answered differently, and none warned: a struct field read its declared fields off whatever it held, so a field-less one wrote `{}` for any value and a `tuple[int, int]` holding three items wrote two; a union handed the value back untouched, a live object that only `dump_file()` refused; a leaf was written as it was.
 Refusing at `dump()` was rejected for the forensic reason above; a field-less struct's `{}` is what a descriptor-typed dataclass field dumped as, read as its descriptor class.
 
+## A leaf is asked whether it reads back
+
+`_serialize._serialize_read_leaf` writes every leaf in its form and reads that form back through `construct`, as a key is asked ([below](#a-key-that-does-not-read-back-is-written-with-a-warning)).
+What `_holds` holds is not always what construction reads: `_holds` reads a type as a type checker does, for which a `bool` is an `int` and a `datetime` a `date`, and construction refuses both.
+So `C(n=True)` warns, and `_holds` stays as it is, since construction of a built instance asks it too ([construction](construction.md#a-built-instance-is-taken-as-it-is)).
+Narrowing what `_serialize` asks to what construction takes was rejected: it would be a second model of the reader, which would still miss a registered leaf whose form its field reads as something else.
+
+A leaf reads back when construction succeeds and the result equals the value; the class need not match, as for a key (maintainer-chosen).
+So a `str` subclass, an `IntEnum` in an `int` field, a `date` subclass and a `Path` subclass are silent, and a float NaN counts as itself.
+A value of the same class also counts when it dumps back as the same form, but only where `==` cannot answer (`_serialize._equality_answers`): the class defines no `__eq__`, the value does not equal itself (`Decimal('NaN')`), or `==` raises.
+A real `False` is believed, since a serializer that drops data is idempotent, so what it rebuilt dumps back alike: `Rounded(2.6)` written `3` reads back as `Rounded(3.0)`, whose form is `3` again (maintainer-chosen).
+
+`Value at 'n' will not read back as bool: int refuses it.` says nothing comes back, and `Value at 's' will not read back as RegStr: str reads it as 'r:a'.` what does, in the sentence a key warns with (maintainer-chosen).
+It echoes the value, as a key's warning and a construction error do, so a value reaches a log; naming only types, and shortening a long reading as pydantic does, were weighed and not taken.
+
+Every registered `coerce` runs during the dump, and a leaf costs one reading: measured against the revision before it, a dump of 10,000 leaves takes 54% to 82% longer (about 30 µs per leaf, spent in the reader's own type dispatch), and a five-field dataclass 0.2 ms more (maintainer-chosen).
+
+A value a `float` field holds that no float holds, `10**400`, is written as the int, and the reading says what comes back (`float reads it as inf`): the dump records what the object holds ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)), and writing `inf` would lose it.
+Until this it raised a raw `OverflowError` out of `dump()`.
+
+**An unregistered subclass of a registered leaf is written by its class tag** (BUG-309, maintainer-chosen).
+The parent's serializer would write it as the parent, dropping its class and its own fields, so a `SubPoint(3, 4)` in a `Point`, `Point | None`, `Point | int` or `Any` position is `{class: pkg.SubPoint, x: 3, y: 4}`, and a subclass with no state of its own is tagged too, the class being what the form would lose.
+`_serialize._reading_tag` keeps the tag only if the position reads it back as the value, by the state it dumps as for a class with no `__eq__`.
+A class no tag spells, one defined in a function, or one whose constructor keeps its arguments under other names, is written by its parent's form, and warns unless that form reads back equal: a `date` or `Path` subclass, which is no struct, stays silent.
+
+**A registered struct whose form does not read back is written by its tag too**, the same rule (maintainer-chosen): a registered subclass in its parent's field, whose own form the parent refuses, and a registered leaf an `Any` node holds, which an `Any` node reads as text ([below](#an-any-node-dumps-the-spec-that-rebuilds-it)).
+A form that reads back is kept, so one object is `'3'` in a `Point` field and `{class: pkg.Point, x: 3}` in an `Any` field: the position decides what reads back, as it decides a union's tag.
+A value foreign to its field is written as an `Any` node writes it, by the same tag.
+Leaving a registered leaf to its serializer always was rejected: the dump would write what it knows will not load, when a form that loads is at hand.
+
+Until BUG-309 and BUG-317 a leaf was written as it stood, read back only inside a union.
+Precedents: pydantic warns of a `datetime` in a `date` and a `str` in an `int`, not of a `bool` in an `int`, and drops a subclass's fields (`serialize_as_any` writes them, with no class); msgspec writes the fields, reading back as the parent, with no warning; cattrs writes a hooked subclass by the parent's hook, with no warning.
+None reads back during a dump, or writes a class tag for a leaf.
+
+## A failing read-back leaves the dump whole
+
+A registered `coerce` and an `__eq__` may raise anything, so reading back runs under `except Exception`, as `_typed_read` reads a tagged leaf (BUG-269), and a dump always finishes (maintainer-chosen).
+A reader that raises answers no: the value is written, and the warning names what it raised, `Boom refuses it (RuntimeError: boom)`.
+An `==` that raises answers nothing, and leaves the same-class test to decide, so `Decimal('sNaN')`, whose `==` raises `InvalidOperation`, is silent ([above](#a-leaf-is-asked-whether-it-reads-back)).
+The same holds of a value, a union and a key, and until this a `RuntimeError` from a reader escaped `dump()` in a union and at a key.
+Letting it escape, as pydantic and msgspec let it escape a reader, was rejected: there the read is the operation that failed, here the dump is not, and a value that dumps today would start crashing it.
+Staying silent was rejected too: a value that really cannot be read back would go unreported.
+`warnings.filterwarnings("error", ConfargWarning)` makes it fatal for whoever wants that.
+
 ## A key that does not read back is written with a warning
 
 A key reads back from its text, as a token, as its key type reads every key ([which keys are one key](../pipeline/deep-merge.md#which-keys-are-one-key)).
 So most keys round-trip, `1` and `'a'` of a `dict[int | str, V]`, `None` of a `dict[int | None, V]` (written `null`), but the text `'1'`, which only code builds, reads back as the int.
-No `__cast__` spells a key, so `dump()` writes it and warns (`_serialize._warn_an_unread_key`), as it writes a leaf no cast can pin with a warning: the dump is forensic ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
+No `__cast__` spells a key, so `dump()` writes it and warns (`_serialize._warn_an_unread_key`, through the reading a value is asked by, `_what_reading_answers`), as it writes a leaf no cast can pin with a warning: the dump is forensic ([the object dump is forensic](../design-decisions/the-object-dump-writes-state.md#the-object-dump-is-forensic)).
 `Key '1' at 'm' will not read back as str: int reads its text as 1.` says what comes back, and `Key 'x' at 'm' will not read back as str: int refuses its text.` that nothing does; one sentence serves every key type.
 
 A key reads back when its key type holds it (`_holding._holds`) and reads its text as an equal value (maintainer-chosen).

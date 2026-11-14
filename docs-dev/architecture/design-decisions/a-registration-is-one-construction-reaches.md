@@ -60,7 +60,7 @@ A parameterized form itself is still refused at registration, as no class, its r
 
 An annotation and a value read the registry differently, on purpose.
 An annotation reads through the registration of its own class only: a field annotated by an unregistered subclass of a registered class is no registered leaf, since the subclass's constructor may take other arguments than the coercion builds *(inferred)*.
-A value is written by its most specific registered class in its MRO (`_registered_leaf_of`), so an instance of that subclass held by a field of the registered class is written by the class's serializer ([an instance is its most specific registered type](the-date-and-time-types-are-built-in-leaves.md#an-instance-is-its-most-specific-registered-type)).
+A value is written by its most specific registered class in its MRO (`_registered_leaf_of`), so an instance of that subclass held by a field of the registered class would be written by the class's serializer ([an instance is its most specific registered type](the-date-and-time-types-are-built-in-leaves.md#an-instance-is-its-most-specific-registered-type)); it is written by its own class tag when that reads back, and by that serializer only when it does not ([a leaf is asked whether it reads back](../types/serialization.md#a-leaf-is-asked-whether-it-reads-back)).
 
 ## Rejected
 

@@ -10,6 +10,7 @@ Dev Notes:
 
 from __future__ import annotations
 
+import contextlib
 import enum
 import inspect
 import math
@@ -71,7 +72,7 @@ from confarg.typedload._construct import _disambiguate_struct, _spell_key, const
 from confarg.typedload._holding import _find_variant_type, _holds, _holds_anything, _literal_holds, _variant_holds
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Hashable, Iterable
 
 
 @dataclass(frozen=True)
@@ -207,7 +208,7 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
             return _serialize_any(instance, path, opts)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
             _refuse_an_unread_literal_member(tp, instance, path)
-            return _serialize_leaf(tp, instance, opts.native_types)
+            return _serialize_read_leaf(tp, instance, path, opts)
 
 
 def _refuse_an_undumpable_type(tp: Any, path: FieldPath) -> None:
@@ -414,7 +415,9 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
     Dev Notes:
         docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
     """
-    if isinstance(instance, (str, int, float, enum.Enum)) or _registered_leaf_of(instance) is not None:
+    cls = type(instance)
+    a_leaf = _registered_leaf_of(instance) is not None and (callable(instance) or not _is_struct(cls))
+    if a_leaf or isinstance(instance, (str, int, float, enum.Enum)):
         return _serialize_leaf(None, instance, opts.native_types)
     if callable(instance):
         spec = _serialize_callable(
@@ -422,13 +425,22 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
             lambda owner: _serialize_struct(type(owner), owner, path, opts),
         )
         return _untyped_at(promote_bare_spec(spec) if isinstance(spec, str) else spec, path, opts)
-    cls = type(instance)
     if _is_struct(cls):
-        fields = _serialize_struct(cls, instance, path, opts)
-        refuse_a_field_spelling_an_object_opener(fields, cls, "its", _defaults.CLASS_KEY)
-        return {_defaults.CLASS_KEY: _class_path(cls), **fields}
+        return _tagged_spec(cls, instance, path, opts)
     _refuse_an_unsupported_leaf(cls, path)
     return _serialize_leaf(None, instance, opts.native_types)
+
+
+def _tagged_spec(cls: type, instance: Any, path: FieldPath, opts: _DumpOptions) -> dict[str, Any]:
+    """Return the struct *instance* of class *cls* as the class key beside its fields.
+
+    Raises:
+        ConfargError: If *cls* has no dotted path (:func:`_class_path`), or a field is spelled
+            like an object opener.
+    """
+    fields = _serialize_struct(cls, instance, path, opts)
+    refuse_a_field_spelling_an_object_opener(fields, cls, "its", _defaults.CLASS_KEY)
+    return {_defaults.CLASS_KEY: _class_path(cls), **fields}
 
 
 def _warn_unread_any(instance: Any, path: FieldPath, reason: str) -> None:
@@ -635,6 +647,26 @@ def _serialize_union(
     # None, and a dump holds none. Reading it back would only build the value again.
     if len(_union_args_no_none(tp)) == 1:
         return serialized
+    return _pinned_to_its_variant(tp, variant_tp, instance, serialized, path=path, opts=opts)
+
+
+def _pinned_to_its_variant(  # noqa: PLR0913  # the union's question, asked of what its variant wrote
+    tp: Any,
+    variant_tp: Any,
+    instance: Any,
+    serialized: Any,
+    *,
+    path: FieldPath,
+    opts: _DumpOptions,
+) -> Any:
+    """Return *serialized*, which the union *tp*'s *variant_tp* wrote, in the form *tp* reads back as that variant.
+
+    Bare if it reads back so, else cast, and bare with a :class:`ConfargWarning` when only
+    another variant reads it.
+
+    Dev Notes:
+        docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
+    """
     # The Any variant already wrote what a bare Any field reads back, or warned that nothing
     # does: the union must read the dump back as that Any reading, its cast the dump's own type.
     holds_anything = _holds_anything(variant_tp)
@@ -646,15 +678,23 @@ def _serialize_union(
             return _serialize_any(back, path, opts, checked=False)
         return _serialize(variant_tp, back, path, opts)
 
+    def is_own(back: Any) -> bool:
+        return _find_variant_type(tp, back) == variant_tp
+
+    # An Any variant holds every value, so only the class says the reading is its own. Any other
+    # is the variant the union would write what it read back as: a subclass reads back as its parent.
+    own = None if holds_anything else is_own
     # A callable read back from its spec, an instance, a partial or a bound method, compares
     # equal to nothing but itself: it is the same value when it dumps back as the same spec.
-    by_state = dumps_as if holds_anything or _is_callable(variant_tp) else None
-    if _reads_back(tp, expected, serialized, dumps_as=by_state):
+    by_state = dumps_as if holds_anything or _is_callable(variant_tp) or not _equality_answers(instance) else None
+    if _reads_back(tp, expected, serialized, dumps_as=by_state, own=own):
         return serialized
     cast = _cast_dict(type(serialized) if holds_anything else variant_tp, serialized)
-    if _reads_back(tp, expected, cast, dumps_as=by_state):
+    if _reads_back(tp, expected, cast, dumps_as=by_state, own=own):
         return cast
-    _warn_unpinnable_leaf(variant_tp, serialized, path)
+    # A variant that cannot read its own form has said so, at the leaf: no other variant took it.
+    if _reads_back(variant_tp, expected, serialized, dumps_as=by_state, own=lambda _: True):
+        _warn_unpinnable_leaf(variant_tp, serialized, path)
     return serialized
 
 
@@ -685,6 +725,7 @@ def _reads_back(
     data: Any,
     *,
     dumps_as: Callable[[Any], Any] | None = None,
+    own: Callable[[Any], bool] | None = None,
 ) -> bool:
     """Check that reading *data* back as *tp* produces *expected*.
 
@@ -700,35 +741,70 @@ def _reads_back(
         dumps_as: Serializes a value read back that does not compare equal: an object built
             from a spec, a bound method or a partial is the same value when it holds the same
             state, so dumps back as *data*.
+        own: Answers whether what is read back is the reading asked for, in place of its being
+            of *expected*'s class; the class is asked when omitted.
 
     Returns:
-        True if construction yields a value of the same type that compares equal, or that
-        *dumps_as* writes as *data*.
+        True if construction yields a value of the same type, or one *own* accepts, that
+        compares equal, or that *dumps_as* writes as *data*. False when reading *data* raises
+        anything.
 
     Dev Notes:
         docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
         docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
+        docs-dev/architecture/types/serialization.md#a-failing-read-back-leaves-the-dump-whole
     """
     try:
-        back = construct(tp, data)
-    except (ConfargError, TypeError, ValueError):
+        back = _read_quietly(lambda: construct(tp, data))
+    except Exception:  # noqa: BLE001  # a reader may raise anything: the dump finishes
         return False
-    return type(back) is type(expected) and _same_value(back, expected, data, dumps_as)
+    is_own = type(back) is type(expected) if own is None else own(back)
+    return is_own and _same_value(back, expected, data, dumps_as)
+
+
+def _read_quietly(read: Callable[[], Any]) -> Any:
+    """Return what *read* reads, without the warnings construction gives of what it builds."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConfargWarning)
+        return read()
 
 
 def _same_value(back: Any, expected: Any, data: Any, dumps_as: Callable[[Any], Any] | None) -> bool:
-    """Return whether *back*, read back from *data*, is the value *expected* (:func:`_reads_back`)."""
-    try:
-        # `is` first: a value that passes through unchanged round-trips even when it does not
-        # compare equal to itself (float('nan')).
+    """Return whether *back*, read back from *data*, is the value *expected* (:func:`_reads_back`).
+
+    It is when the two compare equal, or are both a float NaN. Otherwise, a value of *expected*'s
+    class is when *dumps_as* writes it as *data*; an ``==`` that raises answers nothing, and
+    leaves this to decide.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-failing-read-back-leaves-the-dump-whole
+    """
+    # `is` first: a value that passes through unchanged round-trips even when it does not
+    # compare equal to itself.
+    with contextlib.suppress(Exception):
         if back is expected or back == expected:
             return True
-        if dumps_as is None:
-            return False
+    if _is_nan(back) and _is_nan(expected):
+        return True
+    if dumps_as is None or type(back) is not type(expected):
+        return False
+    try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ConfargWarning)
             return bool(dumps_as(back) == data)
-    except (ConfargError, TypeError, ValueError):
+    except Exception:  # noqa: BLE001  # a value's own == may raise anything: the dump finishes
+        return False
+
+
+def _equality_answers(value: Any) -> bool:
+    """Return whether ``==`` tells *value* from another: its class defines it, and it equals itself without raising.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-leaf-is-asked-whether-it-reads-back
+    """
+    try:
+        return type(value).__eq__ is not object.__eq__ and bool(value == value)  # noqa: PLR0124  # NaN is the question
+    except Exception:  # noqa: BLE001  # a value's own == may raise anything: the dump finishes
         return False
 
 
@@ -739,9 +815,106 @@ def _variant_reading(variant_tp: Any, data: Any) -> Any:
         docs-dev/architecture/types/serialization.md#a-widened-value-reads-back-as-its-variant-reads-it
     """
     try:
-        return construct(variant_tp, data)
-    except (ConfargError, TypeError, ValueError):
+        return _read_quietly(lambda: construct(variant_tp, data))
+    except Exception:  # noqa: BLE001  # a reader may raise anything: the dump finishes
         return data
+
+
+def _serialize_read_leaf(tp: Any, instance: Any, path: FieldPath, opts: _DumpOptions) -> Any:
+    """Write the leaf *instance* of declared type *tp* in a form that reads back, or warn that none does.
+
+    An unregistered subclass of a registered leaf is written as its class tag, which keeps the
+    class its parent's serializer would lose, and any other value as its form. A value whose
+    form does not read back is written as its tag if that does, else as its form, with a
+    :class:`ConfargWarning` saying what comes back.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-leaf-is-asked-whether-it-reads-back
+    """
+    written = _serialize_leaf(tp, instance, opts.native_types)
+    reading = _what_reading_answers(
+        lambda: construct(tp, written),
+        instance,
+        written,
+        lambda back: _serialize_leaf(tp, back, opts.native_types),
+        it="it",
+    )
+    if reading is not None or _is_a_registered_leafs_subclass(instance):
+        tag = _reading_tag(tp, instance, path, opts)
+        if tag is not None:
+            return tag
+    if reading is not None:
+        warnings.warn(
+            f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
+            f" {_spell_type(type(instance))}: {_spell_type(tp)} {reading}.",
+            ConfargWarning,
+            stacklevel=2,
+        )
+    return written
+
+
+def _is_a_registered_leafs_subclass(value: Any) -> bool:
+    """Return whether *value* is registered only through an ancestor, whose serializer would write it."""
+    leaf_tp = _registered_leaf_of(value)
+    return leaf_tp is not None and leaf_tp is not type(value)
+
+
+def _reading_tag(tp: Any, instance: Any, path: FieldPath, opts: _DumpOptions) -> dict[str, Any] | None:
+    """Return *instance* as its class tag when a *tp* position reads the tag back as it, None otherwise.
+
+    What the fields warn belongs to the tag, so it is said only if the tag is kept. A class
+    whose state cannot be read has no tag.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-leaf-is-asked-whether-it-reads-back
+    """
+    cls = type(instance)
+    if not _is_struct(cls):
+        return None
+    with warnings.catch_warnings(record=True) as within:
+        warnings.simplefilter("always", ConfargWarning)
+        try:
+            tag = _tagged_spec(cls, instance, path, opts)
+        except Exception:  # noqa: BLE001  # a class's state may raise anything: its form is what is left
+            return None
+    if not _reads_back(tp, instance, tag, dumps_as=lambda back: _tagged_spec(cls, back, path, opts)):
+        return None
+    for w in within:
+        warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
+    return tag
+
+
+def _what_reading_answers(  # noqa: PLR0913  # the one question a value and a key share
+    read: Callable[[], Any],
+    value: Any,
+    data: Any,
+    dumps_as: Callable[[Any], Any],
+    *,
+    it: str,
+    held: bool = True,
+) -> str | None:
+    """Return what reading *data* back answers, in the words of a warning, or None if it is *value* again.
+
+    Args:
+        read: Reads *data* back.
+        value: What the reading must give (:func:`_same_value`).
+        data: The written form.
+        dumps_as: Serializes what is read back.
+        it: What is read, as the warning names it.
+        held: Whether the type holds *value*; if not, no reading gives it back.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-failing-read-back-leaves-the-dump-whole
+    """
+    try:
+        back = _read_quietly(read)
+    except (ConfargError, TypeError, ValueError):
+        return f"refuses {it}"
+    except Exception as e:  # noqa: BLE001  # a reader may raise anything: the dump finishes, and says what it was
+        return f"refuses {it} ({type(e).__name__}: {e})"
+    if held and _same_value(back, value, data, None if _equality_answers(value) else dumps_as):
+        return None
+    return f"reads {it} as {_spell_key(back)}"
 
 
 def _serialize_tuple(
@@ -810,7 +983,7 @@ def _written_dict(  # noqa: PLR0913  # the one walk both dict writers share
     for k, v in instance.items():
         key = _serialize_leaf(kt, k, opts.native_types)
         if checked:
-            _warn_an_unread_key(kt, k, key, path)
+            _warn_an_unread_key(kt, k, key, path, opts)
         if key in spelled_by:
             where = _spell_field_path(path) or _defaults.ROOT_KEY
             raise ConfargError.keys_serialized_alike(spelled_by[key], k, key, where)
@@ -819,7 +992,7 @@ def _written_dict(  # noqa: PLR0913  # the one walk both dict writers share
     return written
 
 
-def _warn_an_unread_key(kt: Any, key: Any, written: Any, path: FieldPath) -> None:
+def _warn_an_unread_key(kt: Any, key: Any, written: Any, path: FieldPath, opts: _DumpOptions) -> None:
     """Warn that the key *key* of a dict keyed by *kt*, at *path*, will not read back as itself.
 
     A key is read back from the text a file writes it as (:func:`_key_spelling`), as a token;
@@ -831,14 +1004,16 @@ def _warn_an_unread_key(kt: Any, key: Any, written: Any, path: FieldPath) -> Non
         docs-dev/architecture/types/serialization.md#a-key-that-does-not-read-back-is-written-with-a-warning
     """
     text = written if isinstance(written, str) else _key_spelling(written)
-    try:
-        read = read_key(kt, text, path)
-    except (ConfargError, TypeError, ValueError):
-        reading = "refuses its text"
-    else:
-        if _holds(_resolve_type(kt), key) and (read == key or (_is_nan(read) and _is_nan(key))):
-            return
-        reading = f"reads its text as {_spell_key(read)}"
+    reading = _what_reading_answers(
+        lambda: read_key(kt, text, path),
+        key,
+        written,
+        lambda back: _serialize_leaf(kt, back, opts.native_types),
+        it="its text",
+        held=_holds(_resolve_type(kt), key),
+    )
+    if reading is None:
+        return
     warnings.warn(
         f"Key {text!r} at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
         f" {_spell_type(type(key))}: {_spell_type(kt)} {reading}.",
@@ -882,7 +1057,8 @@ def _serialize_leaf(tp: Any, value: Any, native_types: tuple[type, ...] = ()) ->
     if (form := _object_form(value, native_types)) is not value:
         return form
     if tp is float and isinstance(value, int) and not isinstance(value, bool):
-        return float(value)
+        with contextlib.suppress(OverflowError):  # no float holds it: the dump records the int
+            return float(value)
     if (builtin := _subclassed_scalar(value)) is not None:
         return builtin(value)  # the builtin a writer holds, which reads back as the subclass
     if isinstance(value, type):
@@ -944,23 +1120,47 @@ def _a_writer_holds(value: Any) -> bool:
 
 
 def written_form(value: Any) -> Any:
-    """Return *value* as an expression writes it: each Enum member and registered leaf in its dump form.
+    """Return *value* as an expression writes it into text: each Enum member and registered leaf in its dump form.
 
-    What a resolved expression leaves in the data, and what an interpolation stringifies: the
-    form :func:`_serialize_leaf` dumps such an object in, never its ``str()``, so ``${c}``
-    writes ``red`` and a path its forward slashes. A dict or a list is walked, and copied only
-    where something in it changed; anything else is returned as it is.
+    What an interpolation stringifies and a computed key spells: the form :func:`_serialize_leaf`
+    dumps such an object in, never its ``str()``, so ``${c}`` writes ``red`` and a path its
+    forward slashes. A dict or a list is walked, and copied only where something in it changed;
+    anything else is returned as it is.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#a-typed-leaf-reads-as-its-object
     """
+    return _walk_written(value, (), lambda leaf, _: _object_form(leaf))
+
+
+def left_form(value: Any, path: tuple[Hashable, ...]) -> Any:
+    """Return *value* as a whole expression at *path* leaves it in the data.
+
+    As :func:`written_form` writes it, but for an unregistered subclass of a registered leaf,
+    left as its class tag: its parent's form would rebuild the parent. One no tag reads back
+    keeps that form, with a :class:`ConfargWarning` naming *path*.
+
+    Dev Notes:
+        docs-dev/architecture/expressions/values-and-references.md#a-whole-expression-leaves-a-subclass-as-its-tag
+    """
+
+    def leaf_form(leaf: Any, at: FieldPath) -> Any:
+        if _is_a_registered_leafs_subclass(leaf):
+            return _serialize_read_leaf(_registered_leaf_of(leaf), leaf, at, _DumpOptions("auto"))
+        return _object_form(leaf)
+
+    return _walk_written(value, tuple(s if isinstance(s, str | int) else str(s) for s in path), leaf_form)
+
+
+def _walk_written(value: Any, path: FieldPath, leaf_form: Callable[[Any, FieldPath], Any]) -> Any:
+    """Return *value* with *leaf_form* applied to what it holds, copying only where something changed."""
     if isinstance(value, dict):
-        items = {k: written_form(v) for k, v in value.items()}
+        items = {k: _walk_written(v, (*path, str(k)), leaf_form) for k, v in value.items()}
         return value if all(items[k] is v for k, v in value.items()) else items
     if isinstance(value, list):
-        elements = [written_form(v) for v in value]
+        elements = [_walk_written(v, (*path, i), leaf_form) for i, v in enumerate(value)]
         return value if all(a is b for a, b in zip(elements, value, strict=True)) else elements
-    return _object_form(value)
+    return leaf_form(value, path)
 
 
 def _class_path(cls: type) -> str:

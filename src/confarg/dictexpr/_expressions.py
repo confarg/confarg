@@ -537,9 +537,12 @@ def _refuse_normalized_names(body: str) -> None:
 #: per key or list position, as the data names it) and the value held there, what it reads.
 type Reader = Callable[[MergeDict, Sequence[Hashable], Any], Any]
 
-#: How a resolved expression is written: given what it evaluated to, what the data holds and
-#: an interpolation stringifies.
+#: How an expression is written into text: given what it evaluated to, what an interpolation
+#: stringifies and a computed key spells.
 type Writer = Callable[[Any], Any]
+
+#: What a whole expression leaves in the data: given what it evaluated to and its position.
+type Leaver = Callable[[Any, _Path], Any]
 
 #: What a node holding a pending list op becomes once every expression below it resolved: given
 #: the data, the node's position and the node, the value to stand there (the node itself for none).
@@ -562,21 +565,24 @@ class _Namespace(dict[Any, Any]):
         read: Reader | None = None,
         write: Writer | None = None,
         copies: Copies | None = None,
+        leave: Leaver | None = None,
     ) -> None:
         super().__init__(data)
         self.read = read
         self.write: Writer = write or (lambda value: value)
+        self.leave: Leaver = leave or (lambda value, _: self.write(value))
         #: The size of everything this resolution has computed so far (:func:`_charged`).
         self.spent = 0
         #: The copy budget of the configuration being resolved, which every read charges (:func:`_read_through`).
         self.copies = Copies() if copies is None else copies
 
 
-def resolve_expressions(
+def resolve_expressions(  # noqa: PLR0913  # each is one way the caller's types reach the engine
     data: dict[Any, Any],
     *,
     read: Reader | None = None,
     write: Writer | None = None,
+    leave: Leaver | None = None,
     settle: Settler | None = None,
     copies: Copies | None = None,
 ) -> MergeDict:
@@ -585,8 +591,10 @@ def resolve_expressions(
     Args:
         data: The merged configuration dict.
         read: What an expression reads of the value at a position; the value itself when omitted.
-        write: What a resolved expression leaves in the data, and an interpolation stringifies;
-            the value itself when omitted.
+        write: What an interpolation stringifies and a computed key spells; the value itself
+            when omitted.
+        leave: What a whole expression leaves in the data, given the value and its position;
+            what *write* writes when omitted.
         settle: What a node holding a pending list op becomes once the last expression below
             it resolved, before anything reading the node does; left as it is when omitted.
         copies: The copy budget of the configuration being resolved, which each read charges;
@@ -611,7 +619,7 @@ def resolve_expressions(
     if not expr_fields:
         return data
 
-    data = _Namespace(data, read, write, copies)
+    data = _Namespace(data, read, write, copies, leave)
     _copy_written_paths(data, expr_fields)
 
     # 2. Extract references and build dependency graph
@@ -1427,7 +1435,7 @@ def _resolve_single(expr_str: str, namespace: _Namespace, node_path: _Path = ())
     if is_whole_expression(expr_str):
         # Pure expression — return typed result
         tree = _parse_anchored(cast("str", spans[0].body), node_path)
-        return namespace.write(_eval_expr(tree, namespace, expr_str))
+        return namespace.leave(_eval_expr(tree, namespace, expr_str), node_path)
 
     # Interpolation or escape mode: build string from parts, as one computed value
 

@@ -990,8 +990,6 @@ class TestDumpForeignValue:
         ("field_type", "held", "written"),
         [
             pytest.param(float, 1, 1.0, id="float-int"),
-            pytest.param(float, True, 1.0, id="float-bool"),
-            pytest.param(int, True, True, id="int-bool"),
             pytest.param(_SubBase, _SubChild(value=1.0), {"value": 1.0, "class": f"{_MOD}._SubChild"}, id="subclass"),
             pytest.param(Sequence[int], (1, 2), [1, 2], id="sequence-tuple"),
             pytest.param(Optional[Sequence[int]], (1, 2), [1, 2], id="optional-sequence-tuple"),
@@ -1485,7 +1483,7 @@ class TestDumpRegisteredLeafTypes:
     @pytest.mark.parametrize("suffix", [".toml", ".yaml", ".json"])
     def test_serialize_hook_may_return_a_non_string(self, tmp_path: Path, suffix: str) -> None:
         """A serializer returning a native scalar keeps that type in the file."""
-        confarg.register_leaf_type(_Version, _coerce_version, serialize=lambda v: v.major)
+        confarg.register_leaf_type(_Version, lambda v: _Version(int(v), 0), serialize=lambda v: v.major)
         WithVersion = make_target("v", _Version, default=_Version(0, 0))
 
         path = tmp_path / f"out{suffix}"
@@ -1494,7 +1492,7 @@ class TestDumpRegisteredLeafTypes:
 
     def test_serialize_defaults_to_str(self) -> None:
         """Omitting serialize= falls back to str(), warts and all."""
-        confarg.register_leaf_type(_Version, _coerce_version)
+        confarg.register_leaf_type(_Version, lambda v: _coerce_version(str(v).strip("<Version >")))
         WithVersion = make_target("v", _Version, default=_Version(0, 0))
         assert confarg.dump(WithVersion(v=_Version(1, 2))) == {"v": "<Version 1.2>"}
 
@@ -1869,7 +1867,8 @@ class TestDateAndTimeDump:
     def test_a_datetime_is_written_by_its_own_type(self) -> None:
         """A datetime held where a date is declared keeps its time: it is a datetime, not the date it subclasses."""
         held = _Schedule(when=datetime.datetime(2021, 2, 3, 10))
-        assert confarg.dump(held)["when"] == "2021-02-03T10:00:00"
+        with pytest.warns(ConfargWarning, match="will not read back as datetime: date refuses it"):
+            assert confarg.dump(held)["when"] == "2021-02-03T10:00:00"
 
 
 class TestNativeTypes:
@@ -1887,7 +1886,8 @@ class TestNativeTypes:
     def test_a_value_matches_by_its_own_type(self) -> None:
         """``(date,)`` keeps a date and still writes a datetime as text."""
         held = _Schedule(when=datetime.datetime(2021, 2, 3, 10))
-        dumped = confarg.dump(held, native_types=(datetime.date,))
+        with pytest.warns(ConfargWarning, match="will not read back as datetime: date refuses it"):
+            dumped = confarg.dump(held, native_types=(datetime.date,))
         assert dumped["when"] == "2021-02-03T10:00:00"
         assert confarg.dump(_Schedule(), native_types=(datetime.date,))["when"] == datetime.date(2021, 2, 3)
 
@@ -2314,3 +2314,441 @@ class TestAWidenedValueInAUnionReadsBackAsItsVariantReadsIt:
     def test_silent(self, union: Any, value: Any, written: Any) -> None:
         """No other variant takes the dump, so nothing warns that one does."""
         assert _dumped(union, value) == ({"f": written}, [])
+
+
+@_dc
+class _Mark:
+    x: int = 0
+
+
+@_dc
+class _SubMark(_Mark):
+    y: int = 0
+
+
+@_dc
+class _SameMark(_Mark):
+    pass
+
+
+@_dc
+class _RegisteredSubMark(_Mark):
+    y: int = 0
+
+
+class _OpaqueMark(_Mark):
+    """Keeps nothing under the names of its parameters, so no tag spells it."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(args[0])
+
+
+class _NoEqMark:
+    def __init__(self, v: int) -> None:
+        self.v = v
+
+
+class _SubNoEqMark(_NoEqMark):
+    pass
+
+
+class _LossyMark:
+    """A registered leaf whose serializer drops the decimals."""
+
+    def __init__(self, v: float) -> None:
+        self.v = v
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _LossyMark) and other.v == self.v
+
+    def __hash__(self) -> int:
+        return hash(self.v)
+
+
+class _SubDay(datetime.date):
+    pass
+
+
+class _SubPath(Path):
+    pass
+
+
+class _PickyMark:
+    """A registered leaf whose constructor takes one spelling, and which holds both, one of them unwritable."""
+
+    def __init__(self, a: Any = None, b: Any = None) -> None:
+        if (a is None) == (b is None):
+            msg = "one of a or b"
+            raise TypeError(msg)
+        self.a = a or b.decode()
+        self.b = b or a.encode()
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _PickyMark) and other.a == self.a
+
+    def __hash__(self) -> int:
+        return hash(self.a)
+
+
+class _SubPickyMark(_PickyMark):
+    pass
+
+
+class _Text(str):
+    __slots__ = ()
+
+
+class _Int(int):
+    __slots__ = ()
+
+
+class _Float(float):
+    __slots__ = ()
+
+
+class _RegisteredText(str):
+    __slots__ = ()
+
+
+class _Perm(enum.Flag):
+    R = 1
+    W = 2
+
+
+class _Boom:
+    """A registered leaf whose reader raises what no reader is expected to, and no tag spells."""
+
+    def __init__(self, *args: Any) -> None:
+        pass
+
+
+class _EqRaises:
+    """A registered leaf that cannot be compared, read back by its state."""
+
+    def __init__(self, v: str) -> None:
+        self.v = v
+
+    def __eq__(self, other: object) -> bool:
+        msg = "no compare"
+        raise LookupError(msg)
+
+    def __hash__(self) -> int:
+        return 1
+
+
+def _boom(value: object) -> _Boom:
+    msg = "boom"
+    raise RuntimeError(msg)
+
+
+def _read_registered_sub_mark(value: object) -> _RegisteredSubMark:
+    x, y = str(value).split(":")
+    return _RegisteredSubMark(int(x), int(y))
+
+
+@pytest.fixture
+def _marks(leaf_registry: None) -> None:
+    confarg.register_leaf_type(_Mark, lambda v: _Mark(int(v)), serialize=lambda m: str(m.x))
+    confarg.register_leaf_type(_RegisteredSubMark, _read_registered_sub_mark, serialize=lambda m: f"{m.x}:{m.y}")
+    confarg.register_leaf_type(_NoEqMark, lambda v: _NoEqMark(int(v)), serialize=lambda m: str(m.v))
+    confarg.register_leaf_type(_LossyMark, lambda v: _LossyMark(float(v)), serialize=lambda m: round(m.v))
+    confarg.register_leaf_type(
+        _RegisteredText,
+        lambda v: _RegisteredText(str(v).removeprefix("r:")),
+        serialize=lambda t: f"r:{str.__str__(t)}",
+    )
+    confarg.register_leaf_type(_PickyMark, _PickyMark, serialize=lambda m: m.a)
+    confarg.register_leaf_type(_Boom, _boom, serialize=lambda _: "x")
+    confarg.register_leaf_type(_EqRaises, _EqRaises, serialize=lambda e: e.v)
+
+
+def _class_tag(cls: type, **fields: Any) -> dict[str, Any]:
+    """Return the dict whose class key names *cls*, beside *fields*."""
+    return {"class": f"{cls.__module__}.{cls.__qualname__}", **fields}
+
+
+_BIG = 10**400
+
+
+@pytest.mark.usefixtures("_marks")
+class TestARegisteredLeafsSubclassDumpsItsTag:
+    """An unregistered subclass of a registered leaf is written by its tag when the tag reads back (BUG-309)."""
+
+    @pytest.mark.parametrize(
+        "tp",
+        [
+            pytest.param(_Mark, id="leaf"),
+            pytest.param(_Mark | None, id="optional"),
+            pytest.param(_Mark | int, id="union"),
+            pytest.param(Any, id="any"),
+        ],
+    )
+    def test_its_own_fields_are_kept(self, tp: Any) -> None:
+        """The tag reads back as the subclass where the parent's form would drop its fields."""
+        value = _SubMark(3, 4)
+        dumped, said = _dumped(tp, value)
+        assert (dumped, said) == ({"f": _class_tag(_SubMark, x=3, y=4)}, [])
+        assert confarg.build(make_target("f", tp), dumped).f == value
+
+    def test_one_with_no_state_of_its_own_is_tagged_too(self) -> None:
+        """The class is what the parent's form would lose."""
+        assert _dumped(_Mark, _SameMark(3)) == ({"f": _class_tag(_SameMark, x=3)}, [])
+
+    def test_one_with_no_eq_is_the_same_when_it_dumps_back_as_the_same_tag(self) -> None:
+        """The rebuilt object compares equal to nothing but itself, and holds the same state."""
+        assert _dumped(_NoEqMark, _SubNoEqMark(3)) == ({"f": _class_tag(_SubNoEqMark, v=3)}, [])
+
+    def test_a_list_item_and_a_dict_value_are_tagged(self) -> None:
+        """The answer is the leaf's, wherever it sits."""
+        assert _dumped(list[_Mark], [_SubMark(3, 4)]) == ({"f": [_class_tag(_SubMark, x=3, y=4)]}, [])
+        assert _dumped(dict[str, _Mark], {"a": _SubMark(3, 4)}) == ({"f": {"a": _class_tag(_SubMark, x=3, y=4)}}, [])
+
+    def test_it_loads_back_from_a_file(self, tmp_path: Path) -> None:
+        """A tag is plain data every writer holds."""
+        target = make_target("f", _Mark)
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(target(f=_SubMark(3, 4)), path)
+        assert confarg.load(target, files=[path], argv=[], env={}).f == _SubMark(3, 4)
+
+    def test_one_no_tag_spells_is_written_as_its_parent_with_a_warning(self) -> None:
+        """No tag reads back, so the parent's form is what is left, and it loses the class."""
+        assert _dumped(_Mark, _OpaqueMark(3)) == (
+            {"f": "3"},
+            ["Value at 'f' will not read back as _OpaqueMark: _Mark reads it as _Mark(x=3)."],
+        )
+
+    def test_a_class_with_no_dotted_path_is_written_as_its_parent_with_a_warning(self) -> None:
+        """A class defined in a function has no path a tag could name."""
+
+        @_dc
+        class Local(_Mark):
+            y: int = 0
+
+        assert _dumped(_Mark, Local(3, 4)) == (
+            {"f": "3"},
+            ["Value at 'f' will not read back as Local: _Mark reads it as _Mark(x=3)."],
+        )
+
+    @pytest.mark.parametrize(
+        ("tp", "value", "written"),
+        [
+            pytest.param(datetime.date, _SubDay(2020, 1, 1), "2020-01-01", id="date"),
+            pytest.param(Path, _SubPath("a"), "a", id="path"),
+            pytest.param(_PickyMark, _SubPickyMark("a"), "a", id="tag-refused"),
+            pytest.param(_PickyMark | None, _SubPickyMark("a"), "a", id="optional-tag-refused"),
+        ],
+    )
+    def test_one_that_reads_back_equal_as_its_parent_is_silent(self, tp: Any, value: Any, written: Any) -> None:
+        """No tag spells it, and nothing the program compares is lost; the tag tried leaves no warning of its own."""
+        assert _dumped(tp, value) == ({"f": written}, [])
+
+
+@pytest.mark.usefixtures("_marks")
+class TestARegisteredValueIsTaggedWhenItsFormDoesNotReadBack:
+    """A registered struct whose written form does not read back is written by the tag that does."""
+
+    @pytest.mark.parametrize(
+        "tp",
+        [pytest.param(_Mark, id="leaf"), pytest.param(_Mark | int, id="union"), pytest.param(Any, id="any")],
+    )
+    def test_a_registered_subclass_in_its_parents_position(self, tp: Any) -> None:
+        """The parent refuses the subclass's own form."""
+        assert _dumped(tp, _RegisteredSubMark(3, 4)) == ({"f": _class_tag(_RegisteredSubMark, x=3, y=4)}, [])
+
+    def test_a_registered_leaf_an_any_node_holds(self) -> None:
+        """An ``Any`` node reads its form as text."""
+        assert _dumped(Any, _Mark(3)) == ({"f": _class_tag(_Mark, x=3)}, [])
+
+    def test_a_form_that_reads_back_is_kept(self) -> None:
+        """The tag is only for what the form cannot carry."""
+        assert _dumped(_Mark, _Mark(3)) == ({"f": "3"}, [])
+        assert _dumped(_RegisteredSubMark, _RegisteredSubMark(3, 4)) == ({"f": "3:4"}, [])
+
+    def test_a_serializer_that_loses_state(self) -> None:
+        """Its form reads back as another value, and its tag holds the state."""
+        assert _dumped(_LossyMark, _LossyMark(2.6)) == ({"f": _class_tag(_LossyMark, v=2.6)}, [])
+
+    def test_a_value_foreign_to_its_field_is_written_as_an_any_node_holds_it(self) -> None:
+        """A foreign value still says it does not read back."""
+        dumped, said = _dumped(int, _Mark(3))
+        assert dumped == {"f": _class_tag(_Mark, x=3)}
+        assert len(said) == 1
+        assert said[0].startswith("Value at 'f' will not read back: its _Mark is no value of int")
+
+
+@pytest.mark.usefixtures("_marks")
+class TestALeafThatDoesNotReadBackWarns:
+    """Every leaf is asked whether it reads back, as a key is (BUG-317)."""
+
+    @pytest.mark.parametrize(
+        ("tp", "value", "written", "reason"),
+        [
+            pytest.param(int, True, True, "as bool: int refuses it.", id="bool-in-int"),
+            pytest.param(float, True, True, "as bool: float refuses it.", id="bool-in-float"),
+            pytest.param(int | None, True, True, "as bool: int refuses it.", id="bool-in-an-optional-int"),
+            pytest.param(
+                str,
+                _RegisteredText("a"),
+                "r:a",
+                "as _RegisteredText: str reads it as 'r:a'.",
+                id="registered-str",
+            ),
+            pytest.param(_Perm, _Perm.R | _Perm.W, 3, "as _Perm: _Perm refuses it.", id="flag-combination"),
+            pytest.param(
+                float,
+                2**53 + 1,
+                float(2**53 + 1),
+                "as int: float reads it as 9007199254740992.0.",
+                id="rounded",
+            ),
+            pytest.param(float, _BIG, _BIG, "as int: float reads it as inf.", id="too-large-for-a-float"),
+            pytest.param(float | str, _BIG, _BIG, "as int: float reads it as inf.", id="too-large-in-a-union"),
+        ],
+    )
+    def test_warns(self, tp: Any, value: Any, written: Any, reason: str) -> None:
+        """The value is written as it stands, and the warning says what comes back."""
+        assert _dumped(tp, value) == ({"f": written}, [f"Value at 'f' will not read back {reason}"])
+
+    def test_a_datetime_in_a_date_field_warns(self) -> None:
+        """A type checker reads a datetime as a date; construction refuses its text."""
+        value = datetime.datetime(2020, 1, 1, 5, tzinfo=datetime.UTC)
+        assert _dumped(datetime.date, value) == (
+            {"f": value.isoformat()},
+            ["Value at 'f' will not read back as datetime: date refuses it."],
+        )
+
+    def test_a_native_datetime_in_a_date_field_warns(self) -> None:
+        """The object a writer holds is what construction is asked to read."""
+        value = datetime.datetime(2020, 1, 1, 5, tzinfo=datetime.UTC)
+        target = make_target("f", datetime.date)
+        with pytest.warns(ConfargWarning, match="will not read back as datetime: date refuses it"):
+            assert confarg.dump(target(f=value), native_types=(datetime.datetime,)) == {"f": value}
+
+    @pytest.mark.parametrize(
+        ("tp", "value", "where"),
+        [
+            pytest.param(list[int], [True], "f[0]", id="list-item"),
+            pytest.param(tuple[int, int], (1, True), "f[1]", id="tuple-position"),
+        ],
+    )
+    def test_the_warning_names_where_the_leaf_is(self, tp: Any, value: Any, where: str) -> None:
+        """A leaf is asked at its own position."""
+        _, said = _dumped(tp, value)
+        assert said == [f"Value at '{where}' will not read back as bool: int refuses it."]
+
+    def test_a_dict_value_is_asked_too(self) -> None:
+        """A value of a dict is a leaf like any other."""
+        dumped, said = _dumped(dict[str, int], {"a": True})
+        assert dumped == {"f": {"a": True}}
+        assert len(said) == 1
+        assert "will not read back as bool: int refuses it." in said[0]
+
+    @pytest.mark.parametrize(
+        ("tp", "value"),
+        [
+            pytest.param(float, 1, id="int-in-float"),
+            pytest.param(str, _Text("a"), id="str-subclass"),
+            pytest.param(int, _Int(1), id="int-subclass"),
+            pytest.param(float, _Float(1.5), id="float-subclass"),
+            pytest.param(int, IntColor.RED, id="int-enum-in-int"),
+            pytest.param(float, math.nan, id="nan"),
+            pytest.param(float, _Float("nan"), id="nan-of-a-float-subclass"),
+            pytest.param(float, math.inf, id="infinity"),
+            pytest.param(Decimal, Decimal("NaN"), id="decimal-nan"),
+            pytest.param(Decimal, Decimal("sNaN"), id="decimal-signaling-nan"),
+            pytest.param(Decimal, Decimal("1.5"), id="decimal"),
+            pytest.param(Path, Path("a/b"), id="path"),
+            pytest.param(datetime.date, _DATE, id="date"),
+            pytest.param(bool, True, id="bool"),
+            pytest.param(Color, Color.RED, id="enum"),
+            pytest.param(Literal[1], 1, id="literal"),
+            pytest.param(int | None, 1, id="optional"),
+        ],
+    )
+    def test_one_that_reads_back_is_silent(self, tp: Any, value: Any) -> None:
+        """A value reads back when construction reads it as an equal value; the class need not match."""
+        _, said = _dumped(tp, value)
+        assert said == []
+
+    def test_a_native_date_is_silent(self) -> None:
+        """Construction reads the date object a writer holds."""
+        target = make_target("f", datetime.date)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ConfargWarning)
+            assert confarg.dump(target(f=_DATE), native_types=(datetime.date,)) == {"f": _DATE}
+
+    def test_a_value_with_no_eq_reads_back_by_what_it_dumps_as(self) -> None:
+        """It compares equal to nothing but itself, and the rebuilt one dumps back as the same form."""
+        assert _dumped(_NoEqMark, _NoEqMark(3)) == ({"f": "3"}, [])
+
+
+@pytest.mark.usefixtures("_marks")
+class TestAFailingReadBackLeavesTheDumpWhole:
+    """A reader or an ``__eq__`` may raise anything: the dump finishes, and reports what it could not read."""
+
+    def test_a_reader_that_raises_warns_with_its_cause(self) -> None:
+        """A value is written, and the exception named."""
+        assert _dumped(_Boom, _Boom()) == (
+            {"f": "x"},
+            ["Value at 'f' will not read back as _Boom: _Boom refuses it (RuntimeError: boom)."],
+        )
+
+    def test_a_reader_that_raises_in_a_union_warns_once(self) -> None:
+        """Only the leaf says so: no other variant took the value."""
+        assert _dumped(_Boom | int, _Boom()) == (
+            {"f": "x"},
+            ["Value at 'f' will not read back as _Boom: _Boom refuses it (RuntimeError: boom)."],
+        )
+
+    def test_a_reader_that_raises_on_a_key_warns_with_its_cause(self) -> None:
+        """A key is asked by the same rule."""
+        key = _Boom()
+        assert _dumped(dict[_Boom, int], {key: 1}) == (
+            {"f": {"x": 1}},
+            ["Key 'x' at 'f' will not read back as _Boom: _Boom refuses its text (RuntimeError: boom)."],
+        )
+
+    def test_an_eq_that_raises_decides_nothing(self) -> None:
+        """The same class dumping back as the same form is the same value."""
+        assert _dumped(_EqRaises, _EqRaises("a")) == ({"f": "a"}, [])
+
+    def test_a_signaling_nan_in_a_union_is_silent(self) -> None:
+        """``Decimal('sNaN') == x`` raises, and construction reads it fine."""
+        assert _dumped(Decimal | int, Decimal("sNaN")) == ({"f": "sNaN"}, [])
+
+
+@pytest.mark.usefixtures("_marks")
+class TestAUnionVariantReadsBackByEqualValue:
+    """A union asks that the value comes back equal and that its variant holds it, not that the class matches."""
+
+    @pytest.mark.parametrize(
+        ("tp", "value", "written"),
+        [
+            pytest.param(int | str, IntColor.RED, 1, id="int-enum"),
+            pytest.param(str | int, _Text("a"), "a", id="str-subclass"),
+            pytest.param(datetime.date | int, _SubDay(2020, 1, 1), "2020-01-01", id="date-subclass"),
+            pytest.param(Path | int, _SubPath("a"), "a", id="path-subclass"),
+        ],
+    )
+    def test_a_subclass_its_variant_reads_back_equal_is_silent(self, tp: Any, value: Any, written: Any) -> None:
+        """No other variant takes it, so nothing is cast or warned of."""
+        assert _dumped(tp, value) == ({"f": written}, [])
+
+    def test_a_bool_its_int_variant_refuses_warns_once(self) -> None:
+        """The refusal is the leaf's own: no other variant took it."""
+        said = ["Value at 'f' will not read back as bool: int refuses it."]
+        assert _dumped(int | str, value=True) == ({"f": True}, said)
+
+    def test_a_datetime_its_date_variant_refuses_warns_once(self) -> None:
+        """The refusal is the leaf's own: no other variant took it."""
+        value = datetime.datetime(2020, 1, 1, 5, tzinfo=datetime.UTC)
+        assert _dumped(datetime.date | int, value) == (
+            {"f": value.isoformat()},
+            ["Value at 'f' will not read back as datetime: date refuses it."],
+        )
+
+    def test_another_variants_equal_value_is_still_cast(self) -> None:
+        """``Decimal`` steals the float and compares equal to it, but what comes back is no float."""
+        dumped, said = _dumped(Decimal | float, 1.5)
+        assert dumped == {"f": {"__cast__": "float", "__value__": 1.5}}
+        assert said == []

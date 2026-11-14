@@ -49,12 +49,18 @@ Only the untyped path is affected: `dump(instance)` serializes a constructed obj
 `dump()` knows the declared type, so — unlike the type-blind path above — it can tell whether a bare scalar comes back as the value that produced it.
 `_serialize_union` asks `_reads_back` for every **leaf** variant and, when the answer is no, writes the `{__cast__, __value__}` spelling instead: `Color | str` holding `"FOO"` dumps `{__cast__: str, __value__: "FOO"}`, because the bare `"FOO"` re-reads as `Color.FOO` (BUG-15, closed).
 
-`_reads_back` answers by **running the reader** — `construct(tp, data)`, then a same-type-and-equal comparison (`is` first, so a `float('nan')` that passes through unchanged still counts).
+`_reads_back` answers by **running the reader** — `construct(tp, data)`, then a comparison (`is` first, so a `float('nan')` that passes through unchanged still counts).
+For a union the comparison is that the value comes back equal and the union would write what came back by the same variant (`_find_variant_type`), so a subclass or an `IntEnum` the variant reads back as its parent is silent and a `1.5` in `Decimal | float`, which `Decimal` steals and compares equal to, is still cast; an `Any` variant, which holds every value, keeps the class test (maintainer-chosen).
+Asking the class instead cast or warned of every subclass, though nothing else had taken it.
+Asking only that the variant hold what came back was rejected: `1` in `IntColor | int` reads back as `IntColor.RED`, equal to it and an `int`, which the int variant holds.
 Re-deriving the answer, by mirroring the stealing rule, would be a second model of `_construct_union` that drifts the moment the first one changes ([invariants](../invariants.md#delegate-to-the-canonical-function)).
 The same function vets the cast before it is written, so a cast that would not read back either is never emitted.
 
 A union with one variant beside `None` is not read back at all: only a token selects `None`, and a dump holds no token, so nothing can take the dump from its variant.
 Running the reader there would only rebuild the value, and compare it by an equality that a partial, a bound method or a callable instance does not have: an `Optional[Callable]` warned on every such value, and built it again inside `dump()`, which otherwise builds nothing ([callables](../callables.md#a-path-is-written-only-when-it-reads-back)).
+A leaf variant there is still asked, by the leaf itself ([serialization](serialization.md#a-leaf-is-asked-whether-it-reads-back)).
+
+The warning that another variant takes the dump is given only if the variant alone reads its own form back: otherwise no other variant took it, and the leaf has already said what its variant answers, so `True` in `int | str` warns once, that `int` refuses it.
 
 An `Any` variant writes what a bare `Any` field writes ([serialization](serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it)), so what the union must read back is what a bare `Any` reads that dump back as, and its cast names the dump's own type: `Path | Any` holding `"a"` dumps `{__cast__: str, __value__: "a"}`, since the bare `"a"` reads back as a `Path`.
 A value the union reads back as a bare `Any` does is written bare ([construction](construction.md#an-any-variant-is-tried-last)).
