@@ -10,12 +10,13 @@ import _thread  # noqa: TC003  # get_type_hints reads _StateLock's annotation at
 import array
 import datetime
 import enum
+import json
 import math
 import re
 import sys
 import threading
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import InitVar, field
 from dataclasses import dataclass as _dc
@@ -32,6 +33,8 @@ import confarg
 from confarg._serialize import _serialize_leaf, _serialize_untyped
 from confarg._types import TagPolicy, _Pinned, _StrToken, _UnionSeqToken
 from confarg.exceptions import ConfargError, ConfargWarning
+from confarg.typedload._construct import construct
+from tests._generics import Box
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -2037,5 +2040,277 @@ class TestAUnionKeyDumps:
         with pytest.warns(ConfargWarning) as record:
             assert confarg.dump(_UnionKeyedState(u={"1": 5})) == {"u": {"1": 5}, "n": {}}
         assert [str(w.message) for w in record] == [
-            "Key '1' at 'u' will not read back as str: int, another variant of int | str, takes its text.",
+            "Key '1' at 'u' will not read back as str: int | str reads its text as 1.",
         ]
+
+
+class _KeyStr(str):
+    __slots__ = ()
+
+
+class _KeyInt(int):
+    __slots__ = ()
+
+
+def _dumped(tp: Any, value: Any) -> tuple[dict[str, Any], list[str]]:
+    """Return ``dump()`` of a field ``f`` of type *tp* holding *value*, and the warnings it gave."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        dumped = confarg.dump(make_target("f", tp)(f=value))
+    return dumped, [str(w.message) for w in caught]
+
+
+_DATE = datetime.date(2020, 1, 1)
+
+
+class TestADictKeyThatDoesNotReadBackWarns:
+    """Each key is asked whether its key type holds it and reads its text back as an equal value (BUG-314)."""
+
+    @pytest.mark.parametrize(
+        ("key_type", "key", "reason"),
+        [
+            pytest.param(int, "1", "as str: int reads its text as 1.", id="digits-of-an-int"),
+            pytest.param(int, "x", "as str: int refuses its text.", id="refused"),
+            pytest.param(str, 1, "as int: str reads its text as '1'.", id="int-in-str"),
+            pytest.param(float, "1.5", "as str: float reads its text as 1.5.", id="digits-of-a-float"),
+            pytest.param(bool, "true", "as str: bool reads its text as True.", id="word-of-a-bool"),
+            pytest.param(bool, 1, "as int: bool reads its text as True.", id="equal-but-not-held"),
+            pytest.param(IntColor, 1, "as int: IntColor reads its text as IntColor.RED.", id="value-of-an-int-enum"),
+            pytest.param(Color, "red", "as str: Color reads its text as Color.RED.", id="value-of-an-enum"),
+            pytest.param(Literal["a"], "c", "as str: Literal['a'] refuses its text.", id="outside-a-literal"),
+            pytest.param(int | str, "1", "as str: int | str reads its text as 1.", id="union"),
+        ],
+    )
+    def test_warns(self, key_type: Any, key: Any, reason: str) -> None:
+        """The key is written as it stands, and the warning says what it reads back as."""
+        spelled = key if isinstance(key, str) else json.dumps(key)
+        assert _dumped(dict[key_type, str], {key: "v"}) == (
+            {"f": {key: "v"}},
+            [f"Key {spelled!r} at 'f' will not read back {reason}"],
+        )
+
+    def test_a_held_key_its_key_type_refuses_warns(self) -> None:
+        """A bool is an int to a type checker, but no key of a ``dict[int, V]`` reads as one."""
+        assert _dumped(dict[int, str], {True: "v"}) == (
+            {"f": {True: "v"}},
+            ["Key 'true' at 'f' will not read back as bool: int refuses its text."],
+        )
+
+    def test_a_datetime_its_date_key_type_refuses_warns(self) -> None:
+        """A datetime is a date to a type checker, but its text reads as no date."""
+        key = datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC)
+        _, said = _dumped(dict[datetime.date, str], {key: "v"})
+        assert said == [
+            f"Key {key.isoformat()!r} at 'f' will not read back as datetime: date refuses its text.",
+        ]
+
+    @pytest.mark.parametrize(
+        ("key_type", "key"),
+        [
+            pytest.param(int, 1, id="int"),
+            pytest.param(str, "1", id="text"),
+            pytest.param(str, _KeyStr("a"), id="str-subclass"),
+            pytest.param(int | str, _KeyStr("a"), id="str-subclass-in-a-union"),
+            pytest.param(int, _KeyInt(1), id="int-subclass"),
+            pytest.param(int, IntColor.RED, id="int-enum-in-int"),
+            pytest.param(float, 1, id="int-in-float"),
+            pytest.param(float | str, 1, id="int-in-a-float-union"),
+            pytest.param(float, math.inf, id="infinity"),
+            pytest.param(float, math.nan, id="nan"),
+            pytest.param(bool, True, id="bool"),
+            pytest.param(Color, Color.RED, id="enum"),
+            pytest.param(IntColor, IntColor.RED, id="int-enum"),
+            pytest.param(Path, Path("a/b"), id="path"),
+            pytest.param(datetime.date, _DATE, id="date"),
+            pytest.param(Literal[1], 1, id="literal"),
+            pytest.param(int | None, None, id="none"),
+            pytest.param(Any, "a", id="text-under-any"),
+        ],
+    )
+    def test_a_key_that_reads_back_is_silent(self, key_type: Any, key: Any) -> None:
+        """A subclass and a widened int are held and read back equal, as the same values in a field are."""
+        _, said = _dumped(dict[key_type, str], {key: "v"})
+        assert said == []
+
+    @pytest.mark.parametrize(
+        ("field_type", "key", "reason"),
+        [
+            pytest.param(dict, 1, "as int: Any reads its text as '1'.", id="int-in-a-bare-dict"),
+            pytest.param(dict, None, "as None: Any reads its text as 'null'.", id="none-in-a-bare-dict"),
+            pytest.param(dict[Any, str], 1, "as int: Any reads its text as '1'.", id="int-under-an-any-key"),
+            pytest.param(Any, 1, "as int: Any reads its text as '1'.", id="int-in-an-any-field"),
+            pytest.param(Any, True, "as bool: Any reads its text as 'true'.", id="bool-in-an-any-field"),
+            pytest.param(dict, Color.RED, "as Color: Any reads its text as 'red'.", id="enum-in-a-bare-dict"),
+        ],
+    )
+    def test_a_key_with_no_key_type_warns_too(self, field_type: Any, key: Any, reason: str) -> None:
+        """A file writes every key as its text, so an ``Any`` key that is no text does not come back."""
+        text = "red" if isinstance(key, Color) else json.dumps(key)
+        _, said = _dumped(field_type, {key: "v"})
+        assert said == [f"Key {text!r} at 'f' will not read back {reason}"]
+
+    def test_a_dict_foreign_to_its_field_warns_once(self) -> None:
+        """The foreign warning already says the dict will not read back: its keys add nothing."""
+        _, said = _dumped(int, {1: "v"})
+        assert len(said) == 1
+        assert said[0].startswith("Value at 'f' will not read back: its dict is no value of int")
+
+    def test_a_native_date_key_is_silent_in_a_file(self, tmp_path) -> None:
+        """A date a YAML writer holds natively reads back as the date."""
+        target = make_target("f", dict[datetime.date, str])
+        path = tmp_path / "held.yaml"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ConfargWarning)
+            confarg.dump_file(target(f={_DATE: "v"}), path)
+        assert confarg.load(target, files=[path], argv=[], env={}).f == {_DATE: "v"}
+
+
+class TestTwoKeysWrittenAsOneAreRefused:
+    """Two keys of one dict written alike are refused: the written dict cannot hold both (BUG-314)."""
+
+    @pytest.mark.parametrize(
+        ("field_type", "keys"),
+        [
+            pytest.param(dict[Path, int], (Path("a"), "a"), id="path-and-text"),
+            pytest.param(dict[Color, int], (Color.RED, "red"), id="enum-and-text"),
+            pytest.param(dict, (Color.RED, "red"), id="bare-dict"),
+            pytest.param(Any, (Path("a"), "a"), id="any-field"),
+        ],
+    )
+    def test_refused_naming_both(self, field_type: Any, keys: tuple[Any, Any]) -> None:
+        """The refusal names both keys, in the dict's order, and what they are written as."""
+        first, second = keys
+        written = "a" if isinstance(first, Path) else "red"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ConfargWarning)
+            with pytest.raises(ConfargError) as refused:
+                confarg.dump(make_target("f", field_type)(f={first: 1, second: 2}))
+        assert (
+            str(refused.value)
+            == f"Cannot serialize the keys {first!r} and {second!r} at 'f': both are written {written!r}."
+        )
+
+    def test_keys_a_python_dict_tells_apart_are_kept(self) -> None:
+        """``1`` and ``'1'`` are two written keys: ``dump()`` holds both, and only a file refuses them."""
+        dumped, _ = _dumped(dict[int, str], {1: "a", "1": "b"})
+        assert dumped == {"f": {1: "a", "1": "b"}}
+
+    def test_a_dict_foreign_to_its_field_is_written_as_it_is(self) -> None:
+        """A dict no type holds is written untyped when no spec spells it, so its keys stay apart."""
+        dumped, said = _dumped(int, {Path("a"): 1, "a": 2})
+        assert dumped == {"f": {Path("a"): 1, "a": 2}}
+        assert len(said) == 1
+
+
+class TestAUnionPicksTheVariantHoldingTheWholeValue:
+    """Among the variants of one value's class, the first holding it whole writes it (BUG-307)."""
+
+    @pytest.mark.parametrize(
+        ("union", "value"),
+        [
+            pytest.param(list[int] | list[str], ["a"], id="list"),
+            pytest.param(set[int] | set[str], {"a"}, id="set"),
+            pytest.param(frozenset[int] | frozenset[str], frozenset({"a"}), id="frozenset"),
+            pytest.param(dict[str, int] | dict[str, str], {"k": "v"}, id="dict-value"),
+            pytest.param(dict[int, str] | dict[str, str], {"k": "v"}, id="dict-key"),
+            pytest.param(tuple[int, ...] | tuple[str, ...], ("a",), id="variadic-tuple"),
+            pytest.param(tuple[int, int] | tuple[str, str], ("a", "b"), id="fixed-tuple"),
+            pytest.param(list[list[int]] | list[list[str]], [["a"]], id="nested"),
+            pytest.param(list[int | None] | list[str], ["a"], id="item-union"),
+            pytest.param(list[int] | list[float], [1.5], id="float-after-int"),
+            pytest.param(Sequence[int] | Sequence[str], ["a"], id="abstract"),
+            pytest.param(list[Box[int]] | list[Box[str]], [Box("a")], id="list-of-generic"),
+            pytest.param(Box[list[int]] | Box[list[str]], Box(["a"]), id="generic-of-list"),
+            pytest.param(list[int] | Any, ["a"], id="any-after-a-list"),
+            pytest.param(list[int] | list[str] | Any, [1.5], id="any-after-two-lists"),
+        ],
+    )
+    def test_silent_and_reads_back(self, union: Any, value: Any) -> None:
+        """No warning, and the dump reads back equal."""
+        target = make_target("f", union)
+        dumped, said = _dumped(union, value)
+        assert said == []
+        assert confarg.build(target, dumped).f == value
+
+    def test_a_widened_holder_of_the_whole_value_beats_an_exact_one(self) -> None:
+        """The tuple is exactly a ``tuple[int, ...]``, but only ``Sequence[str]`` holds its item."""
+        assert _dumped(tuple[int, ...] | Sequence[str], ("a",)) == ({"f": ["a"]}, [])
+
+    def test_a_typed_variant_holding_it_whole_beats_any(self) -> None:
+        """``Any`` is asked last, so a list of ints is still written by the ``list[int]``."""
+        assert _dumped(list[int] | Any, [1]) == ({"f": [1]}, [])
+
+    def test_an_exact_scalar_still_beats_a_widened_one(self) -> None:
+        """``float | int`` writes ``1`` as the int it is."""
+        assert _dumped(float | int, 1) == ({"f": 1}, [])
+
+    def test_widening_counts_as_holding_an_item(self) -> None:
+        """``list[float]`` holds ``[1]`` whole, and is first."""
+        assert _dumped(list[float] | list[int], [1]) == ({"f": [1.0]}, [])
+
+    def test_a_value_no_variant_holds_is_written_by_the_first_and_warns(self) -> None:
+        """Nothing holds the mixed list whole, so the first variant writes it, naming the item."""
+        dumped, said = _dumped(list[int] | list[str], [1, "a"])
+        assert dumped == {"f": [1, "a"]}
+        assert said[0].startswith("Value at 'f[1]' will not read back: its str is no value of int")
+
+    def test_an_empty_collection_is_the_first_variants(self) -> None:
+        """Every variant holds an empty list."""
+        assert _dumped(list[int] | list[str], []) == ({"f": []}, [])
+
+    def test_a_one_shot_iterator_is_not_consumed_by_the_pick(self) -> None:
+        """A generator is walked only to be written, so every item reaches the dump."""
+        assert _dumped(Iterable[int] | Iterable[str], (i for i in [1, 2])) == ({"f": [1, 2]}, [])
+
+    def test_a_value_containing_itself_is_refused_as_such(self) -> None:
+        """The walk stops at a value it is inside, and the dump refuses the cycle."""
+        cyclic: list[Any] = []
+        cyclic.append(cyclic)
+        with pytest.raises(ConfargError, match="a value that contains itself"):
+            confarg.dump(make_target("f", _Lists)(f=cyclic))
+
+    def test_a_value_past_the_depth_bound_is_refused_as_such(self) -> None:
+        """The walk stops at the bound, so the dump's own refusal is what a deep value meets."""
+        deep: list[Any] = []
+        for _ in range(1000):
+            deep = [deep]
+        with pytest.raises(ConfargError, match="nest"):
+            confarg.dump(make_target("f", _Lists)(f=deep))
+
+    def test_a_plain_field_still_names_the_item(self) -> None:
+        """Outside a union the check stays by class, so the warning stays at the item."""
+        _, said = _dumped(list[int], ["a"])
+        assert said[0].startswith("Value at 'f[0]' will not read back")
+
+    @pytest.mark.parametrize(
+        ("union", "value"),
+        [
+            pytest.param(Box[list[int]] | Box[list[str]], Box(["a"]), id="generic-of-list"),
+            pytest.param(Box[list[int]] | Any, Box(["a"]), id="generic-beside-any"),
+        ],
+    )
+    def test_construction_still_takes_a_built_instance(self, union: Any, value: Any) -> None:
+        """The pick that writes a value also reads a built one: the instance comes back itself."""
+        assert construct(union, value) is value
+
+
+type _Lists = list[_Lists] | list[int] | None
+
+
+class TestAWidenedValueInAUnionReadsBackAsItsVariantReadsIt:
+    """A value a variant holds only widened must read back as that variant reads the dump (drive-by of BUG-307)."""
+
+    @pytest.mark.parametrize(
+        ("union", "value", "written"),
+        [
+            pytest.param(float | str, 1, 1.0, id="int-in-float-beside-str"),
+            pytest.param(float | bool, 1, 1.0, id="int-in-float-beside-bool"),
+            pytest.param(Sequence[str] | int, ("a",), ["a"], id="tuple-in-sequence"),
+            pytest.param(Sequence[int] | Sequence[str], ("a",), ["a"], id="tuple-in-two-sequences"),
+            pytest.param(AbstractSet[str] | int, frozenset({"a"}), ["a"], id="frozenset-in-set"),
+            pytest.param(Mapping[str, int] | int, MappingProxyType({"a": 1}), {"a": 1}, id="proxy-in-mapping"),
+        ],
+    )
+    def test_silent(self, union: Any, value: Any, written: Any) -> None:
+        """No other variant takes the dump, so nothing warns that one does."""
+        assert _dumped(union, value) == ({"f": written}, [])

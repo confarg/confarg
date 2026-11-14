@@ -10,12 +10,17 @@ Dev Notes:
 
 from __future__ import annotations
 
+from collections.abc import Collection
+from itertools import repeat
 from typing import TYPE_CHECKING, Any
 
 from confarg._conformance import is_protocol
+from confarg._depth import MAX_DEPTH
 from confarg._types import (
     _allows_none,
     _class_of,
+    _dict_kv,
+    _elem_type,
     _fixed_seq_types,
     _generic_origin,
     _is_literal,
@@ -31,7 +36,7 @@ from confarg._types import (
 from confarg.typedload._coerce import _type_kind, _TypeKind
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 
 def _holds(tp: Any, instance: Any) -> bool:
@@ -47,7 +52,7 @@ def _holds(tp: Any, instance: Any) -> bool:
         return _variant_holds(tp, instance) or _holds_widened(tp, instance)
     if instance is None:
         return _allows_none(tp)
-    return _find_variant_type(tp, instance) is not None
+    return bool(_holding_variants(_union_branches(tp), instance))
 
 
 def _find_variant_type(tp: Any, instance: Any) -> Any | None:
@@ -56,7 +61,8 @@ def _find_variant_type(tp: Any, instance: Any) -> Any | None:
     ``Any`` holds every instance, so it is asked after every other variant, as construction
     offers it a value only after every other variant refused it. A variant that holds the
     value exactly (:func:`_variant_holds`) is preferred over one that holds it only widened
-    (:func:`_holds_widened`), so ``float | int`` writes ``1`` as the int it is.
+    (:func:`_holds_widened`), so ``float | int`` writes ``1`` as the int it is. A variant
+    holding what the value contains is preferred over both (:func:`first_holding_variant`).
 
     Dev Notes:
         docs-dev/architecture/types/construction.md#an-any-variant-is-tried-last
@@ -65,13 +71,61 @@ def _find_variant_type(tp: Any, instance: Any) -> Any | None:
 
 
 def first_holding_variant(variants: Sequence[Any], instance: Any) -> Any | None:
-    """Return the first of a union's *variants* holding *instance*, as :func:`_find_variant_type` asks them."""
+    """Return the first of a union's *variants* holding *instance* whole, else the first holding it by its class.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-collection-variant-is-picked-by-what-it-holds
+    """
+    holding = _holding_variants(variants, instance)
+    if len(holding) < 2:  # noqa: PLR2004  # the walk only tells two holders apart
+        return holding[0] if holding else None
+    return next((variant for variant in holding if _holds_whole(variant, instance)), holding[0])
+
+
+def _holding_variants(variants: Sequence[Any], instance: Any) -> list[Any]:
+    """Return the *variants* holding *instance* by its class, exact ones before widened, ``Any`` last of each."""
     ordered = sorted(variants, key=_holds_anything)
-    for holds in (_variant_holds, _holds_widened):
-        for variant in ordered:
-            if holds(variant, instance):
-                return variant
-    return None
+    exact = [variant for variant in ordered if _variant_holds(variant, instance)]
+    return exact + [variant for variant in ordered if variant not in exact and _holds_widened(variant, instance)]
+
+
+def _holds_whole(tp: Any, instance: Any, above: frozenset[int] = frozenset()) -> bool:  # noqa: PLR0911  # one return per kind
+    """True if *tp* holds *instance* and everything it contains, at every depth.
+
+    *above* holds the id of each value being walked. A value inside itself or past
+    ``MAX_DEPTH`` counts as held, for the dump to refuse by itself, and a one-shot iterator
+    counts as held so that the walk leaves its items to the dump.
+
+    Dev Notes:
+        docs-dev/architecture/types/serialization.md#a-collection-variant-is-picked-by-what-it-holds
+    """
+    tp = _resolve_type(tp)
+    kind = _type_kind(tp)
+    if kind is _TypeKind.UNION and instance is not None:
+        return any(_holds_whole(variant, instance, above) for variant in _union_branches(tp))
+    if not _holds(tp, instance):
+        return False
+    if id(instance) in above or len(above) >= MAX_DEPTH:
+        return True
+
+    def whole(item_tp: Any, item: Any) -> bool:
+        return _holds_whole(item_tp, item, above | {id(instance)})
+
+    match kind:
+        case _TypeKind.LIST | _TypeKind.SET | _TypeKind.FROZENSET:
+            item_tp = _elem_type(tp)
+            return not isinstance(instance, Collection) or all(whole(item_tp, item) for item in instance)
+        case _TypeKind.TUPLE:
+            fixed = _fixed_seq_types(tp)
+            item_tps = repeat(_elem_type(tp)) if fixed is None else fixed
+            return all(whole(item_tp, item) for item_tp, item in zip(item_tps, instance, strict=False))
+        case _TypeKind.DICT:
+            kt, vt = _dict_kv(tp)
+            return all(whole(kt, k) and whole(vt, v) for k, v in instance.items())
+        case _TypeKind.NAMEDTUPLE | _TypeKind.STRUCT:
+            return _generic_origin(tp) is None or unheld_member(tp, instance, holds=whole) is None
+        case _:
+            return True
 
 
 def _variant_holds(tp: Any, instance: Any) -> bool:  # noqa: C901, PLR0911  # one return per kind
@@ -146,11 +200,16 @@ def _holds_members(tp: Any, instance: Any) -> bool:
     return unheld_member(tp, instance) is None
 
 
-def unheld_member(tp: Any, instance: Any) -> tuple[str, Any, Any] | None:
+def unheld_member(
+    tp: Any,
+    instance: Any,
+    *,
+    holds: Callable[[Any, Any], bool] = _holds,
+) -> tuple[str, Any, Any] | None:
     """Return the first member of the struct *tp* whose value *instance* holds is no value of its type, or None.
 
     Members are walked in declaration order, each as ``(name, type, value)``, its type
-    resolved; one *instance* holds no value for is skipped.
+    resolved; one *instance* holds no value for is skipped. *holds* answers for each member.
 
     Dev Notes:
         docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
@@ -159,7 +218,7 @@ def unheld_member(tp: Any, instance: Any) -> tuple[str, Any, Any] | None:
     missing = object()
     for name, ft in members.items():
         value = getattr(instance, name, missing)
-        if value is not missing and not _holds(resolved := _resolve_type(ft), value):
+        if value is not missing and not holds(resolved := _resolve_type(ft), value):
             return name, resolved, value
     return None
 

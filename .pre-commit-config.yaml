@@ -69,7 +69,7 @@ repos:
   hooks:
   - id: ticket-boards
     name: ticket boards tables and front matter are valid
-    entry: uv run python docs-dev/todo/index.py --check
+    entry: uv run python docs-dev/todo/index.py
     language: system
     pass_filenames: false
   - id: architecture-anchors

@@ -12,7 +12,7 @@ Run it after filing, closing or re-sizing a ticket::
 
 The table is written between the ``tickets:start`` and ``tickets:end`` markers in each board's
 ``README.md``; everything outside them is prose, and is left alone. ``--check`` writes nothing
-and exits non-zero if a table is stale, which is the form to run in CI.
+and exits non-zero if a table is stale.
 
 A ticket's fields live in YAML front matter, above its ``# <ID> — <headline>`` heading, so this
 script reads them with a YAML parser rather than with patterns over prose. ``--where PATH``
