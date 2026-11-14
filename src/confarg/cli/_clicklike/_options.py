@@ -5,8 +5,8 @@
 """FlagSpec-to-option translation shared by the click and typer adapters.
 
 Both frameworks expose the same option-construction keywords, so the mapping from
-:class:`~confarg.cli.FlagSpec` lives here once and each adapter supplies only the
-three classes its framework spells differently.
+:class:`~confarg.cli.FlagSpec` lives here once and each adapter supplies only what its
+framework spells differently: the option class, the choice type and the completion keyword.
 
 Dev Notes:
     docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam
@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from confarg.cli._spec import FlagSpec
 
 from confarg.cli._argv import drop_bare_occurrences
-from confarg.dictexpr import contains_expression
 
 #: Attribute under which a parser instance carries the stands-bare flag names its
 #: options installed, and which marks its ``parse_args`` as already wrapped.
@@ -93,30 +92,10 @@ class DottedNameMixin:
         return self._confarg_name, [d for d in decls if d.startswith("-")], []
 
 
-class ExpressionTolerantChoiceMixin:
-    """Admit an unresolved ``${...}`` token into a choice-validated option.
-
-    Mixed in ahead of the framework's own choice type, whose ``convert`` validates
-    through a normalized mapping rather than the container.  Everything else is
-    inherited: ``--help`` still renders the declared values, completion still offers
-    them, and a real out-of-domain value still fails with the framework's own error.
-    ``build()`` validates the resolved expression.
-
-    Dev Notes:
-        docs-dev/architecture/cli-adapters/parity.md#expression-tolerant-choice-gates
-    """
-
-    def convert(self, value: Any, param: Any, ctx: Any) -> Any:
-        """Pass an expression token through untouched; validate anything else normally."""
-        if contains_expression(value):
-            return value
-        return super().convert(value, param, ctx)  # ty: ignore[unresolved-attribute]  # supplied by the choice base
-
-
 def option_kwargs(
     spec: FlagSpec,
     *,
-    choice_cls: Callable[[Sequence[str]], Any],
+    choice_type: Callable[[Sequence[str]], Any],
     completer_kwargs: Callable[[Callable[[str], list[str]]], dict[str, Any]],
     help_escape: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
@@ -126,8 +105,8 @@ def option_kwargs(
 
     Args:
         spec: The spec to translate.
-        choice_cls: The framework's expression-tolerant choice type, called with the
-            spec's choices.
+        choice_type: Builds the ``type`` keyword from the spec's choices: click's
+            expression-tolerant choice type, or the ``Literal`` typer reads a choice from.
         completer_kwargs: Builds the framework's completion keyword from the spec's
             completer.  The two frameworks disagree here — click takes a
             ``shell_complete`` returning its own completion items, typer takes an
@@ -137,8 +116,8 @@ def option_kwargs(
             the spec's :attr:`~confarg.cli.FlagSpec.note` (``None`` for plain text).
 
     Returns:
-        Keywords accepted by both ``click.Option`` and ``typer.core.TyperOption``,
-        excluding ``confarg_name``.
+        ``click.Option`` keywords, excluding ``confarg_name``; the typer adapter's option
+        class turns ``type``, ``nargs`` and ``multiple`` into the annotation typer reads.
     """
     if spec.nargs == 0:
         # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.
@@ -157,7 +136,7 @@ def option_kwargs(
     multiple = spec.nargs == "*"
     kwargs: dict[str, Any] = {
         "param_decls": [f"--{spec.name}"],
-        "type": choice_cls(spec.choices) if spec.choices else str,
+        "type": choice_type(spec.choices) if spec.choices else str,
         "nargs": 1 if (spec.nargs is None or spec.nargs == "*") else int(spec.nargs),
         "multiple": multiple,
         "default": () if multiple else None,

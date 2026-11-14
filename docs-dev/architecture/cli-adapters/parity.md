@@ -16,6 +16,7 @@ Each adapter defers expression tokens via `dictexpr.contains_expression` at the 
 |---|---|---|
 | argparse | `_ExpressionTolerantChoices.__contains__` | argparse checks `value not in choices` and renders help by iterating the same object |
 | click | `_ExpressionTolerantChoice.convert` | `Choice.convert` validates through a normalized mapping, not the container |
+| typer | `_TypedOption.process_value` | typer ≥ 0.29 has no choice type: it validates the option's `Literal` annotation through pydantic in `process_value` |
 | cyclopts | `_expression_tolerant_convert` as `Parameter(converter=…)`, and `_ExpressionTolerantPydantic` in the `Annotated` metadata | cyclopts enforces `Literal` by converting; the annotation stays for help |
 
 `build()` validates the resolved value with the same `TypeCoercionError` everywhere.

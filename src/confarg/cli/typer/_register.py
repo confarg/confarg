@@ -7,14 +7,15 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Any, Unpack
+from typing import TYPE_CHECKING, Any, Literal, Unpack
 
 import typer.core
-from typer._types import TyperChoice
+from typer._coercion import resolve_type_descriptor
 from typer.core import TyperOption
+from typer.models import OptionInfo
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from typer._click import Command, Context
 
@@ -23,13 +24,53 @@ if TYPE_CHECKING:
 
 from confarg.cli import _clicklike
 from confarg.cli._markup import help_escape
+from confarg.dictexpr import contains_expression
 
 
-class _ExpressionTolerantChoice(_clicklike.ExpressionTolerantChoiceMixin, TyperChoice):
-    """A ``TyperChoice`` that also admits unresolved ``${...}`` tokens."""
+def _choice_literal(choices: Sequence[str]) -> Any:
+    """Return ``Literal[c1, c2, ...]``, the annotation typer reads a choice from."""
+    return Literal[tuple(choices)]  # ty: ignore[invalid-type-form]  # dynamic Literal construction at runtime; equivalent to Literal[c1, c2, ...]
 
 
-class _ConfargOption(_clicklike.DottedNameMixin, _clicklike.StandsBareMixin, TyperOption):
+def _option_annotation(type_: Any, *, nargs: int, multiple: bool, is_flag: bool) -> Any:
+    """Return the annotation typer types an option by, from click's ``type``/``nargs``/``multiple`` keywords."""
+    if is_flag:
+        return bool
+    if multiple:
+        return list[type_]
+    if nargs > 1:
+        return tuple.__class_getitem__((type_,) * nargs)
+    return type_
+
+
+class _TypedOption(TyperOption):
+    """A TyperOption built from click's option keywords, which lets an unresolved ``${...}`` through.
+
+    typer types an option by an annotation, which it validates every value against
+    through pydantic; this builds that annotation from the ``type`` keyword the shared
+    :func:`~confarg.cli._clicklike.option_kwargs` passes, so the shared mapping stays click's.
+
+    Dev Notes:
+        docs-dev/architecture/cli-adapters/parity.md#expression-tolerant-choice-gates
+    """
+
+    def __init__(self, *, type: Any = str, nargs: int = 1, multiple: bool = False, **kwargs: Any) -> None:  # noqa: A002  # click's keyword
+        annotation = _option_annotation(type, nargs=nargs, multiple=multiple, is_flag=bool(kwargs.get("is_flag")))
+        super().__init__(
+            type_descriptor=resolve_type_descriptor(annotation, OptionInfo()),
+            nargs=nargs,
+            multiple=multiple,
+            **kwargs,
+        )
+
+    def process_value(self, ctx: Context, value: Any) -> Any:
+        """Pass an expression token through untouched; validate anything else normally."""
+        if contains_expression(value):
+            return value
+        return super().process_value(ctx, value)
+
+
+class _ConfargOption(_clicklike.DottedNameMixin, _clicklike.StandsBareMixin, _TypedOption):
     """TyperOption subclass taking a dotted name, and a flag that may stand bare."""
 
 
@@ -55,7 +96,7 @@ def _spec_to_option(spec: FlagSpec, *, help_escape: Callable[[str], str] | None 
         stands_bare=spec.stands_bare,
         **_clicklike.option_kwargs(
             spec,
-            choice_cls=_ExpressionTolerantChoice,
+            choice_type=_choice_literal,
             completer_kwargs=_completer_kwargs,
             help_escape=help_escape,
         ),

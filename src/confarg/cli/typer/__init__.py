@@ -5,15 +5,15 @@
 """Typer adapter: populate commands from dataclass types and construct them back."""
 
 try:
-    # Availability check; typer is an optional dependency.  The two private names are
-    # checked here rather than only where they are used, so a typer too old to vendor
-    # its own click fails with this message instead of a bare ImportError on a
+    # Availability check; typer is an optional dependency.  The private names are
+    # checked here rather than only where they are used, so a typer too old to type its
+    # options through pydantic fails with this message instead of a bare ImportError on a
     # private module (docs-dev/architecture/cli-adapters/clicklike-seam.md#the-clicklike-seam).
     import typer as _typer  # noqa: F401
-    import typer._types  # noqa: F401
+    from typer._coercion import resolve_type_descriptor  # noqa: F401
     from typer.core import TyperOption  # noqa: F401
 except ImportError as exc:
-    msg = "confarg.cli.typer requires typer>=0.27: pip install 'typer>=0.27'"
+    msg = "confarg.cli.typer requires typer>=0.29: pip install 'typer>=0.29'"
     raise ImportError(msg) from exc
 
 from confarg.cli.typer._completion import setup_completion
