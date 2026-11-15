@@ -9,6 +9,8 @@ The threshold is duplication, not user-facing-ness: a message with one call site
 The point is not tidiness either — a message spelled at four call sites drifts, and the drift is invisible because no test reads more than one of them.
 Two of the four "Unknown argument" spellings had already lost the quotes around the flag, so the same failure printed `'--foo'` or `--foo` depending on which branch of `_parse_cli` noticed it.
 
+A factory that says where a value stands writes `at {_spelled_where(path)}` and is handed the spelled path as before, so the root reads `at the root` in every one of them and no call site spells it by hand (BUG-290, REF-109).
+
 Where such a message reaches a user, the flag is **quoted** — `Unknown argument: '--no-value1'`.
 That matches the messages beside it (`Missing value for '--value1'`) and cyclopts; argparse and click leave it bare, and the divergence from them is deliberate, since confarg's flag paths are dotted and a bare `--db.hosts.0-` at the end of a sentence is hard to see the end of (maintainer-chosen).
 

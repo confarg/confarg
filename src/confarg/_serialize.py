@@ -59,7 +59,7 @@ from confarg._types import (
     _union_args,
     _union_args_no_none,
 )
-from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path
+from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, _spell_field_path, _spelled_where
 from confarg.typedload._coerce import (
     _LEAF_SERIALIZERS,
     _is_coercible_leaf,
@@ -222,7 +222,7 @@ def _refuse_an_undumpable_type(tp: Any, path: FieldPath) -> None:
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
             _refuse_an_unsupported_leaf(tp, path)
         case _TypeKind.UNION:
-            _refuse_a_forbidden_literal(tp, _spell_field_path(path) or _defaults.ROOT_KEY)
+            _refuse_a_forbidden_literal(tp, _spell_field_path(path))
         case _:
             pass
 
@@ -239,7 +239,7 @@ def _serialize_foreign(tp: Any, instance: Any, path: FieldPath, opts: _DumpOptio
     # A class is named itself, not by its metaclass: "its class int", never "its type".
     held = f"class {instance.__name__}" if isinstance(instance, type) else type(instance).__name__
     warnings.warn(
-        f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back: its"
+        f"Value at {_spelled_where(path)} will not read back: its"
         f" {held} is no value of {_spell_type(tp)}, the type it is"
         " declared as. It is written as an Any field holds it.",
         ConfargWarning,
@@ -263,13 +263,13 @@ def _refuse_an_unsupported_leaf(tp: Any, path: FieldPath) -> None:
         docs-dev/architecture/types/serialization.md#an-unsupported-leaf-is-refused-both-ways
     """
     resolved = _resolve_type(tp)
-    where = _spell_field_path(path) or _defaults.ROOT_KEY
+    where = _spell_field_path(path)
     _refuse_a_forbidden_literal(resolved, where)
     if _is_type_ref(resolved) or _is_coercible_leaf(resolved):
         return
     name = _spell_type(resolved)
     msg = (
-        f"Cannot serialize {name} at '{where}': {name} is no leaf type"
+        f"Cannot serialize {name} at {_spelled_where(where)}: {name} is no leaf type"
         f" confarg reads, so the value would not load back."
         f" confarg.register_leaf_type({_spell_type(_registration_key(resolved))}, ...) makes it one."
     )
@@ -292,7 +292,7 @@ def _refuse_an_unread_literal_member(tp: Any, instance: Any, path: FieldPath) ->
         return
     if _literal_holds(_literal_members(tp), instance):
         msg = (
-            f"Cannot serialize {instance!r} at '{_spell_field_path(path) or _defaults.ROOT_KEY}': it is a"
+            f"Cannot serialize {instance!r} at {_spelled_where(path)}: it is a"
             f" {type(instance).__name__} member, which confarg reads no value as, so the value would not load back."
         )
         raise ConfargError(msg)
@@ -458,7 +458,7 @@ def _warn_unread_any(instance: Any, path: FieldPath, reason: str) -> None:
         docs-dev/architecture/types/serialization.md#an-any-node-dumps-the-spec-that-rebuilds-it
     """
     warnings.warn(
-        f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as the"
+        f"Value at {_spelled_where(path)} will not read back as the"
         f" {type(instance).__name__} it holds: {reason.rstrip('.')}. It is written untyped.",
         ConfargWarning,
         stacklevel=2,
@@ -601,7 +601,7 @@ def _unheld_member_error(tp: Any, instance: Any, path: FieldPath, name: str, *, 
         docs-dev/architecture/types/introspection.md#a-descriptor-typed-field-takes-what-its-__set__-takes
     """
     cls_name = type(instance).__name__
-    where = f"Cannot serialize {cls_name} at '{_spell_field_path(path) or _defaults.ROOT_KEY}':"
+    where = f"Cannot serialize {cls_name} at {_spelled_where(path)}:"
     if _is_dc(tp):
         static = type(inspect.getattr_static(type(instance), name, None))
         if hasattr(static, "__set__") and not hasattr(static, "__get__"):
@@ -718,7 +718,7 @@ def _warn_unpinnable_leaf(variant_tp: Any, serialized: Any, path: FieldPath) -> 
         docs-dev/architecture/types/stealing-rule.md#casting-a-stolen-leaf
     """
     warnings.warn(
-        f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
+        f"Value at {_spelled_where(path)} will not read back as"
         f" {_spell_type(variant_tp)}: another union variant takes the"
         f" dumped {type(serialized).__name__}, and no __cast__ names that type."
         f" confarg.register_leaf_type makes it nameable.",
@@ -853,7 +853,7 @@ def _serialize_read_leaf(tp: Any, instance: Any, path: FieldPath, opts: _DumpOpt
             return tag
     if reading is not None:
         warnings.warn(
-            f"Value at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
+            f"Value at {_spelled_where(path)} will not read back as"
             f" {_spell_type(type(instance))}: {_spell_type(tp)} {reading}.",
             ConfargWarning,
             stacklevel=2,
@@ -958,9 +958,9 @@ def _serialize_dict(
     rkt = _resolve_type(kt)
     union = _is_union(rkt)
     if instance and not all(_is_coercible_leaf(v) for v in (_union_args(rkt) if union else [rkt])):
-        where = _spell_field_path(path) or _defaults.ROOT_KEY
+        where = _spell_field_path(path)
         msg = (
-            f"Cannot serialize {_spell_type(kt)} keys at '{where}': construction reads no key as one,"
+            f"Cannot serialize {_spell_type(kt)} keys at {_spelled_where(where)}: construction reads no key as one,"
             " so the dict would not load back."
         )
         raise ConfargError(msg)
@@ -993,7 +993,7 @@ def _written_dict(  # noqa: PLR0913  # the one walk both dict writers share
         if checked:
             _warn_an_unread_key(kt, k, key, path, opts)
         if key in spelled_by:
-            where = _spell_field_path(path) or _defaults.ROOT_KEY
+            where = _spell_field_path(path)
             raise ConfargError.keys_serialized_alike(spelled_by[key], k, key, where)
         spelled_by[key] = k
         written[_data_key(key, (*path, str(k)))] = item(v, str(k))
@@ -1023,7 +1023,7 @@ def _warn_an_unread_key(kt: Any, key: Any, written: Any, path: FieldPath, opts: 
     if reading is None:
         return
     warnings.warn(
-        f"Key {text!r} at '{_spell_field_path(path) or _defaults.ROOT_KEY}' will not read back as"
+        f"Key {text!r} at {_spelled_where(path)} will not read back as"
         f" {_spell_type(type(key))}: {_spell_type(kt)} {reading}.",
         ConfargWarning,
         stacklevel=2,
