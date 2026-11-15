@@ -40,7 +40,7 @@ from confarg._serialize import (
 from confarg._typed_read import TypedReading
 from confarg._types import _MISSING, TagPolicy, _resolve_type, _root_kind, _spell_type
 from confarg.dictexpr import resolve_expressions
-from confarg.dictexpr._expressions import escape_data
+from confarg.dictexpr._expressions import escape_data, unescape_data
 from confarg.exceptions import MissingFieldError, TypeCoercionError
 from confarg.typedload import construct as _tc
 from confarg.typedload._coerce import _type_kind, _TypeKind
@@ -292,14 +292,19 @@ def resolve(
     applied over the default. A default nothing touched is not in the result; construction
     applies it.
 
+    The result is a configuration, as *data* is: text that spells ``${...}`` once resolved,
+    such as what the escape ``$${x}`` stands for, is written escaped again, ``"$${x}"``, so
+    ``from_dict()``, ``build()`` and a file ``dump_file()`` writes of it all read it back as
+    that text. A dict key is written as it stands, since resolution reads no key.
+
     Args:
         target: The type *data* is for, whose field defaults lie below it; ``dict`` for none.
         data: A plain config dict, e.g. the output of ``merge()``.
 
     Returns:
         A dict with all ``${...}`` expression strings replaced by their values, which shares
-        with *data* every part no expression is written in, and may be *data* itself: inspect
-        or dump it, do not edit it in place.
+        with *data* every part nothing is written in, and may be *data* itself: inspect or
+        dump it, do not edit it in place.
 
     Raises:
         ConfargError: If a patch the merge left pending does not apply over a default.
@@ -314,10 +319,11 @@ def resolve(
 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-field-default-is-the-base-layer.md#a-field-default-is-the-base-layer
+        docs-dev/architecture/design-decisions/a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution
     """
     copies = Copies()
     refuse_overflow(data, f"resolve {_spell_type(target)}", copies=copies)
-    return _resolve_over_defaults(_resolve_type(target), data, copies)
+    return escape_data(_resolve_over_defaults(_resolve_type(target), data, copies))
 
 
 @overload
@@ -331,11 +337,16 @@ def from_dict[T](
     """Construct a typed object from an already-resolved config dict.
 
     Unlike ``build()``, this does NOT resolve ``${...}`` expressions — call
-    ``resolve()`` first if needed.
+    ``resolve()`` first if needed. It reads an escape as the text it spells, as
+    resolution does, so ``"$${x}"`` builds ``"${x}"``: the dicts ``resolve()`` and ``dump()``
+    return read back as the text they hold. A ``${...}`` in a value it builds is refused,
+    since its text is not what ``build()`` would build; one only a local variable holds is
+    dropped with it. A dict key and a field default are read as they stand.
 
     Args:
         target: The dataclass or plain-class type to construct.
-        data: A resolved config dict (output of resolve() or merge()).
+        data: A resolved config dict: the output of ``resolve()`` or ``dump()``, or of
+            ``merge()`` when it holds no expression.
 
     Returns:
         An instance of the target type.
@@ -344,12 +355,18 @@ def from_dict[T](
         MissingFieldError: If a required field is not provided.
         TypeCoercionError: If a value cannot be coerced to the target type.
         AmbiguousUnionError: If a Union cannot be disambiguated.
-        ConfargError: If *data* nests deeper than 64 levels, holds itself, or shares parts
-            copying more than 100 000 positions.
+        ConfargError: If a value holds a ``${...}`` expression, or *data* nests deeper than
+            64 levels, holds itself, or shares parts copying more than 100 000 positions.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution
     """
     target_r = _resolve_type(target)
     refuse_overflow(data, f"construct {_spell_type(target)}", copies=Copies())
-    laid = lay_defaults(target_r, data, for_resolution=False).data
+    # Read before the defaults are laid, which are the class's text, and once the locals,
+    # which nothing builds, are out.
+    read = unescape_data(_strip_locals(data, target_r))
+    laid = lay_defaults(target_r, read, for_resolution=False).data
     return _construct_resolved(target_r, _strip_locals(laid, target_r))
 
 
@@ -413,9 +430,8 @@ def dump(
 
     The dict is a configuration, which ``build()`` and ``load()`` resolve: text the instance
     holds that spells ``${...}`` is written escaped, ``"${x}"`` as ``"$${x}"``, so it reads
-    back as that text rather than as an expression. ``from_dict()``, which resolves nothing,
-    reads the escape as written. A dict key is written as it stands, since resolution reads no
-    key.
+    back as that text rather than as an expression, through ``from_dict()`` too. A dict key
+    is written as it stands, since resolution reads no key.
 
     A value its field's type does not hold — ``None`` in a field that is not optional, an
     instance of an unrelated class — is written as an ``Any`` field holds it, with a
@@ -475,8 +491,9 @@ def dump_file(
 
     Accepts a dataclass or plain-class instance or a raw config dict (e.g. from ``merge()``
     or ``resolve()``). A dict is written as it stands, so the dict ``merge()``
-    returns keeps its ``${...}`` expressions and ``call:`` specs; an instance is
-    written as ``dump()`` serializes it, as the values it holds. The output
+    returns keeps its ``${...}`` expressions and ``call:`` specs, and the one ``resolve()``
+    returns its escaped text; an instance is written as ``dump()`` serializes it, as the
+    values it holds. The output
     format is determined by the file extension (.toml, .yaml, .yml, .json).
 
     A value of a registered leaf type is written as its text, except for the types the

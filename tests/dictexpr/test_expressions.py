@@ -49,12 +49,15 @@ from confarg.dictexpr._expressions import (
     _validate_ast,
     canonicalize_references,
     contains_expression,
+    escape_data,
     escape_expressions,
     prefix_references,
     resolve_expressions,
+    unescape_data,
 )
 from confarg.exceptions import (
     CircularReferenceError,
+    ConfargError,
     ExpressionEvalError,
     MissingReferenceError,
     UnsafeExpressionError,
@@ -2421,6 +2424,52 @@ class TestEscapeExpressions:
     def test_an_escaped_string_reads_no_reference(self) -> None:
         """An escaped expression names no field, so nothing is missing from the data."""
         assert resolve_expressions({"s": escape_expressions("${missing.path}")}) == {"s": "${missing.path}"}
+
+    def test_text_with_nothing_to_escape_is_handed_back(self) -> None:
+        """An argv token stays the token it is, which a union reads by its type (BUG-326)."""
+        token = _StrToken("5")
+        assert escape_expressions(token) is token
+
+
+class TestEscapeData:
+    """``escape_data`` spells each string value so that resolution gives it back, copying only what it rewrites."""
+
+    def test_each_string_value_is_escaped_and_no_key(self) -> None:
+        """Values of dicts and items of lists are escaped; keys are left as written."""
+        data = {"${k}": ["${x}", {"a": "$${y}"}], "n": 1}
+        assert escape_data(data) == {"${k}": ["$${x}", {"a": "$$${y}"}], "n": 1}
+
+    def test_a_part_with_nothing_to_escape_is_shared(self) -> None:
+        """A container holding no text to escape is handed back itself, tokens kept."""
+        untouched = {"a": [_StrToken("5"), 1]}
+        data = {"untouched": untouched, "s": "${x}"}
+        escaped = escape_data(data)
+        assert escaped["untouched"] is untouched
+        assert escape_data(untouched) is untouched
+
+    @given(st.recursive(st.text(alphabet="${}ax", max_size=8), lambda c: st.lists(c) | st.dictionaries(st.text(), c)))
+    def test_unescape_data_reads_it_back(self, data: Any) -> None:
+        """``unescape_data`` is its inverse, the reading resolution gives a dict holding no expression."""
+        assert unescape_data(escape_data(data)) == data
+
+
+class TestUnescapeData:
+    """``unescape_data`` reads each escape as its text, and refuses a ``${...}``, which it does not evaluate."""
+
+    def test_an_escape_is_read_as_resolution_reads_it(self) -> None:
+        """The escape loses one ``$``, as resolution's interpolation takes it off."""
+        data = {"s": "a $${x} b", "l": ["$$${y}"], "${k}": "plain"}
+        assert unescape_data(data) == resolve_expressions(data) == {"s": "a ${x} b", "l": ["$${y}"], "${k}": "plain"}
+
+    def test_a_part_with_nothing_to_read_is_shared(self) -> None:
+        """A container holding no escape is handed back itself, tokens kept."""
+        untouched = {"a": [_StrToken("5")]}
+        assert unescape_data({"u": untouched, "s": "$${x}"})["u"] is untouched
+
+    def test_an_expression_is_refused_at_its_position(self) -> None:
+        """The position is spelled as construction spells a field."""
+        with pytest.raises(ConfargError, match=r"^The value at 'a\.l\[1\]' holds the expression \$\{x \+ 1\}"):
+            unescape_data({"a": {"l": ["ok", "at ${x + 1}"]}})
 
 
 class TestKeyReadsAPosition:

@@ -24,7 +24,7 @@ import confarg.cli.cyclopts as confargcyclopts
 import confarg.cli.typer as confargtyper
 from confarg import _defaults
 from confarg._merge import ListOp, MergeDict, _deep_merge
-from confarg.exceptions import ConfargWarning
+from confarg.exceptions import ConfargError, ConfargWarning
 from tests.conftest import (
     AppConfig,
     CacheConfig,
@@ -310,8 +310,12 @@ class TestAFieldDefaultIsTheBaseLayer:
         assert confarg.from_dict(_Defaults, {"v": {ListOp.APPEND: [3]}}).v == (0, 1, 3)
 
     def test_a_default_spelled_like_an_expression_comes_out_as_written(self) -> None:
-        """The escape and the expression in the default both survive byte for byte."""
-        assert confarg.resolve(_Defaults, {"m": "${literal}"})["m"] == "$${a} and ${b}"
+        """The escape and the expression in the default both survive byte for byte.
+
+        ``resolve()`` hands the text back spelled for resolution (BUG-326), the default's own
+        spelling, which every reader of its dict gives back as the default's text.
+        """
+        assert confarg.resolve(_Defaults, {"m": "${literal}"})["m"] == "$$${a} and $${b}"
         assert confarg.build(_Defaults, {}).literal == "$${a} and ${b}"
 
     def test_a_default_construction_would_refuse_still_builds(self) -> None:
@@ -325,6 +329,177 @@ class TestAFieldDefaultIsTheBaseLayer:
         """``from_dict(list[int], resolve(...))`` builds what ``build()`` does (5c)."""
         raw = confarg.merge(list[int], argv=["--json", "[1, 2]"], env={})
         assert confarg.from_dict(list[int], confarg.resolve(list[int], raw)) == confarg.build(list[int], raw) == [1, 2]
+
+
+def _bug326_echo(text: str) -> str:
+    return text
+
+
+@dataclasses.dataclass
+class _Bug326Inner:
+    a: str = ""
+
+
+@dataclasses.dataclass
+class _Bug326:
+    """Every position a string value takes, beside an ``x`` an unescaped ``${x}`` would read."""
+
+    x: int = 7
+    f: str = ""
+    g: str = ""
+    tags: list[str] = dataclasses.field(default_factory=list)
+    anything: Any = None
+    inner: _Bug326Inner = dataclasses.field(default_factory=_Bug326Inner)
+    keyed: dict[str, int] = dataclasses.field(default_factory=dict)
+    either: int | str = ""
+    d: str = "${x}"
+    defaults: tuple[str, ...] = ("${x}",)
+
+
+_BUG326_YAML = """\
+locals:
+  base: lit $${x}
+f: at $${x}
+g: ${f}
+tags: ['$${x}', plain, '$$${x}']
+anything: {k: ['$${x}'], run: {call: tests.test_load_api._bug326_echo, args: {text: '$${x} and ${x}'}}}
+inner: {a: '${locals.base}'}
+keyed: {'$${x}': 1}
+"""
+
+
+class TestAResolvedDictIsSpelledForResolution:
+    """``resolve()`` returns a configuration, which ``from_dict()``, ``build()`` and a reload read back alike (BUG-326).
+
+    Every string value of the resolved dict is escaped, and ``from_dict()`` reads an escape as
+    its text, so the replay dump ``dump_file(resolve(...))`` loads back as the run.
+    """
+
+    @pytest.fixture
+    def merged(self, tmp_path: Path) -> MergeDict:
+        """The merge of a file spelling text that looks like an expression at every position."""
+        path = tmp_path / "in.yaml"
+        path.write_text(_BUG326_YAML, encoding="utf-8")
+        return confarg.merge(_Bug326, argv=[], env={}, files=[path])
+
+    def test_resolve_writes_every_text_escaped(self, merged: MergeDict) -> None:
+        """Each string value is spelled so that resolution gives it back; a key is left as written."""
+        resolved = confarg.resolve(_Bug326, merged)
+        assert resolved["f"] == "at $${x}"
+        assert resolved["g"] == "at $${x}"
+        assert resolved["tags"] == ["$${x}", "plain", "$$${x}"]
+        assert resolved["anything"]["k"] == ["$${x}"]
+        assert resolved["anything"]["run"]["args"] == {"text": "$${x} and 7"}
+        assert resolved["locals"] == {"base": "lit $${x}"}
+        assert resolved["inner"] == {"a": "lit $${x}"}
+        assert resolved["keyed"] == {"$${x}": 1}
+
+    def test_every_reader_builds_what_build_builds(self, merged: MergeDict) -> None:
+        """``from_dict()`` and ``build()`` read the resolved dict as ``build()`` read the merge."""
+        built = confarg.build(_Bug326, merged)
+        assert built.f == built.g == "at ${x}"
+        assert built.tags == ["${x}", "plain", "$${x}"]
+        assert built.anything == {"k": ["${x}"], "run": "${x} and 7"}
+        assert built.inner.a == "lit ${x}"
+        resolved = confarg.resolve(_Bug326, merged)
+        assert confarg.from_dict(_Bug326, resolved) == built
+        assert confarg.build(_Bug326, resolved) == built
+
+    def test_the_replay_dump_loads_back_as_the_run(self, merged: MergeDict, tmp_path: Path) -> None:
+        """``dump_file(resolve(...))`` reloads as the configuration it was resolved from."""
+        path = tmp_path / "replay.yaml"
+        confarg.dump_file(confarg.resolve(_Bug326, merged), path)
+        assert confarg.load(_Bug326, argv=[], env={}, files=[path]) == confarg.build(_Bug326, merged)
+
+    def test_resolve_gives_its_own_result_back(self, merged: MergeDict) -> None:
+        """Resolving a resolved dict changes nothing: every value of it is text resolution gives back."""
+        resolved = confarg.resolve(_Bug326, merged)
+        assert confarg.resolve(_Bug326, resolved) == resolved
+
+    def test_an_argv_token_keeps_its_reading(self) -> None:
+        """Text with nothing to escape stays the token argv wrote, which a union reads by its type."""
+        merged = confarg.merge(_Bug326, argv=["--either", "5"], env={})
+        resolved = confarg.resolve(_Bug326, merged)
+        assert confarg.from_dict(_Bug326, resolved).either == confarg.build(_Bug326, merged).either == 5
+
+    def test_resolve_shares_what_it_does_not_rewrite(self) -> None:
+        """A part holding no text to escape is still the caller's own."""
+        inner = {"a": "plain"}
+        data = {"inner": inner, "f": "${x}"}
+        assert confarg.resolve(_Bug326, data)["inner"] is inner
+
+
+class TestFromDictReadsAnEscape:
+    """``from_dict()`` reads an escape as the text it spells, and refuses an expression (BUG-326)."""
+
+    @pytest.mark.parametrize(
+        ("data", "attr", "built"),
+        [
+            pytest.param({"f": "$${x}"}, "f", "${x}", id="escape"),
+            pytest.param({"f": "$$${x}"}, "f", "$${x}", id="escaped-escape"),
+            pytest.param({"f": "a $${x} b $${y}"}, "f", "a ${x} b ${y}", id="interpolated"),
+            pytest.param({"tags": ["$${x}"]}, "tags", ["${x}"], id="list-item"),
+            pytest.param({"anything": {"k": "$${x}"}}, "anything", {"k": "${x}"}, id="any-dict"),
+            pytest.param({"inner": {"a": "$${x}"}}, "inner", _Bug326Inner("${x}"), id="nested-struct"),
+            pytest.param({"f": "${"}, "f", "${", id="no-expression"),
+            pytest.param({"keyed": {"$${x}": 1}}, "keyed", {"$${x}": 1}, id="key-as-written"),
+            pytest.param({"keyed": {"${x}": 1}}, "keyed", {"${x}": 1}, id="key-spelling-an-expression"),
+        ],
+    )
+    def test_an_escape_is_read_as_its_text(self, data: dict[str, Any], attr: str, built: Any) -> None:
+        """Each string value is read as resolution reads it; a key is read as written."""
+        assert getattr(confarg.from_dict(_Bug326, data), attr) == built
+
+    def test_a_calls_argument_is_read_as_its_text(self) -> None:
+        """The arguments of a ``call:`` are string values like any other."""
+        data = {"anything": {"call": f"{__name__}._bug326_echo", "args": {"text": "$${x}"}}}
+        assert confarg.from_dict(_Bug326, data).anything == "${x}"
+
+    def test_a_dump_reads_back_as_the_object(self) -> None:
+        """``from_dict(C, dump(obj))`` builds the object, its text unevaluated."""
+        obj = _Bug326(f="${x}", tags=["$${x}"], inner=_Bug326Inner("at ${x}"))
+        assert confarg.from_dict(_Bug326, confarg.dump(obj)) == obj
+
+    def test_a_default_is_read_as_the_class_wrote_it(self) -> None:
+        """A default is the class's value, neither unescaped nor refused, a patch over it included."""
+        built = confarg.from_dict(_Bug326, {"defaults": {ListOp.APPEND: ["$${y}"]}})
+        assert built.d == "${x}"
+        assert built.defaults == ("${x}", "${y}")
+
+    @pytest.mark.parametrize(
+        ("data", "spelled", "expression"),
+        [
+            pytest.param({"f": "${x}"}, "f", "${x}", id="field"),
+            pytest.param({"f": "at $${x} and ${x}"}, "f", "${x}", id="beside-an-escape"),
+            pytest.param({"tags": ["a", "${x}"]}, "tags[1]", "${x}", id="list-item"),
+            pytest.param({"anything": {"k": ["${x}"]}}, "anything.k[0]", "${x}", id="any-node"),
+            pytest.param(
+                {"anything": {"call": f"{__name__}._bug326_echo", "args": {"text": "${x}"}}},
+                "anything.args.text",
+                "${x}",
+                id="call-argument",
+            ),
+        ],
+    )
+    def test_an_expression_is_refused(self, data: dict[str, Any], spelled: str, expression: str) -> None:
+        """A ``${...}`` means the dict was never resolved: building its text would differ from ``build()``."""
+        with pytest.raises(ConfargError) as excinfo:
+            confarg.from_dict(_Bug326, data)
+        message = str(excinfo.value)
+        assert f"'{spelled}'" in message
+        assert expression in message
+        assert "build()" in message
+        assert "resolve()" in message
+
+    def test_a_root_value_is_named_as_the_root(self) -> None:
+        """A root set whole has no field to name."""
+        with pytest.raises(ConfargError, match=r"^The root value holds the expression \$\{x\}"):
+            confarg.from_dict(str, {"__root__": "${x}"})
+        assert confarg.from_dict(str, {"__root__": "$${x}"}) == "${x}"
+
+    def test_a_local_is_not_read(self) -> None:
+        """Construction drops the locals, so an expression only a local holds builds nothing wrong."""
+        assert confarg.from_dict(_Bug326, {"locals": {"y": "${x}"}, "f": "plain"}).f == "plain"
 
 
 class _Colour(enum.Enum):

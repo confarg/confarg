@@ -5,7 +5,7 @@ The dumps serialize different things, for different uses (maintainer-chosen):
 | | Writes | For |
 |---|---|---|
 | `dump_file(merge(...))` | the configuration **as written**: every `${...}`, every `call:`, `class:`, `bind:` and `classfn:` spec, kept verbatim | understanding what was passed to the program, and reusing it: its dependency logic is all there. It does not replay: a `call:` reruns whatever its target does by then |
-| `dump_file(resolve(...))` | the configuration with its expressions **resolved** | replaying a run; relaunching with other settings is not its use, since the dependencies between values are gone. Today it still keeps each `call:` as written and leaves out every default nothing touched, which FEAT-48 is for |
+| `dump_file(resolve(...))` | the configuration with its expressions **resolved**, text that spells `${...}` escaped ([a configuration dict is spelled for resolution](a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution)) | replaying a run; relaunching with other settings is not its use, since the dependencies between values are gone. Today it still keeps each `call:` as written and leaves out every default nothing touched, which FEAT-48 is for |
 | `dump(obj)`, `dump_file(obj)` | the **state** of the built object: the values the program ran with | forensics: how the inputs were interpreted and what the program effectively used, changes made after `build()` included |
 
 So an object dump holds no expression and no `call:`: text the object holds that spells `${...}` is written escaped, so it reads back as that text ([serialization](../types/serialization.md#text-spelling-an-expression-is-written-escaped)).

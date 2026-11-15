@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
 
+from confarg import _defaults
 from confarg._depth import Copies, positions_below
 from confarg._merge import ListOp, MergeDict, _holds_list_ops
 from confarg.exceptions import (
@@ -139,33 +140,84 @@ def _rewrite_spans(text: str, spans: Iterable[_ExpressionSpan], replace: Callabl
     return "".join(out)
 
 
+def _escape_text(text: str, span: _ExpressionSpan) -> str:
+    """Return the literal the escape *span* of *text* resolves to: the escape without its first ``$``."""
+    return text[span.start + 1 : span.end]
+
+
 def escape_expressions(text: str) -> str:
     """Return *text* spelled so that resolution gives *text* back, byte for byte.
 
     Every ``${...}`` becomes the ``$${...}`` escape of it, and every escape gains one more
     ``$``, which resolution takes off again. A ``${`` that is no expression is left as
-    written, so it stays no expression.
+    written, so it stays no expression, and a text holding none is *text* itself, so an argv
+    token stays one.
 
     Dev Notes:
         docs-dev/architecture/expressions/values-and-references.md#delimiting-an-expression
     """
-    return _rewrite_spans(text, _find_expressions(text), lambda span: "$" + text[span.start : span.end])
+    spans = list(_find_expressions(text))
+    return _rewrite_spans(text, spans, lambda span: "$" + text[span.start : span.end]) if spans else text
+
+
+def _map_text(data: Any, rewrite: Callable[[str, _Path], str], path: _Path = ()) -> Any:
+    """Return *data* with each string value replaced by what *rewrite* answers for it and its position.
+
+    The walk is the one resolution scans (:func:`_collect_expressions`): a dict's values and a
+    list's items, never a key. A container nothing in which is rewritten is handed back itself,
+    so the result shares with *data* every part it does not change.
+    """
+    if isinstance(data, dict):
+        mapped = {k: _map_text(v, rewrite, (*path, k)) for k, v in data.items()}
+        return data if all(mapped[k] is v for k, v in data.items()) else mapped
+    if isinstance(data, list):
+        items = [_map_text(v, rewrite, (*path, i)) for i, v in enumerate(data)]
+        return data if all(a is b for a, b in zip(items, data, strict=True)) else items
+    return rewrite(data, path) if isinstance(data, str) else data
 
 
 def escape_data(data: Any) -> Any:
     """Return *data* spelled so that resolution gives it back: each string value escaped, each key as written.
 
-    The walk is the one resolution scans (:func:`_collect_expressions`): a dict's values and a
-    list's items. A key is never escaped, since resolution never reads one.
+    A key is never escaped, since resolution never reads one. A part holding nothing to
+    escape is shared with *data*.
 
     Dev Notes:
         docs-dev/architecture/types/serialization.md#text-spelling-an-expression-is-written-escaped
+        docs-dev/architecture/design-decisions/a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution
     """
-    if isinstance(data, dict):
-        return {k: escape_data(v) for k, v in data.items()}
-    if isinstance(data, list):
-        return [escape_data(v) for v in data]
-    return escape_expressions(data) if isinstance(data, str) else data
+    return _map_text(data, lambda text, _path: escape_expressions(text))
+
+
+def unescape_data(data: Any) -> Any:
+    """Return *data* as resolution gives it back when it holds no ``${...}``: each escape read as its text.
+
+    The inverse of :func:`escape_data`, for a reader that evaluates nothing: each ``$${...}``
+    loses one ``$``, as resolution's interpolation takes it off, and each key is read as
+    written. A part holding no escape is shared with *data*. A ``${...}`` is refused, since
+    reading it as its text would build what resolution does not; a root set whole, under
+    ``__root__``, is named as the root.
+
+    Raises:
+        ConfargError: If a string value holds a ``${...}``, naming its position.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-configuration-dict-is-spelled-for-resolution.md#a-configuration-dict-is-spelled-for-resolution
+    """
+
+    def read(text: str, path: _Path) -> str:
+        spans = list(_find_expressions(text))
+        if not spans:
+            return text
+        if (live := next((s for s in spans if s.body is not None), None)) is not None:
+            at = path[1:] if path[:1] == (_defaults.ROOT_KEY,) else path
+            raise ConfargError.unresolved_expression(
+                tuple(k if isinstance(k, int) else str(k) for k in at),
+                text[live.start : live.end],
+            )
+        return _rewrite_spans(text, spans, lambda span: _escape_text(text, span))
+
+    return _map_text(data, read)
 
 
 def contains_expression(value: object) -> bool:
@@ -1457,8 +1509,7 @@ def _resolve_single(expr_str: str, namespace: _Namespace, node_path: _Path = ())
 
     def replace(span: _ExpressionSpan) -> str:
         if span.body is None:
-            # Escaped $${...} — strip one $, producing the literal ${...}
-            return expr_str[span.start + 1 : span.end]
+            return _escape_text(expr_str, span)
         # Real expression — evaluate and stringify
         tree = _parse_anchored(span.body, node_path)
         value = _eval_expr(tree, namespace, expr_str[span.start : span.end])
