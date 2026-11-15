@@ -32,7 +32,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-324 — The environment has no scalar cast](BUG-324-the-environment-has-no-scalar-cast.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-325 — A lone variable value is no one-item list](BUG-325-a-lone-variable-value-is-no-one-item-list.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-269 — A constructor's own exception escapes construction raw, with no path](BUG-269-a-constructors-own-exception-escapes-construction-raw.md) | minor |  | L | high | api | PR-5 |
-| [BUG-149 — The testing protocol routes example tests to a folder that does not exist](BUG-149-the-testing-protocol-routes-example-tests-to-a-folder-that-does-not-exist.md) | trivial |  | S | low | none | BUG-52 |
 | [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |
 | [BUG-320 — Console examples fail on Windows, decoding their output as the locale](BUG-320-console-examples-fail-on-windows-decoding-their-output-as-the-locale.md) | trivial |  | S | low | none | PR-35 |
 
