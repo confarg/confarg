@@ -29,7 +29,7 @@ Precedents: JSON Patch's `add` at `/-` appends its `value` as one element, a lis
   `_step` serves evaluation, the dependency scan and the write-back, and an expression inside an appended item sits at `items.__append__.0.name` for the scan but at `items.0.name` in the view: every reader would have to translate one naming into the other.
   An index patch over a struct item needs a typed merge to build the view, and `dictexpr` knows no type.
 - **`merge()` applies a layer's own ops.**
-  `merge()` is "save as written" ([api seams](../pipeline/api-seams.md#public-api-seams)): `dump_file(merge(...))` of `--names+ c` would write `names: [c]`, which replaces a lower file's list where `{__append__: [c]}` appends to it, the round trip BUG-202 settled.
+  `merge()` is "save as written" ([api seams](../pipeline/api-seams.md#round-trips)): `dump_file(merge(...))` of `--names+ c` would write `names: [c]`, which replaces a lower file's list where `{__append__: [c]}` appends to it, the round trip BUG-202 settled.
 
 The cost: `resolve()` holds no pending op where the type settles the list, which matters to nobody but a caller dumping it as a layer to merge over others, which is `merge()`'s output's job.
 
