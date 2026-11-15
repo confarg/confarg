@@ -435,7 +435,7 @@ def _merge_sources(
     env vars and CLI args; later files win on conflict):
         1. ``files`` — in the order given.
         2. ``env_config`` — the single global path named by that env var (if set).
-        3. ``<config_flag>__*`` env vars — sorted lexicographically, i.e. by
+        3. ``<env_prefix><CONFIG_FLAG>[__<subpath>]`` env vars — sorted lexicographically, i.e. by
            subpath depth (shallower paths first).
         4. ``cli_configs`` — in left-to-right CLI order.
     """
