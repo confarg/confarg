@@ -121,7 +121,7 @@ def _src_type(value: Any) -> str:
     return "str" if isinstance(value, _StrToken) else type(value).__name__
 
 
-def _spell_type(tp: Any, *, as_written: bool = False) -> str:
+def _spell_type(tp: Any, *, as_written: bool = False, _nested: bool = False) -> str:  # noqa: PLR0911  # one return per kind of type
     """Return how a message names the annotation *tp*: as the type confarg reads it as.
 
     Its wrappers are unwrapped, an alias, a ``NewType`` and an ``Annotated`` named by the type
@@ -137,17 +137,25 @@ def _spell_type(tp: Any, *, as_written: bool = False) -> str:
     an alias and a ``NewType`` named by their own name, ``NoneType`` passed alone as the class
     it is, a union by its variants as written, a ``Literal`` by every member it holds.
 
+    A recursive alias, ``type Json = int | list[Json]``, is unwrapped alone but named by its own
+    name once nested (*_nested*, a variant or an argument), so it reads ``int | list[Json]`` and
+    its unwrapping ends where it holds itself (:func:`_alias_holds_itself`).
+
     Dev Notes:
         docs-dev/architecture/design-decisions/a-message-names-a-type-by-what-confarg-reads.md#a-message-names-a-type-by-what-confarg-reads
     """
     if not as_written:
+        if _nested and _is_type_alias(tp) and _alias_holds_itself(tp):
+            return tp.__name__
         tp = _resolve_type(tp)
     if tp is None or (tp is types.NoneType and not as_written):
         return "None"
     origin = get_origin(tp)
     if _is_union_origin(origin):
         variants = get_args(tp) if as_written else _union_args(tp)
-        return " | ".join("None" if v is types.NoneType else _spell_type(v, as_written=as_written) for v in variants)
+        return " | ".join(
+            "None" if v is types.NoneType else _spell_type(v, as_written=as_written, _nested=True) for v in variants
+        )
     if origin is Literal:
         # A Literal confarg reads no member of, ``Literal[b'a']``, is named by what it holds.
         members = get_args(tp) if as_written else (_literal_values(tp) or get_args(tp))
@@ -169,8 +177,34 @@ def _spell_argument(arg: Any, *, as_written: bool) -> str:
     if arg is Ellipsis:
         return "..."
     if isinstance(arg, list):
-        return f"[{', '.join(_spell_type(a, as_written=as_written) for a in arg)}]"
-    return _spell_type(arg, as_written=as_written)
+        return f"[{', '.join(_spell_type(a, as_written=as_written, _nested=True) for a in arg)}]"
+    return _spell_type(arg, as_written=as_written, _nested=True)
+
+
+def _alias_holds_itself(alias: Any) -> bool:
+    """True if the type *alias* stands for mentions *alias* again, however many aliases and generics it goes through.
+
+    Asked only to spell a type for a message, so the walk is not cached.
+    """
+    seen: set[int] = set()
+    pending = [alias.__value__]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, list | tuple):
+            pending.extend(node)
+            continue
+        if node is alias:
+            return True
+        if _is_type_alias(node):
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            pending.append(node.__value__)
+        elif isinstance(node, NewType):
+            pending.append(node.__supertype__)
+        else:
+            pending.extend(get_args(node))
+    return False
 
 
 def _is_type_alias(tp: Any) -> bool:

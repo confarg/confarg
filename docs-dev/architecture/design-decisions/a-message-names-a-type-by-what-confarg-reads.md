@@ -25,6 +25,8 @@ A message names what confarg tried, which is what the annotation stands for: a f
 **A type reads alike alone and nested.**
 A generic's arguments go through `_spell_type` too, a Callable's parameter list and `...` included, so `Any` reads `Any` inside `dict[str, Any]` as it does alone, and `list[Optional[int]]` reads `list[int | None]` on every Python, where its `repr` reads `list[typing.Optional[int]]` on 3.12.
 Writing the arguments by `repr`, as REF-97 did, left the version dependence it removed from a union at the top level.
+A recursive alias, `type Json = int | str | list[Json] | dict[str, Json]`, is the exception to the unwrapping: unwrapped alone, it is named by its own name once nested, as a variant or an argument, so a refusal at it reads `int | str | list[Json] | dict[str, Json]` and the unwrapping ends where the alias holds itself, `_types._alias_holds_itself` (BUG-316).
+Unwrapping every nested alias, which the argument spelling did for a while, never finished one; REF-97 had named a nested alias by its own name throughout.
 A registered leaf's parameterized form follows: `re.Pattern[str]` reads `Pattern[str]`, its class by `__name__`.
 
 **A `Literal` reads the members confarg reads.**

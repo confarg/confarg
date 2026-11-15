@@ -24,7 +24,7 @@ import pytest
 import typing_extensions
 
 import confarg
-from confarg._types import _allows_none, _resolve_type, _union_args
+from confarg._types import _allows_none, _resolve_type, _spell_type, _union_args
 from confarg.exceptions import TypeCoercionError
 from tests.conftest import (
     AliasInt,
@@ -1252,6 +1252,8 @@ type _IntOrStr = int | str
 type _Cyclic = _CyclicToo | int  # ty: ignore[cyclic-type-alias-definition]  # a union holding itself, refused on purpose
 type _CyclicToo = _Cyclic | str  # ty: ignore[cyclic-type-alias-definition]  # a union holding itself, refused on purpose
 type _Json = int | str | list[_Json] | dict[str, _Json]
+type _PingList = int | list[_PongList]
+type _PongList = int | list[_PingList]
 type _NoneAlias = None
 type _AnnotatedCycle = Annotated[_CycleBack, "m"] | int  # ty: ignore[cyclic-type-alias-definition]  # refused on purpose
 type _CycleBack = _AnnotatedCycle | str  # ty: ignore[cyclic-type-alias-definition]  # refused on purpose
@@ -1359,3 +1361,21 @@ class TestARecursiveAlias:
         Target = make_target("j", _Json, default=0)
         assert confarg.build(Target, {"j": [1, {"a": "b"}]}).j == [1, {"a": "b"}]
         assert confarg.load(Target, argv=["--j", "3"], env={}).j == 3
+
+    def test_a_refusal_at_it_names_the_alias_met_again(self) -> None:
+        """The message spells the alias, then its own name where the alias comes round again (BUG-316)."""
+        Target = make_target("j", _Json, default=0)
+        with pytest.raises(TypeCoercionError) as exc_info:
+            confarg.build(Target, {"j": 1.5})
+        assert str(exc_info.value) == "Cannot coerce float 1.5 to int | str | list[_Json] | dict[str, _Json] at 'j'"
+
+    def test_a_refusal_below_a_collection_of_it_names_it_too(self) -> None:
+        """An alias reached through an argument is spelled once, and by its name inside itself."""
+        Target = make_target("j", list[_Json], default=None)
+        with pytest.raises(TypeCoercionError) as exc_info:
+            confarg.build(Target, {"j": [1.5]})
+        assert str(exc_info.value) == "Cannot coerce float 1.5 to int | str | list[_Json] | dict[str, _Json] at 'j[0]'"
+
+    def test_two_aliases_holding_each_other_end(self) -> None:
+        """Aliases holding each other end too: the one nested is named, as each holds itself through the other."""
+        assert _spell_type(_PingList) == "int | list[_PongList]"
