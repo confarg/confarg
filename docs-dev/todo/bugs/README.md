@@ -13,7 +13,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
 | [BUG-319 — Construction refuses a combination of `enum.Flag` members](BUG-319-construction-refuses-a-combination-of-enum-flag-members.md) | major |  | M | low | behavior | PR-46 |
-| [BUG-140 — The `from_namespace` / `from_context` docstrings still read the CLI channel out of the parse result](BUG-140-adapter-docstrings-read-the-cli-channel-out-of-the-parse-result.md) | minor |  | S | low | behavior | REF-72 |
 | [BUG-176 — A bare optional fixed-arity flag gets a one-value usage line](BUG-176-a-bare-optional-fixed-arity-flag-gets-a-one-value-usage.md) | minor |  | S | low | behavior | PR-77 |
 | [BUG-281 — A method a module publishes off its own instance does not dump as its path](BUG-281-a-method-a-module-publishes-off-its-own-instance-does-not-dump-as-its-path.md) | minor |  | S | medium | behavior | PR-5 |
 | [BUG-282 — A lazy module hook that raises on `__all__` escapes `dotted_name`](BUG-282-a-lazy-module-hook-raising-on-all-escapes-dotted-name.md) | minor |  | S | low | none | BUG-279 |

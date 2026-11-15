@@ -84,11 +84,12 @@ def from_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[MergeO
     """Construct a dataclass instance from an argparse :class:`~argparse.Namespace`.
 
     Merges three sources in ascending priority order: config files, environment
-    variables, then CLI arguments from the Namespace.  This mirrors the
-    behaviour of :func:`confarg.load`.
+    variables, then CLI arguments.  This mirrors the behaviour of :func:`confarg.load`.
 
-    Only fields registered by :func:`populate_parser` are consumed from ``ns``.
-    Fields absent from the Namespace fall back to env vars, config files, or
+    The CLI arguments are read off ``argv``, by the loop :func:`confarg.load` runs over it;
+    the Namespace is only checked against it.  A confarg flag the Namespace holds that
+    ``argv`` does not spell is refused, and the Namespace's values are never read.
+    A field the command line does not spell falls back to env vars, config files, or
     dataclass defaults; missing required fields raise
     :class:`~confarg.exceptions.MissingFieldError`.
 

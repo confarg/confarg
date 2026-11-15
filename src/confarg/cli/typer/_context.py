@@ -50,12 +50,13 @@ def from_context(target: object, ctx: typer.Context, **opts: Unpack[MergeOptions
     """Construct a dataclass instance from a :class:`typer.Context`.
 
     Merges three sources in ascending priority order: config files, environment
-    variables, then CLI arguments from the Context.  This mirrors the behaviour
-    of :func:`confarg.load`.
+    variables, then CLI arguments.  This mirrors the behaviour of :func:`confarg.load`.
 
-    Only options registered by :func:`populate_command` are consumed from ``ctx``.
-    Options absent from the Context (i.e. not provided by the user) fall back to
-    env vars, config files, or dataclass defaults; missing required fields raise
+    The CLI arguments are read off ``argv``, by the loop :func:`confarg.load` runs over it;
+    the Context is only checked against it.  A confarg option the Context holds that
+    ``argv`` does not spell is refused, and the Context's values are never read.
+    A field the command line does not spell falls back to env vars, config files, or
+    dataclass defaults; missing required fields raise
     :class:`~confarg.exceptions.MissingFieldError`.
 
     Args:
