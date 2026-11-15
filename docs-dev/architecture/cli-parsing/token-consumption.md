@@ -21,11 +21,11 @@
   A write that replaces the value at a path ends every run kept at or below it (`_forget_tokens_below`): a key delete (`--xs-`, `--sub-`), a `.json` cast, a `{…}` whole value, and the root cast of a non-struct root, so the occurrence after it starts a new run and the last typed wins, `--sub.xs 1 --sub.json '{"xs": [5]}' --sub.xs 2` building `[2]`.
   Only a key delete at the run's own path ended it until then, and every other such write was lost under the earlier run's tokens, `[1, 2]`.
 - **Fixed-length** means `tuple[X, Y]` *or* a namedtuple: both are sequences of a known arity, so one function answers "how many tokens, of which types?" for both, `_types._fixed_seq_types` — and `_is_seq_variant` counts a namedtuple as sequence-shaped wherever a union variant is classified ([design decisions](../design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence)).
-- A token starting with `{` or `[` is decoded as JSON when the field type accepts an object or a list.
-  `_accepts_object_value` owns the object half, because the adapters must register and decode the same bare flags ([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)).
+- A token starting with `{` or `[` is decoded as JSON where the type it lands at reads the object or the list it opens, a whole value and an item alike ([below](#a-json-led-value-is-read-by-its-type)).
+  `_accepts_object_value` answers the object half for a field, because the adapters must register and decode the same bare flags ([whole-value flags](../cli-adapters/whole-value-flags.md#whole-value-flags)).
   The `{`-prefix guard runs *before* the arity path, so a namedtuple takes a whole object without ever competing with its own positional form.
-- The `[` half is a **whole-value** spelling, so `_lone_json_array` grants it only to a flag carrying exactly one token: `--tags '["a","b"]'` decodes, and `--tags '["a","b"]' z` or a second occurrence makes every token an ordinary item.
-  On a multi-token flag the question is therefore asked of the *accumulated* tokens ([CLI adapters](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence)).
+- The `[` half is a **whole-value** spelling, so `_lone_json_value` grants it only to a flag carrying exactly one token: `--tags '["a","b"]'` decodes, and `--tags '["a","b"]' z` or a second occurrence makes every token an ordinary item.
+  On a multi-token flag the question is therefore asked of the *accumulated* tokens ([CLI adapters](../cli-adapters/list-syntax-divergence.md#list-syntax-divergence)), and on a fixed-arity flag of the token before the next flag.
 - Leaves are coerced eagerly with `_try_coerce`, to a value a file holds natively only, so the merged dict has the same types whichever channel supplied them (and so CLI numbers work inside expressions); an `Enum` or registered leaf stays as typed ([token model](../types/token-model.md#a-leaf-reaches-the-merged-dict-as-written)).
 - Bool fields take an explicit value: `--verbose true` ([design decisions](../design-decisions/explicit-boolean-values.md#explicit-boolean-values)).
 - A whole value already stored at a field is **opened, not overwritten**, when a later `--<field>.<sub>` has to descend through it.
@@ -34,6 +34,22 @@
   A field with no shorthand has nothing to open and the deeper key replaces its scalar ([pipeline](../pipeline/deep-merge.md#scalar-intermediates)).
 - A namedtuple's **positional list is the `__base__`** a later sub-flag patches beside, as a *varlen* collection's is: the generic `_set_nested` promotion turns `--pt 1 2 --pt.y 9` into `{__base__: [1, 2], 'y': 9}`, and `build()` lays the patch over the positions by field name, the same shape the merge defers a file's list under a name patch to.
   Write order decides the shape: a later arity flag still replaces the whole field ([design decisions](../design-decisions/namedtuple-arity-flag-argv-order.md#a-namedtuples-arity-flag-and-its-sub-flags-merge-in-argv-order)).
+
+## A JSON-led value is read by its type
+
+A `{`- or `[`-led value is read by the type of the position it lands at, on argv and in the environment alike, a whole value and an item alike.
+`_parse_cli._takes_json` decides whether it is decoded and `_parse_cli._read_json` what it is, both from `_types._json_shape_readers`, which asks every variant of the type but `None` whether it reads the object or the list the value opens ([design decisions](../design-decisions/text-that-is-no-json-is-refused-where-the-type-reads-nothing-else.md#text-that-is-no-json-is-refused-where-the-type-reads-nothing-else)).
+
+- Where no variant reads that shape, a `str`, an `Any` or a scalar, it is text, JSON or not: `--name '{"a": 1}'` is that text, and so is an appended item of a `list[str]` or a `list[Any]`.
+- Where a variant reads it, it is decoded, as data ([a decoded value is data](../design-decisions/a-decoded-value-is-data.md#a-decoded-value-is-data)).
+  Text that is no JSON is refused where every variant reads that shape, a dict, a struct, a list or a tuple, optional or not: `Invalid JSON for --d: …`, `Invalid JSON for APP_D: …`, the one spelling (`ConfargError.invalid_json`) a `.json` cast's refusal has too.
+- Where a variant beside one reading the shape may take text, text that is no JSON stays text, marked `_types._IllFormedJson`, and construction picks the variant as for any token: `str | dict[str, int]` holds `'{"x": 1,'`, and `Path | dict[str, int]` a `Path`.
+  Should no variant take it, the union's refusal gives the decode error as the reason of the variant reading the shape ([construction](../types/construction.md#a-union-refusal-names-each-variants-reason)).
+  It fills no one-element list as `_UnionSeqToken` does, since a `[`-led token at a list is no item when it stands alone.
+- An item is read as a whole value of the item type is (`_read_item`), on a list's run, a fixed-length sequence's positions and an append, so `--rows '{"a": 1}' '{"a": 2}'` and `--rows+ …` read the same objects.
+  A union's run reads each item by the types its sequence variants hold at that position (`_union_item_type`), so `list[dict[str, int]] | None` reads its items as `list[dict[str, int]]` does.
+- A lone `[`-led token is the whole value, so `--tags '[a b]'` is refused at a `list[str]`; appended (`--tags+ '[a b]'`) or beside another token it is an item, which the item type takes as text.
+  On a repeated flag a later occurrence makes it an item, so the refusal of a lone token waits for the end of argv (`_ParseCtx.refused_runs`), where it is raised if the run never grew.
 
 ## Unions with sequence variants
 

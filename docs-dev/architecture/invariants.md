@@ -115,9 +115,10 @@ Canonical decision-makers:
 | "which token shape does a flag setting a value of this type register?" | `cli/_build._shaped`, asked of the type as resolved by every flag that sets one — a field, a namedtuple's arity flag, a subkey or element, a class's field or a target's argument typed by the name argv gives: a run that stands bare for a multi-token type (`_takes_multi_tokens`, a union with a sequence variant beside a struct one included), one token per position or one whole value refusing its bare occurrence for a fixed-arity one, one token otherwise — so one type registers one shape wherever it is addressed (BUG-198, [CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)) |
 | "which flags does argv spell?" | `cli._argv.spelled_flag_names` |
 | "does the static walk leave this path's flag to be registered when typed?" | `_parse_cli._registered_when_typed` — a collection patch, or a tag the walk reaches by its fallback, whatever the parent (BUG-106) |
-| "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value` |
+| "is this `{`- or `[`-led value JSON, refused or text?" | `_parse_cli._takes_json` and `_parse_cli._read_json`, from `_types._json_shape_readers`: a whole value, an item and a run's lone token, on argv and in the environment alike; text a variant may take is marked `_IllFormedJson`, whose decode error construction gives (BUG-323, [CLI parsing](cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type)) |
+| "does this field take a whole `{…}` token?" | `_parse_cli._accepts_object_value`, the object half of `_types._json_shape_readers` |
 | "is the token after this flag decoded as a whole `{…}` value?" | `_parse_cli._takes_whole_value` — a `{`-led token at a field `_accepts_object_value` admits; vanilla's loop, the typed-call openings scan and the adapters' blob scan (`cli._build._blob_document_from_argv`) all ask it, so a value the loop keeps as text opens no call and buys no flag (BUG-216, [CLI adapters](cli-adapters/whole-value-flags.md#whole-value-flags)) |
-| "is this a whole-value inline JSON array?" | `_parse_cli._lone_json_array` |
+| "is this a whole-value inline JSON array?" | `_parse_cli._lone_json_value` |
 | what a multi-token flag's accumulated tokens hold | `_parse_cli._varlen_value` / `_union_seq_value` |
 | "is a bare string here a callable shorthand, and must it be opened?" | `_parse_cli._open_callable_shorthand` |
 | the dict form a bare callable string abbreviates | `_callable.promote_bare_spec` |

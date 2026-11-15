@@ -122,9 +122,7 @@ def resolve_forced_value(cast_name: str, raw: str, *, flag: str = "", at: Sequen
         try:
             return decode_json(raw, flag or JSON_CAST_NAME, at)
         except json.JSONDecodeError as e:
-            label = flag or "value"
-            msg = f"Invalid JSON for {label}: {e}"
-            raise ConfargError(msg) from e
+            raise ConfargError.invalid_json(flag or "value", e) from e
     return _Pinned(SCALAR_CAST_TYPES[cast_name], _StrToken(raw))
 
 

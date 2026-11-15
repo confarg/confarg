@@ -11,6 +11,7 @@ import enum
 import functools
 import inspect
 import itertools
+import json
 import types
 import typing
 import weakref
@@ -77,6 +78,30 @@ class _UnionSeqToken(_StrToken):
     """
 
     __slots__ = ()
+
+
+class _IllFormedJson(_StrToken):
+    """A ``{``- or ``[``-led value a channel decoded as JSON in vain, kept as text for a union variant that takes text.
+
+    Only a union holding such a variant beside one reading the shape the text opens gets
+    one: where every variant reads that shape, the parser refuses the text instead. A
+    variant reading the shape gives the decode error as its reason when no variant takes
+    the text, and none fills a one-element list from it, as it would from ``_UnionSeqToken``.
+
+    Dev Notes:
+        docs-dev/architecture/types/token-model.md#token-model
+    """
+
+    __slots__ = ()
+
+    def decode_error(self) -> str:
+        """Return the error decoding the text as JSON raises, as the parser met it."""
+        try:
+            json.loads(self)
+        except json.JSONDecodeError as e:
+            return str(e)
+        msg = "an ill-formed JSON token holds JSON"
+        raise AssertionError(msg)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1156,6 +1181,37 @@ def _is_seq_variant(tp: Any) -> bool:
     """
     tp = _resolve_type(tp)
     return _is_tuple(tp) or _is_namedtuple(tp) or _is_varlen_collection(tp)
+
+
+def _reads_json_shape(tp: Any, opener: str) -> bool:
+    """Return whether the type *tp*, a union's variant taken alone, reads the JSON value *opener* opens.
+
+    ``{`` opens an object, which a struct of either spelling, a namedtuple, a dict and a
+    callable's spec are read from; ``[`` an array, which a sequence-shaped type is
+    (:func:`_is_seq_variant`). Anything else reads such a value as text, if at all.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+    """
+    tp = _resolve_type(tp)
+    if opener == "{":
+        return _is_struct(tp) or _is_namedtuple(tp) or _is_dict(tp) or _is_callable(tp)
+    return opener == "[" and _is_seq_variant(tp)
+
+
+def _json_shape_readers(tp: Any, opener: str) -> tuple[bool, bool]:
+    """Return whether some variant of *tp* reads the JSON value *opener* opens, and whether every one does.
+
+    A type that is no union is its own one variant, and ``None`` is no variant here:
+    optionality does not change what a whole value takes.
+
+    Dev Notes:
+        docs-dev/architecture/cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type
+    """
+    tp = _resolve_type(tp)
+    variants = _union_args_no_none(tp) if _is_union(tp) else [tp]
+    reads = [_reads_json_shape(v, opener) for v in variants]
+    return any(reads), bool(reads) and all(reads)
 
 
 def _fixed_seq_types(tp: Any) -> list[Any] | None:

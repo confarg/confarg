@@ -7,11 +7,11 @@
 from __future__ import annotations
 
 import ast
-import contextlib
 import enum
 import importlib
 import json
 import math
+import re
 import sys
 import unittest.mock
 import warnings
@@ -1445,13 +1445,10 @@ class TestParseCliGaps2:
 class TestParseEnvJsonFailure:
     """JSON parse failure in env-var value for list/dict fields."""
 
-    def test_malformed_json_list_falls_through(self) -> None:
-        """A malformed JSON array string for a list field falls through to string coercion."""
+    def test_malformed_json_list_is_refused(self) -> None:
+        """A malformed JSON array string for a list field is refused, naming the variable (BUG-323)."""
         WithList = make_target("items", list[str], default_factory=list)
-        # "[1,2,3" is invalid JSON → JSONDecodeError → pass → _try_coerce as string
-        # Result is unpredictable but must not crash
-
-        with contextlib.suppress(confarg.exceptions.TypeCoercionError):
+        with pytest.raises(confarg.exceptions.ConfargError, match=re.escape("Invalid JSON for MYAPP_ITEMS: Expecting")):
             confarg.load(WithList, argv=[], env={"MYAPP_ITEMS": "[1,2,3"}, env_prefix="MYAPP_")
 
 

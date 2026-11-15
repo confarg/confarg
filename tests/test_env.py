@@ -1332,6 +1332,110 @@ class TestEnvDecodedValueIsData:
             loader.load(_EnvDecodedInto, argv=[], env={name: value}, env_prefix="APP_")
 
 
+@_dc
+class _EnvSection:
+    a: int = 0
+
+
+@_dc
+class _EnvIllFormedInto:
+    """Fields taking nothing but an object or a list, unions holding another variant beside one, and lists of items."""
+
+    d: dict[str, int] = field(default_factory=dict)
+    sec: _EnvSection = field(default_factory=_EnvSection)
+    maybe_d: Optional[dict[str, int]] = None  # the spelling an Optional annotation also takes
+    text_or_d: str | dict[str, int] = ""
+    int_or_d: int | dict[str, int] = 0
+    path_or_d: Path | dict[str, int] = Path()
+    ints: list[int] = field(default_factory=list)
+    strs: list[str] = field(default_factory=list)
+    anys: list[Any] = field(default_factory=list)
+    dicts: list[dict[str, int]] = field(default_factory=list)
+    pair: tuple[int, int] = (0, 0)
+    flag_or_strs: bool | list[str] = False
+
+
+_OBJECT_ERROR = "Expecting property name enclosed in double quotes: line 1 column 9 (char 8)"
+_ARRAY_ERROR = "Expecting value: line 1 column 4 (char 3)"
+_WORDS_ERROR = "Expecting value: line 1 column 2 (char 1)"
+
+
+class TestEnvIllFormedJson:
+    """A ``{``/``[``-led variable that is no JSON reads as its flag does (BUG-323)."""
+
+    @pytest.mark.parametrize(
+        ("name", "value", "error"),
+        [
+            pytest.param("APP_D", '{"x": 1,', _OBJECT_ERROR, id="dict"),
+            pytest.param("APP_SEC", '{"x": 1,', _OBJECT_ERROR, id="struct"),
+            pytest.param("APP_MAYBE_D", '{"x": 1,', _OBJECT_ERROR, id="optional-dict"),
+            pytest.param("APP_INTS", "[1,", _ARRAY_ERROR, id="list"),
+            pytest.param("APP_STRS", "[a b]", _WORDS_ERROR, id="list-of-text"),
+            pytest.param("APP_PAIR", "[1,", _ARRAY_ERROR, id="fixed-length"),
+            pytest.param("APP_DICTS+", '{"x": 1,', _OBJECT_ERROR, id="appended-item"),
+        ],
+    )
+    def test_it_is_refused_where_the_type_takes_nothing_else(
+        self,
+        loader: ConfargLoader,
+        name: str,
+        value: str,
+        error: str,
+    ) -> None:
+        """The parse proves it wrong, naming the variable as the flag's refusal names the flag."""
+        with pytest.raises(confarg.exceptions.ConfargError) as excinfo:
+            loader.load(_EnvIllFormedInto, argv=[], env={name: value}, env_prefix="APP_")
+        assert str(excinfo.value) == f"Invalid JSON for {name}: {error}"
+
+    def test_a_variant_taking_text_takes_it(self, loader: ConfargLoader) -> None:
+        """Construction picks the variant, as it does for any text: a ``str``, a ``Path``."""
+        env = {"APP_TEXT_OR_D": '{"x": 1,', "APP_PATH_OR_D": '{"x": 1,'}
+        cfg = loader.load(_EnvIllFormedInto, argv=[], env=env, env_prefix="APP_")
+        assert cfg.text_or_d == '{"x": 1,'
+        assert type(cfg.text_or_d) is str
+        assert cfg.path_or_d == Path('{"x": 1,')
+
+    @pytest.mark.parametrize(
+        ("name", "value", "reason"),
+        [
+            pytest.param("APP_INT_OR_D", '{"x": 1,', f"dict[str, int]: invalid JSON: {_OBJECT_ERROR}", id="object"),
+            pytest.param("APP_FLAG_OR_STRS", "[a b]", f"list[str]: invalid JSON: {_WORDS_ERROR}", id="array"),
+        ],
+    )
+    def test_a_union_refusing_it_names_the_decode_error(
+        self,
+        loader: ConfargLoader,
+        name: str,
+        value: str,
+        reason: str,
+    ) -> None:
+        """No variant takes the text: the variant reading its shape gives the decode error as its reason."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
+            loader.load(_EnvIllFormedInto, argv=[], env={name: value}, env_prefix="APP_")
+        assert f"\n  {reason}" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        ("name", "value", "field_name", "expected"),
+        [
+            pytest.param("APP_STRS+", "[a b]", "strs", ["[a b]"], id="ill-formed-array-is-a-text-item"),
+            pytest.param("APP_STRS+", '{"x": 1}', "strs", ['{"x": 1}'], id="object-at-a-text-item"),
+            pytest.param("APP_ANYS+", '{"x": 1}', "anys", ['{"x": 1}'], id="object-at-an-any-item"),
+            pytest.param("APP_DICTS+", '{"x": 1}', "dicts", [{"x": 1}], id="object-at-a-dict-item"),
+        ],
+    )
+    def test_an_appended_item_is_decoded_where_its_type_takes_the_shape(
+        self,
+        loader: ConfargLoader,
+        name: str,
+        value: str,
+        field_name: str,
+        expected: list[Any],
+    ) -> None:
+        """An item is read as a whole value of the item type is: JSON only where that type takes the shape."""
+        cfg = loader.load(_EnvIllFormedInto, argv=[], env={name: value}, env_prefix="APP_")
+        assert getattr(cfg, field_name) == expected
+
+
 class _EnvSeqPt(NamedTuple):
     x: int
     y: int

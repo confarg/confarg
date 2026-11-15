@@ -82,6 +82,8 @@ Cannot coerce str 'os.dubble' to Callable | Opts at 'f':
   Callable: cannot import 'os.dubble': module 'os' has no attribute 'dubble'
 ```
 
+Text a channel meant as JSON, which is none (`_types._IllFormedJson`), is refused by each variant reading the shape it opens for the decode error, `dict[str, int]: invalid JSON: Expecting property name enclosed in double quotes: line 1 column 9 (char 8)`, which no refusal of it as text says ([CLI parsing](../cli-parsing/token-consumption.md#a-json-led-value-is-read-by-its-type)).
+
 Every rung that tries a variant and catches its refusal keeps it (`_construct._Refusals`): the struct variants tried one by one when none matches structurally, the fixed-length and collection variants, the scalar walk and the one-item fallback of a lone token; each variant is named by the last refusal it gave.
 The walk used to drop each one as it tried the next variant, so a typo'd import, an Enum's members, a field a struct does not declare or the bound of a `type[X]` were one lone-field load away.
 
