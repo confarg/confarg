@@ -1192,15 +1192,25 @@ def read_key(kt: Any, key: Any, path: FieldPath) -> Any:
         docs-dev/architecture/pipeline/deep-merge.md#which-keys-are-one-key
     """
     token = _StrToken(key) if isinstance(key, str) else key
-    if not _is_union(rkt := _resolve_type(kt)):
-        return _coerce_leaf(kt, token, _spell_field_path(path))
-    if not all(_is_coercible_leaf(v) for v in _union_args(rkt)):
+    union = _is_union(rkt := _resolve_type(kt))
+    if union and not all(_is_coercible_leaf(v) for v in _union_args(rkt)):
         raise TypeCoercionError.unsupported_leaf(_spell_type(kt), _spell_field_path(path))
     try:
-        return construct(kt, token, path=path)
+        return construct(kt, token, path=path) if union else _coerce_leaf(kt, token, _spell_field_path(path))
     except TypeCoercionError as e:
-        # A key is no field: the none word reads as None there too, but "set this field" misleads.
-        raise e._without_none_remedy() from None
+        where = _spell_field_path(path)
+        if not union and not _is_coercible_leaf(rkt):
+            raise  # the key type is refused, not the key
+        # A key has no position of its own: the refusal names it as a key of the dict, with the reason a leaf gives
+        # beyond the key being no value of it, and the reasons of a union's variants, as a value's refusal does.
+        because = None if union else _variant_reason(e, where, token)
+        raise TypeCoercionError.cannot_read_key(
+            key,
+            _spell_type(kt),
+            where,
+            because,
+            refused=e if union else None,
+        ) from None
 
 
 _UNION_NO_MATCH: object = object()

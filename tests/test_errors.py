@@ -474,7 +474,7 @@ class TestAUnionRefusalNamesEachVariantsReason:
         Target = make_target("ud", int | dict[int, str], default=0)
         assert self._refusal(Target, {"ud": {"class": "x"}}) == (
             "Cannot coerce dict {'class': 'x'} to int | dict[int, str] at 'ud':\n"
-            "  dict[int, str]: cannot coerce str 'class' to int at 'ud'"
+            "  dict[int, str]: key 'class' is no int"
         )
 
     def test_a_branch_confarg_reads_nothing_as_has_its_line(self, loader: ConfargLoader) -> None:
@@ -1123,3 +1123,55 @@ class TestARefusalAtTheRootSaysSo:
         """``dump_file()`` refuses a root key with no text at the root, not at ``'__root__'``."""
         with pytest.raises(confarg.exceptions.ConfargError, match=r"Cannot write the key \(1, 2\) at the root to JSON"):
             confarg.dump_file({(1, 2): 1}, tmp_path / "x.json")
+
+
+class TestARefusedDictKeyIsSaidToBeAKey:
+    """A key its dict's key type refuses is named as a key of the dict, not read as the value (BUG-289)."""
+
+    @pytest.mark.parametrize(
+        ("key_type", "spelled"),
+        [
+            pytest.param(int, "int", id="leaf"),
+            pytest.param(int | float, "int | float", id="union"),
+        ],
+    )
+    def test_the_refusal_names_the_key_the_dict_and_the_type(self, key_type: Any, spelled: str) -> None:
+        """One line, whether the key type is a leaf or a union: the key, where the dict stands, the type."""
+        Target = make_target("v", dict[key_type, int], default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(Target, {"v": {"b": 1}})
+        assert str(exc_info.value) == f"Cannot read key 'b' of the dict at 'v' as {spelled}"
+
+    def test_a_root_dict_names_the_root(self) -> None:
+        """The position of the dict is spelled as every message spells it."""
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(dict[int, int], {"__root__": {"b": 1}})
+        assert str(exc_info.value) == "Cannot read key 'b' of the dict at the root as int"
+
+    def test_a_union_gives_the_key_as_the_variants_reason(self) -> None:
+        """The variant's line says the key is no int, without repeating the union's position."""
+        Target = make_target("v", dict[int, int] | dict[str, int], default=None)
+        with pytest.raises(confarg.exceptions.TypeCoercionError) as exc_info:
+            confarg.build(Target, {"v": {"b": 1, "1": "q"}})
+        assert str(exc_info.value).splitlines()[1:] == [
+            "  dict[int, int]: key 'b' is no int",
+            "  dict[str, int]: cannot coerce str 'q' to int at 'v.1'",
+        ]
+
+    def test_a_leaf_gives_the_reason_it_has_beyond_the_key(self) -> None:
+        """An Enum's members, a date's format, stay in the refusal after the key and the dict."""
+        Target = make_target("v", dict[Color, int], default=None)
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError,
+            match=r"^Cannot read key 'b' of the dict at 'v' as Color: ",
+        ):
+            confarg.build(Target, {"v": {"b": 1}})
+
+    def test_a_key_type_no_key_reads_as_is_refused_as_such(self) -> None:
+        """The key type is what is wrong, not the key: the refusal keeps naming the type."""
+        Target = make_target("v", dict[tuple[int, int], int], default=None)
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError,
+            match=r"^Unsupported leaf type tuple\[int, int\] at 'v'",
+        ):
+            confarg.build(Target, {"v": {"b": 1}})

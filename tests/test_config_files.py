@@ -311,7 +311,10 @@ class TestAYamlKeyIsItsText:
     @pytest.mark.parametrize("key", ["01", "017", "1:30"])
     def test_yaml_11_int_readings_are_no_key_spelling(self, tmp_path: Path, key: str) -> None:
         """YAML 1.1's leading-zero octal and base-60 readings are refused, as ``--i.017`` is."""
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match=rf"Cannot coerce str '{key}' to int at 'i'"):
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError,
+            match=rf"Cannot read key '{key}' of the dict at 'i' as int",
+        ):
             _load_yaml(tmp_path, f"i: {{{key}: 5}}\n")
 
     @pytest.mark.parametrize(
@@ -347,7 +350,7 @@ class TestAYamlKeyIsItsText:
 
     def test_an_explicitly_tagged_key_is_refused_where_its_type_is_not_taken(self, tmp_path: Path) -> None:
         """``!!int 1`` under a ``dict[str, int]`` is the int the author wrote, refused as before."""
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Cannot coerce int 1 to str at 's'"):
+        with pytest.raises(confarg.exceptions.TypeCoercionError, match=r"Cannot read key 1 of the dict at 's' as str"):
             _load_yaml(tmp_path, "s: {!!int 1: 5}\n")
 
     def test_a_quoted_key_is_unchanged(self, tmp_path: Path) -> None:
