@@ -39,6 +39,7 @@ from confarg._callable import (
     _resolve_class_spec,
     _serialize_callable,
     _SpecContext,
+    _SpecWriter,
 )
 from confarg._depth import Copies
 from confarg._files import (
@@ -455,8 +456,9 @@ class TestCallableEdgeCases:
         obj = Proxy()
         obj.__module__ = None  # ty: ignore[invalid-assignment]  # deliberately clobber __module__ to trigger fallback path
         obj.__qualname__ = None  # ty: ignore[unresolved-attribute]  # deliberately clobber __qualname__ to trigger fallback path
+        nothing_held = _SpecWriter(fields=lambda *_: pytest.fail("no owner"), argument=lambda *_: pytest.fail("no arg"))
         with pytest.raises(confarg.exceptions.ConfargError, match="has no dotted path"):
-            _serialize_callable(obj, lambda _: pytest.fail("no owner to read"))
+            _serialize_callable(obj, (), nothing_held)
 
 
 # ---------------------------------------------------------------------------
@@ -1546,14 +1548,14 @@ class TestCallableGaps:
             _resolve_bare_string(f"{_COV_MOD}._CovOptMethod.method", "test_path")
 
     def test_resolve_call_kwargs_uninspectable(self, monkeypatch) -> None:
-        """_resolve_call_kwargs falls back to raw dict for uninspectable callables."""
+        """_resolve_call_kwargs builds each argument of an uninspectable callable as Any (BUG-308)."""
 
         def _boom(*args, **kwargs):
             msg = "uninspectable"
             raise TypeError(msg)
 
         monkeypatch.setattr(callable_mod.inspect, "signature", _boom)
-        result = _resolve_call_kwargs(len, {"x": 1}, _SpecContext(("test",), None))
+        result = _resolve_call_kwargs(len, {"x": 1}, _SpecContext(("test",), construct))
         assert result == {"x": 1}
 
     def test_resolve_call_spec_raises_on_call_failure(self) -> None:
@@ -1590,40 +1592,43 @@ class TestCallableGaps:
         assert _resolve_bind_kwargs(len, {"x": 1}, _SpecContext(("test",), construct)) == {"x": 1}
 
     def test_resolve_call_kwargs_unannotated_param(self) -> None:
-        """_resolve_call_kwargs passes unannotated params through unchanged (line 229)."""
+        """_resolve_call_kwargs builds an unannotated param as Any (BUG-308)."""
 
         def fn(x, y=10):  # no annotations
             pass
 
-        result = _resolve_call_kwargs(fn, {"x": "hello", "y": "5"}, _SpecContext(("test",), None))
-        assert result["x"] == "hello"
+        result = _resolve_call_kwargs(fn, {"x": _StrToken("hello"), "y": "5"}, _SpecContext(("test",), construct))
+        assert type(result["x"]) is str
+        assert result == {"x": "hello", "y": "5"}
 
     def test_resolve_call_kwargs_get_type_hints_fails(self) -> None:
-        """_resolve_call_kwargs falls back to {} hints when get_type_hints raises."""
+        """_resolve_call_kwargs builds every argument as Any when get_type_hints raises."""
 
         def _fn(x: UndefinedType777) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
-        result = _resolve_call_kwargs(_fn, {"x": 1}, _SpecContext(("test",), None))
+        result = _resolve_call_kwargs(_fn, {"x": 1}, _SpecContext(("test",), construct))
         assert result["x"] == 1
 
     def test_resolve_bind_kwargs_get_type_hints_fails(self) -> None:
-        """_resolve_bind_kwargs falls back to {} hints when get_type_hints raises."""
+        """_resolve_bind_kwargs builds every argument as Any when get_type_hints raises, a token as its text."""
 
         def _fn(x: UndefinedHintType999) -> None:  # noqa: F821  # ty: ignore[unresolved-reference]  # intentionally undefined to trigger NameError fallback
             pass
 
         result = _resolve_bind_kwargs(_fn, {"x": _StrToken("1")}, _SpecContext(("test",), construct))
-        assert result["x"] == _StrToken("1")
+        assert type(result["x"]) is str
+        assert result["x"] == "1"
 
     def test_resolve_bind_kwargs_unannotated_param(self) -> None:
-        """_resolve_bind_kwargs passes _StrToken values through for unannotated params."""
+        """_resolve_bind_kwargs builds an unannotated param as Any, a _StrToken as its text (BUG-308)."""
 
         def fn(x, y=10):  # no annotations
             pass
 
         result = _resolve_bind_kwargs(fn, {"x": _StrToken("hello")}, _SpecContext(("test",), construct))
-        assert result["x"] == _StrToken("hello")
+        assert type(result["x"]) is str
+        assert result["x"] == "hello"
 
     def test_resolve_bind_kwargs_non_scalar_type_constructs(self) -> None:
         """_resolve_bind_kwargs now constructs non-scalar-annotated params via the canonical route."""

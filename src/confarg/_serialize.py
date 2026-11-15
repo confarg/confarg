@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, cast
 from confarg import _defaults
 from confarg._callable import (
     _serialize_callable,
+    _SpecWriter,
     holds_an_opener,
     promote_bare_spec,
     refuse_a_field_spelling_an_object_opener,
@@ -197,13 +198,7 @@ def _serialize_by_type(  # noqa: PLR0911  # one return per kind
         case _TypeKind.DICT:
             return _serialize_dict(tp, instance, path, opts)
         case _TypeKind.CALLABLE:
-            # A partial's keywords carry no declared type: they leave as a raw dict's values do. A
-            # callable instance, or a method's owner, is a struct, its fields serialized as their types say.
-            spec = _serialize_callable(
-                instance,
-                lambda owner: _serialize_struct(type(owner), owner, path, opts),
-            )
-            return _untyped_at(spec, path, opts)
+            return _serialize_callable(instance, path, _spec_writer(opts))
         case _TypeKind.ANY:
             return _serialize_any(instance, path, opts)
         case _TypeKind.TAGGABLE_LEAF | _TypeKind.LEAF:
@@ -420,15 +415,28 @@ def _held_object_form(instance: Any, path: FieldPath, opts: _DumpOptions) -> Any
     if a_leaf or isinstance(instance, (str, int, float, enum.Enum)):
         return _serialize_leaf(None, instance, opts.native_types)
     if callable(instance):
-        spec = _serialize_callable(
-            instance,
-            lambda owner: _serialize_struct(type(owner), owner, path, opts),
-        )
-        return _untyped_at(promote_bare_spec(spec) if isinstance(spec, str) else spec, path, opts)
+        spec = _serialize_callable(instance, path, _spec_writer(opts))
+        return promote_bare_spec(spec) if isinstance(spec, str) else spec
     if _is_struct(cls):
         return _tagged_spec(cls, instance, path, opts)
     _refuse_an_unsupported_leaf(cls, path)
     return _serialize_leaf(None, instance, opts.native_types)
+
+
+def _spec_writer(opts: _DumpOptions) -> _SpecWriter:
+    """Return how a callable's spec writes what it holds in this dump.
+
+    A callable instance, or a method's owner, is a struct, its fields written as their types
+    say; an argument is written as the parameter it fills is typed
+    (:func:`~confarg._callable.argument_types`), as a field of that type is.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#round-trip
+    """
+    return _SpecWriter(
+        fields=lambda owner, at: _serialize_struct(type(owner), owner, at, opts),
+        argument=lambda tp, value, at: _serialize(tp, value, at, opts),
+    )
 
 
 def _tagged_spec(cls: type, instance: Any, path: FieldPath, opts: _DumpOptions) -> dict[str, Any]:

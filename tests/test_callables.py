@@ -29,9 +29,10 @@ from confarg._callable import (
     _resolve_bind_kwargs,
     _serialize_callable,
     _SpecContext,
+    _SpecWriter,
 )
-from confarg._types import _expected_call_signature, _is_callable, _StrToken
-from confarg.exceptions import ConfargError, ConfargWarning, SymbolImportError, TypeCoercionError
+from confarg._types import TagPolicy, _expected_call_signature, _is_callable, _StrToken
+from confarg.exceptions import ConfargError, ConfargWarning, FieldPath, SymbolImportError, TypeCoercionError
 from confarg.typedload._construct import construct
 
 # ---------------------------------------------------------------------------
@@ -344,9 +345,13 @@ class _OwnerWithClassfn:
 _MOD = "tests.test_callables"
 
 
-def _no_owner(owner: Any) -> dict[str, Any]:
+def _no_owner(owner: Any, at: FieldPath) -> dict[str, Any]:
     """Stand in for the owner-field reader where no callable serialized is a bound method."""
-    pytest.fail(f"no owner to read, got {owner!r}")
+    pytest.fail(f"no owner to read at {at!r}, got {owner!r}")
+
+
+# Writes no owner, and each argument as the partial holds it.
+_ARGUMENTS_AS_HELD = _SpecWriter(fields=_no_owner, argument=lambda _tp, value, _at: value)
 
 
 # ---------------------------------------------------------------------------
@@ -1294,12 +1299,12 @@ class TestSerialization:
 
     def test_plain_function(self) -> None:
         """A plain function serializes to its dotted path."""
-        assert _serialize_callable(_double, _no_owner) == f"{_MOD}._double"
+        assert _serialize_callable(_double, (), _ARGUMENTS_AS_HELD) == f"{_MOD}._double"
 
     def test_partial(self) -> None:
         """A partial serializes to a bind: dict with its keywords under args."""
         p = functools.partial(_add, y=5)
-        out = _serialize_callable(p, _no_owner)
+        out = _serialize_callable(p, (), _ARGUMENTS_AS_HELD)
         assert out == {"bind": f"{_MOD}._add", "args": {"y": 5}}
 
     @pytest.mark.parametrize(
@@ -1320,7 +1325,7 @@ class TestSerialization:
     def test_partial_no_bind(self) -> None:
         """A partial with no bound args serializes to the bare dotted path (round-trips to the callable)."""
         p = functools.partial(_double)
-        out = _serialize_callable(p, _no_owner)
+        out = _serialize_callable(p, (), _ARGUMENTS_AS_HELD)
         assert out == f"{_MOD}._double"
 
     def test_class_instance_with_spec(self, tmp_json: Any) -> None:
@@ -1451,6 +1456,200 @@ class TestSerialization:
         assert dumped == {"class": f"{_MOD}._Multiplier", "factor": 2}
         assert type(dumped["class"]) is str
         assert type(dumped["factor"]) is int
+
+
+@dataclass
+class _Db:
+    host: str
+
+
+@dataclass
+class _Circle:
+    r: float
+
+
+@dataclass
+class _Square:
+    r: float
+
+
+def _connect(db: _Db) -> str:
+    return db.host
+
+
+def _connect_by_position(db: _Db, /) -> str:
+    return db.host
+
+
+def _measure(shape: _Circle | _Square) -> str:
+    return type(shape).__name__
+
+
+def _place(where: _Db | _Circle) -> str:
+    return type(where).__name__
+
+
+def _bound_by_parameter(partial: functools.partial[Any]) -> dict[str, Any]:
+    """Return the arguments *partial* binds by the parameter each fills, whether it holds it by position or name."""
+    return dict(inspect.signature(partial.func).bind_partial(*partial.args, **partial.keywords).arguments)
+
+
+def _hosts(dbs: list[_Db]) -> list[str]:
+    return [db.host for db in dbs]
+
+
+def _apply(fn: Callable[[int], int], x: int) -> int:
+    return fn(x)
+
+
+def _unannotated(x):  # the parameter no annotation types is the subject
+    return x
+
+
+def _kind_of(x):  # the parameter no annotation types is the subject
+    return type(x).__name__
+
+
+def _extra(a: int, **kwargs: Any) -> dict[str, Any]:
+    return {"a": a, **kwargs}
+
+
+class _Pool:
+    """A class used factory-like: its parameters' annotations live on ``__init__``."""
+
+    def __init__(self, db: _Db) -> None:
+        self.db = db
+
+
+@dataclass
+class _Router:
+    """A callable instance: its parameters' annotations live on ``__call__``."""
+
+    retries: int
+
+    def __call__(self, db: _Db) -> str:
+        return f"{db.host}/{self.retries}"
+
+
+class TestDumpOfABoundArgument:
+    """A partial's argument dumps as the parameter it fills is typed, as construction read it (BUG-194).
+
+    An argument no annotation types is read and written as an ``Any`` node reads and writes it (BUG-308).
+    """
+
+    @pytest.mark.parametrize(
+        ("partial", "written"),
+        [
+            pytest.param(functools.partial(_connect, db=_Db("h")), {"db": {"host": "h"}}, id="struct-keyword"),
+            pytest.param(functools.partial(_connect, _Db("h")), {"db": {"host": "h"}}, id="struct-positional"),
+            pytest.param(
+                functools.partial(_connect_by_position, _Db("h")),
+                {"db": {"host": "h"}},
+                id="struct-positional-only",
+            ),
+            pytest.param(
+                functools.partial(_measure, shape=_Square(1.0)),
+                {"shape": {"class": f"{_MOD}._Square", "r": 1.0}},
+                id="union-tagged",
+            ),
+            pytest.param(functools.partial(_hosts, dbs=[_Db("h")]), {"dbs": [{"host": "h"}]}, id="list-of-structs"),
+            pytest.param(functools.partial(_apply, fn=_double), {"fn": f"{_MOD}._double"}, id="callable"),
+            pytest.param(
+                functools.partial(_unannotated, x=_Db("h")),
+                {"x": {"class": f"{_MOD}._Db", "host": "h"}},
+                id="unannotated",
+            ),
+            pytest.param(
+                functools.partial(_extra, a=1, b=_Db("h")),
+                {"a": 1, "b": {"class": f"{_MOD}._Db", "host": "h"}},
+                id="kwargs-extra",
+            ),
+            pytest.param(functools.partial(_Pool, db=_Db("h")), {"db": {"host": "h"}}, id="class-target"),
+        ],
+    )
+    def test_an_argument_dumps_by_its_parameters_type_and_reads_back(
+        self,
+        partial: functools.partial[Any],
+        written: dict[str, Any],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Each argument is written as a field of the parameter's type is, so a file holds it and reads it back."""
+        cfg = WithBareCallable(fn=partial)
+        assert confarg.dump(cfg)["fn"]["args"] == written
+        path = tmp_path / "c.yaml"
+        confarg.dump_file(cfg, path)
+        back = confarg.load(WithBareCallable, files=[path], argv=[], env={}).fn
+        assert isinstance(back, functools.partial)
+        assert back.func is partial.func
+        assert _bound_by_parameter(back) == _bound_by_parameter(partial)
+
+    def test_an_argument_of_a_callable_instance_dumps_by_its_call_parameter(self) -> None:
+        """A partial over a ``class:`` instance types its arguments by the instance's ``__call__``."""
+        dumped = confarg.dump(WithBareCallable(fn=functools.partial(_Router(2), db=_Db("h"))))["fn"]
+        assert dumped == {"bind": {"class": f"{_MOD}._Router", "retries": 2}, "args": {"db": {"host": "h"}}}
+        assert confarg.build(WithBareCallable, {"fn": dumped}).fn() == "h/2"
+
+    def test_an_argument_an_any_node_holds_dumps_by_its_parameters_type(self) -> None:
+        """A partial an ``Any`` field holds writes its arguments as a Callable field does, and reads back."""
+        dumped = confarg.dump(WithAnyHolder(x=functools.partial(_connect, db=_Db("h"))))
+        assert dumped == {"x": {"bind": f"{_MOD}._connect", "args": {"db": {"host": "h"}}}}
+        assert confarg.build(WithAnyHolder, dumped).x() == "h"
+
+    @pytest.mark.parametrize(
+        ("tag_policy", "written"),
+        [
+            pytest.param("auto", {"host": "h"}, id="auto"),
+            pytest.param("always", {"class": f"{_MOD}._Db", "host": "h"}, id="always"),
+        ],
+    )
+    def test_the_tag_policy_reaches_an_argument(self, tag_policy: TagPolicy, written: dict[str, Any]) -> None:
+        """A union argument is tagged as a union field is: where needed, or always."""
+        cfg = WithBareCallable(fn=functools.partial(_place, where=_Db("h")))
+        assert confarg.dump(cfg, tag_policy=tag_policy)["fn"]["args"] == {"where": written}
+
+    def test_an_argument_its_parameter_does_not_hold_warns_at_its_position(self) -> None:
+        """An argument the annotation does not hold is written as an ``Any`` node holds it, as a field is."""
+        bound = functools.partial(_connect, db="h")  # ty: ignore[invalid-argument-type]  # binds what db refuses
+        with pytest.warns(ConfargWarning, match=r"Value at 'fn\.args\.db' will not read back: its str is no value"):
+            dumped = confarg.dump(WithBareCallable(fn=bound))
+        assert dumped["fn"]["args"] == {"db": "h"}
+
+    def test_a_field_of_the_target_is_named_at_its_position_under_bind(self) -> None:
+        """A field of the instance a partial binds is written under ``bind``, and a warning names it there."""
+        router = _Router("2")  # ty: ignore[invalid-argument-type]  # a field holding what its type refuses
+        with pytest.warns(ConfargWarning, match=r"Value at 'fn\.bind\.retries' will not read back"):
+            dumped = confarg.dump(WithBareCallable(fn=functools.partial(router, db=_Db("h"))))
+        assert dumped["fn"]["bind"] == {"class": f"{_MOD}._Router", "retries": "2"}
+
+    def test_a_keyword_the_target_takes_no_parameter_for_is_refused(self) -> None:
+        """A keyword no parameter takes would be refused on read-back, so the dump refuses it."""
+        bound = functools.partial(_connect, nope=1)  # ty: ignore[unknown-argument]  # binds what no parameter takes
+        with pytest.raises(ConfargError, match=r"it binds 'nope', which _connect takes no parameter for"):
+            confarg.dump(WithBareCallable(fn=bound))
+
+
+class TestAnUnannotatedArgumentReadsAsAny:
+    """An argument under ``args`` no annotation types is read as an ``Any`` field reads it (BUG-308)."""
+
+    spec: dict[str, Any] = {"class": f"{_MOD}._Db", "host": "h"}  # noqa: RUF012  # read, never mutated
+
+    @pytest.mark.parametrize("opener", ["bind", "call"])
+    def test_a_spec_under_an_unannotated_parameter_builds_its_object(self, opener: str) -> None:
+        """A class spec builds the object, as under an ``Any`` parameter or a struct's unannotated one."""
+        cfg = confarg.build(WithAnyHolder, {"x": {opener: f"{_MOD}._kind_of", "args": {"x": self.spec}}})
+        assert (cfg.x() if opener == "bind" else cfg.x) == "_Db"
+
+    def test_an_argument_of_a_target_with_no_signature_is_read_as_any(self) -> None:
+        """A target ``inspect`` cannot read takes each argument as an ``Any`` node holds it."""
+        cfg = confarg.build(WithBareCallable, {"fn": {"bind": "builtins.dict", "args": {"k": self.spec}}})
+        assert cfg.fn() == {"k": _Db("h")}
+
+
+@dataclass
+class WithAnyHolder:
+    """Target dataclass with an ``Any`` field, which holds a ``call:``'s value or a ``bind:``'s partial."""
+
+    x: Any = None
 
 
 class TestDumpOfACallResult:

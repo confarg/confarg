@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Final, NoReturn, get_args, get_type_hints
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
 from confarg import _defaults
 from confarg._conformance import call_conforms
@@ -149,8 +149,8 @@ def target_parameter_types(path_str: str) -> dict[str, Any]:
     """Return the annotation of each parameter a dotted ``bind:`` or ``call:`` target takes, building nothing.
 
     The parameters :func:`_target_signature` lists, read from the object :func:`_hints_source`
-    names, as :func:`_coerce_kwargs` reads them to build the arguments under ``args``. A
-    parameter with no annotation is left out: its argument is kept as written.
+    names, as :func:`argument_types` reads them off a built target. A parameter with no
+    annotation is left out: its argument is read as ``Any``.
 
     Raises:
         SymbolImportError: If *path_str* does not import.
@@ -159,7 +159,31 @@ def target_parameter_types(path_str: str) -> dict[str, Any]:
         NameError: If an annotation names nothing.
     """
     params = _target_signature(path_str).parameters
-    hints = get_type_hints(_hints_source(_import_dotted(path_str)))
+    return _annotated_parameters(params, get_type_hints(_hints_source(_import_dotted(path_str))))
+
+
+def argument_types(target: Any) -> dict[str, Any]:
+    """Return the type each argument of the callable *target* under ``args`` is read as, by its name.
+
+    The annotation of each parameter a caller fills, read from the object :func:`_hints_source`
+    names. A name it leaves out is read as ``Any``: one no annotation types, one ``**kwargs``
+    takes, and every one of a target whose signature or annotations cannot be read.
+    Construction builds an argument by it (:func:`_coerce_kwargs`) and the dump writes one by it
+    (:func:`_serialize_callable`), so an argument reads back as what it was written as.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#one-coercion-route
+    """
+    try:
+        params = inspect.signature(target).parameters
+        hints = get_type_hints(_hints_source(target))
+    except (ValueError, TypeError, NameError, AttributeError):
+        return {}
+    return _annotated_parameters(params, hints)
+
+
+def _annotated_parameters(params: Mapping[str, inspect.Parameter], hints: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the annotation in *hints* of each parameter in *params* a caller fills, the unannotated left out."""
     return {p.name: hints[p.name] for p in _fillable_params(params) if p.name in hints}
 
 
@@ -377,52 +401,36 @@ def _acceptable_kwarg_names(params: Mapping[str, inspect.Parameter]) -> set[str]
     return {p.name for p in _fillable_params(params)}
 
 
-def _coerce_kwargs(  # noqa: PLR0913  # kind and subject only word the refusal
-    sig_obj: Any,
-    hints_obj: Any,
-    kwargs: dict,
-    ctx: _SpecContext,
-    *,
-    kind: str,
-    subject: str,
-) -> dict:
+def _unknown_argument_names(target: Any, names: Iterable[str]) -> tuple[list[str], set[str]]:
+    """Return those of *names* the callable *target* takes no argument by, sorted, and the names it takes.
+
+    Nothing is unknown where *target* takes ``**kwargs`` or its signature cannot be read.
+    """
+    try:
+        valid = _acceptable_kwarg_names(inspect.signature(target).parameters)
+    except (ValueError, TypeError):
+        return [], set()
+    if valid is None:
+        return [], set()
+    return sorted(set(names) - valid), valid
+
+
+def _coerce_kwargs(target: Any, kwargs: dict, ctx: _SpecContext, *, kind: str, subject: str) -> dict:
     """Validate and typed-construct kwargs against a callable's signature.
 
     Shared by 'call', the class key (factory), and 'bind' kwargs: unknown keys raise, and
-    each value is built through *ctx*, one key below its path.
-
-    ``sig_obj`` and ``hints_obj`` are passed separately because for a class they
-    differ: ``inspect.signature(cls)`` yields the constructor params (self excluded),
-    but the annotations live on ``cls.__init__``.
+    each value is built through *ctx*, one key below its path, as the type
+    :func:`argument_types` reads it as.
 
     Dev Notes:
         docs-dev/architecture/callables.md#one-coercion-route
     """
-    try:
-        sig = inspect.signature(sig_obj)
-    except (ValueError, TypeError):
-        return dict(kwargs)  # uninspectable (C extension etc.)
-
-    try:
-        hints = get_type_hints(hints_obj)
-    except (NameError, AttributeError, TypeError):
-        hints = {}
-
-    valid = _acceptable_kwarg_names(sig.parameters)
-    if valid is not None:
-        invalid = sorted(set(kwargs) - valid)
-        if invalid:
-            msg = f"Unknown {kind} {invalid} for {subject} at '{ctx.where}'. Valid parameters: {sorted(valid)}."
-            raise TypeCoercionError(msg)
-
-    coerced: dict = {}
-    for k, v in kwargs.items():
-        ann = hints.get(k, inspect.Parameter.empty)
-        if ann is inspect.Parameter.empty:
-            coerced[k] = v
-        else:
-            coerced[k] = ctx.at(k).construct(_resolve_type(ann), v)
-    return coerced
+    invalid, valid = _unknown_argument_names(target, kwargs)
+    if invalid:
+        msg = f"Unknown {kind} {invalid} for {subject} at '{ctx.where}'. Valid parameters: {sorted(valid)}."
+        raise TypeCoercionError(msg)
+    types = argument_types(target)
+    return {k: ctx.at(k).construct(_resolve_type(types.get(k, Any)), v) for k, v in kwargs.items()}
 
 
 def _split_arguments(target: Any, kwargs: dict, ctx: _SpecContext) -> tuple[list[Any], dict[str, Any]]:
@@ -456,7 +464,7 @@ def _split_arguments(target: Any, kwargs: dict, ctx: _SpecContext) -> tuple[list
 def _resolve_call_kwargs(func: Any, kwargs: dict, ctx: _SpecContext) -> dict:
     """Coerce and validate kwargs against func's signature using typed construction."""
     subject = repr(getattr(func, "__qualname__", repr(func)))
-    return _coerce_kwargs(func, _hints_source(func), kwargs, ctx, kind="kwargs", subject=subject)
+    return _coerce_kwargs(func, kwargs, ctx, kind="kwargs", subject=subject)
 
 
 def _call_factory(target: Any, call_kwargs: dict, ctx: _SpecContext) -> Any:
@@ -783,14 +791,7 @@ def _resolve_bind_kwargs(callable_obj: Any, bind: dict, ctx: _SpecContext) -> di
         "__qualname__",
         repr(callable_obj),
     )
-    return _coerce_kwargs(
-        callable_obj,
-        _hints_source(callable_obj),
-        bind,
-        ctx,
-        kind="bind parameter(s)",
-        subject=subject,
-    )
+    return _coerce_kwargs(callable_obj, bind, ctx, kind="bind parameter(s)", subject=subject)
 
 
 def _resolve_bind_spec(target: Any, kwargs: dict, tp: Any, ctx: _SpecContext) -> Any:
@@ -939,11 +940,22 @@ def _check_callable_signature(obj: Any, tp: Any, path: str) -> None:
         raise TypeCoercionError.call_shape_refused(name, _spell_type(tp), path, reason)
 
 
-def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]]) -> str | dict:
-    """Serialize a callable value back to its config representation.
+@dataclass(frozen=True)
+class _SpecWriter:
+    """How the dump writes the values a callable's spec holds, which only the serializer knows how to write."""
+
+    fields: Callable[[Any, FieldPath], dict[str, Any]]
+    """Return the fields an owner or an instance holds, written as a struct's are, at a position."""
+    argument: Callable[[Any, Any, FieldPath], Any]
+    """Return an argument written as a value of a type is, at a position."""
+
+
+def _serialize_callable(value: Any, path: FieldPath, writer: _SpecWriter) -> str | dict:
+    """Serialize a callable value at *path* back to its config representation.
 
     Partial with pre-bound arguments → {bind: <its target, serialized>, args: {k: v}}, its
-    positional arguments named by the parameters they fill (:func:`_named_partial_args`).
+    positional arguments named by the parameters they fill (:func:`_partial_arguments`), each
+    written as the type construction reads it as (:func:`argument_types`).
     Bare partial (a class used factory-like, no arguments) → "module.qualname" string.
     Plain callable → its dotted path (:func:`dotted_name`), a C type's method's through its
     class, when that path reads back as it (:func:`_reads_back_from`); a closure, a lambda or a
@@ -951,34 +963,66 @@ def _serialize_callable(value: Any, owner_fields: Callable[[Any], dict[str, Any]
     Instance method → that path, beside its owner's fields when the owner has any
     (:func:`_bound_method_spec`).
     Callable instance → a spec the class key opens beside the fields it holds (:func:`_object_spec`).
-    *owner_fields* reads the fields off an owner or an instance.
+    *writer* writes the fields of an owner or an instance, and the arguments.
 
     Dev Notes:
         docs-dev/architecture/callables.md#round-trip
     """
     if isinstance(value, functools.partial):
-        target = _serialize_callable(value.func, owner_fields)
-        arguments = {**_named_partial_args(value), **value.keywords}
-        if arguments:
-            return {_defaults.BIND_KEY: target, _defaults.ARGS_KEY: arguments}
-        return target
+        arguments = _partial_arguments(value)
+        if not arguments:
+            return _serialize_callable(value.func, path, writer)
+        types = argument_types(value.func)
+        args_path = (*path, _defaults.ARGS_KEY)
+        return {
+            _defaults.BIND_KEY: _serialize_callable(value.func, (*path, _defaults.BIND_KEY), writer),
+            _defaults.ARGS_KEY: {
+                name: writer.argument(types.get(name, Any), argument, (*args_path, name))
+                for name, argument in arguments.items()
+            },
+        }
+
+    def owner_fields(owner: Any) -> dict[str, Any]:
+        return writer.fields(owner, path)
 
     if not getattr(value, "__qualname__", None):
         return _instance_spec(value, owner_fields)
 
     if has_dotted_name(value):
-        path = dotted_name(value)
-        if _reads_back_from(path, value):
-            if _instance_method_owner(path) is None:
-                return path
-            return _bound_method_spec(path, value, owner_fields)
+        path_str = dotted_name(value)
+        if _reads_back_from(path_str, value):
+            if _instance_method_owner(path_str) is None:
+                return path_str
+            return _bound_method_spec(path_str, value, owner_fields)
         reason = (
-            f"{path!r} does not read back as this callable, as for a closure, a lambda, or a function"
+            f"{path_str!r} does not read back as this callable, as for a closure, a lambda, or a function"
             " its module no longer holds under that name"
         )
         raise ConfargError.callable_not_spelled(value, reason)
 
     raise ConfargError.callable_not_spelled(value, "it has no dotted path")
+
+
+def _partial_arguments(value: functools.partial) -> dict[str, Any]:
+    """Return every argument the partial *value* holds, keyed by the parameter it fills.
+
+    The positional arguments are named by :func:`_named_partial_args`; the keywords are their
+    own names.
+
+    Raises:
+        ConfargError: If :func:`_named_partial_args` refuses a positional argument, or a keyword
+            names no parameter of the target, which takes no ``**kwargs``: construction would
+            refuse it on read-back.
+
+    Dev Notes:
+        docs-dev/architecture/callables.md#round-trip
+    """
+    unknown, _ = _unknown_argument_names(value.func, value.keywords)
+    if unknown:
+        target = getattr(value.func, "__qualname__", None) or type(value.func).__qualname__
+        reason = f"it binds {', '.join(map(repr, unknown))}, which {target} takes no parameter for"
+        raise ConfargError.callable_not_spelled(value, reason)
+    return {**_named_partial_args(value), **value.keywords}
 
 
 def _named_partial_args(value: functools.partial) -> dict[str, Any]:

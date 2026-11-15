@@ -235,8 +235,12 @@ class _ArgsAt(MergeAt):
         return False
 
     def child(self, key: Hashable, below: Any, over: Any) -> MergeAt:  # noqa: ARG002  # one parameter each
-        """Return the node of the parameter *key*, the shape rule for one with no annotation."""
-        return merge_at(self.params.get(str(key)))
+        """Return the node of the parameter *key*: ``Any`` for one no annotation types, as construction reads it.
+
+        Dev Notes:
+            docs-dev/architecture/callables.md#an-argument-dumps-as-its-parameter-is-typed
+        """
+        return TypedAt(self.params.get(str(key), Any))
 
 
 def _node_view(below: Any, over: Any) -> MergeDict:

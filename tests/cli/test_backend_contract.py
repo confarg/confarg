@@ -6296,6 +6296,72 @@ class TestCallableBindContract:
         assert cfg.fn("world") == "Hi, world!"
 
 
+def _kind_of(x):  # the parameter no annotation types is the subject
+    """Name the class of what an unannotated parameter receives."""
+    return type(x).__name__
+
+
+@dataclass
+class _AnyAndCallable:
+    """Config holding a ``call:``'s value and a ``bind:``'s partial."""
+
+    value: Any = None
+    f: Callable[[], str] | None = None
+
+
+class TestAnUnannotatedArgumentContract:
+    """An argument no annotation types receives the token's text, as an ``Any`` field does, everywhere (BUG-308)."""
+
+    @pytest.mark.parametrize("opener", ["call", "bind"])
+    def test_an_unannotated_parameter_receives_a_str(self, loader: ConfargLoader, opener: str) -> None:
+        """Under ``call:`` and ``bind:`` alike, the callee sees a ``str``, never the argv token."""
+        field = "value" if opener == "call" else "f"
+        argv = [f"--{field}.{opener}", f"{__name__}._kind_of", f"--{field}.args.x", "5"]
+        cfg = loader.load(_AnyAndCallable, argv=argv, env={})
+        assert (cfg.value if opener == "call" else cfg.f()) == "str"
+
+    def test_an_unannotated_parameter_receives_a_str_from_the_environment(self, loader: ConfargLoader) -> None:
+        """A variable's text reaches the callee as a ``str`` too."""
+        env = {"APP__VALUE__CALL": f"{__name__}._kind_of", "APP__VALUE__ARGS__X": "5"}
+        assert loader.load(_AnyAndCallable, argv=[], env=env, env_prefix="APP").value == "str"
+
+    def test_a_target_with_no_signature_is_refused_naming_the_str(self, loader: ConfargLoader) -> None:
+        """A C function refusing the text names it as the ``str`` it is, not as an internal class."""
+        argv = ["--value.call", "math.pow", "--value.args.x", "5", "--value.args.y", "2"]
+        with pytest.raises(TypeCoercionError, match=r"must be real number, not str$"):
+            loader.load(_AnyAndCallable, argv=argv, env={})
+
+    @pytest.mark.parametrize(
+        ("target", "argument"),
+        [
+            pytest.param("_kind_of", "x", id="unannotated"),
+            pytest.param("_kinds_of", "extra", id="kwargs-extra"),
+        ],
+    )
+    def test_a_cast_below_an_untyped_argument_casts_it(self, loader: ConfargLoader, target: str, argument: str) -> None:
+        """``--value.args.x.int 5`` casts, as ``--a.int 5`` does on an ``Any`` field and ``__cast__`` does in a file."""
+        argv = ["--value.call", f"{__name__}.{target}", f"--value.args.{argument}.int", "5"]
+        assert loader.load(_AnyAndCallable, argv=argv, env={}).value == "int"
+
+    def test_a_key_below_an_untyped_argument_nests(self, loader: ConfargLoader) -> None:
+        """A key below the argument is a dict's, as below an ``Any`` field."""
+        argv = ["--f.bind", f"{__name__}._value_of", "--f.args.x.a.b", "1"]
+        cfg = loader.load(_AnyAndCallable, argv=argv, env={})
+        assert cfg.f is not None
+        assert cfg.f() == {"a": {"b": "1"}}
+
+
+def _kinds_of(**kwargs):  # the extra keys **kwargs takes are the subject
+    """Name the class of the one value ``**kwargs`` receives."""
+    (value,) = kwargs.values()
+    return type(value).__name__
+
+
+def _value_of(x):  # the parameter no annotation types is the subject
+    """Return what an unannotated parameter receives."""
+    return x
+
+
 def _union_add(x: int, y: int) -> int:  # a target with a dotted path of its own
     """A target with an argument to bind."""
     return x + y
