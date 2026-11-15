@@ -1206,6 +1206,97 @@ class TestDumpRoundTrip:
 
 
 # ---------------------------------------------------------------------------
+# Text spelling an expression
+# ---------------------------------------------------------------------------
+
+
+@_dc
+class _ExprInner:
+    a: str = ""
+
+
+@_dc
+class _ExprText:
+    """Every value position a string can take, beside an ``x`` an unescaped ``${x}`` would read."""
+
+    x: int = 7
+    f: str = ""
+    tags: list[str] = field(default_factory=list)
+    anything: Any = None
+    either: int | str = 0
+    inner: _ExprInner | None = None
+    where: Path = Path()
+    keyed: dict[str, int] = field(default_factory=dict)
+
+
+def _expr_echo(text: str) -> str:
+    return text
+
+
+class TestDumpEscapesExpressionText:
+    """``dump()`` writes text spelling ``${...}`` escaped, so a reload reads the text back (BUG-318).
+
+    Resolution rewrites every string value and never a key, so every string value is
+    escaped and every key is written as it stands.
+    """
+
+    @pytest.mark.parametrize(
+        ("obj", "written"),
+        [
+            pytest.param(_ExprText(f="${x}"), {"f": "$${x}"}, id="str-field"),
+            pytest.param(_ExprText(f="at ${x} and ${x}"), {"f": "at $${x} and $${x}"}, id="interpolation"),
+            pytest.param(_ExprText(tags=["${x}"]), {"tags": ["$${x}"]}, id="list-item"),
+            pytest.param(_ExprText(anything="${x}"), {"anything": "$${x}"}, id="any-text"),
+            pytest.param(_ExprText(anything={"k": ["${x}"]}), {"anything": {"k": ["$${x}"]}}, id="any-dict"),
+            pytest.param(_ExprText(either="${x}"), {"either": "$${x}"}, id="union-member"),
+            pytest.param(_ExprText(inner=_ExprInner(a="${x}")), {"inner": {"a": "$${x}"}}, id="nested-struct"),
+            pytest.param(_ExprText(where=Path("${x}/data")), {"where": "$${x}/data"}, id="registered-leaf-text"),
+            pytest.param(_ExprText(f="$${x}"), {"f": "$$${x}"}, id="already-an-escape"),
+        ],
+    )
+    def test_text_is_written_escaped_and_builds_back(self, obj: _ExprText, written: dict[str, Any]) -> None:
+        """Each string value is written escaped, and ``build()`` reads the dump back as the object."""
+        dumped = confarg.dump(obj)
+        assert {k: dumped[k] for k in written} == written
+        assert confarg.build(_ExprText, dumped) == obj
+
+    @pytest.mark.parametrize("text", ["${", "${}", "$", "a $ b", "${x"])
+    def test_text_spelling_no_expression_is_written_as_it_stands(self, text: str) -> None:
+        """A ``${`` that is no expression stays no expression, so it is written unchanged."""
+        dumped = confarg.dump(_ExprText(f=text))
+        assert dumped["f"] == text
+        assert confarg.build(_ExprText, dumped).f == text
+
+    def test_a_key_is_written_as_it_stands(self) -> None:
+        """Resolution never reads a key, so a key spelling ``${...}`` is written as it is."""
+        obj = _ExprText(keyed={"${x}": 1})
+        dumped = confarg.dump(obj)
+        assert dumped["keyed"] == {"${x}": 1}
+        assert confarg.build(_ExprText, dumped) == obj
+
+    def test_a_partials_argument_is_written_escaped(self) -> None:
+        """A partial's keyword is a string value of the dump, which the reload resolves like any other."""
+        import functools  # noqa: PLC0415  # used by this test only
+
+        dumped = confarg.dump(_ExprText(anything=functools.partial(_expr_echo, text="${x}")))
+        assert dumped["anything"] == {"bind": f"{_MOD}._expr_echo", "args": {"text": "$${x}"}}
+        assert confarg.build(_ExprText, dumped).anything() == "${x}"
+
+    def test_dump_file_round_trips(self, tmp_path: Path) -> None:
+        """The file ``dump_file()`` writes of an object loads back as it, its text unevaluated."""
+        obj = _ExprText(f="${x}", tags=["${x}"], anything={"k": "${x}"})
+        path = tmp_path / "out.yaml"
+        confarg.dump_file(obj, path)
+        assert confarg.load(_ExprText, argv=[], env={}, files=[path]) == obj
+
+    def test_a_raw_dict_keeps_its_expressions(self, tmp_path: Path) -> None:
+        """A merged dict is written as it stands: its ``${...}`` are the configuration's own."""
+        path = tmp_path / "out.yaml"
+        confarg.dump_file({"f": "at ${x}"}, path)
+        assert confarg.load(_ExprText, argv=[], env={}, files=[path]).f == "at 7"
+
+
+# ---------------------------------------------------------------------------
 # Raw merged dicts: coerced leaves
 # ---------------------------------------------------------------------------
 

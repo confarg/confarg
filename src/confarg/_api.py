@@ -40,6 +40,7 @@ from confarg._serialize import (
 from confarg._typed_read import TypedReading
 from confarg._types import _MISSING, TagPolicy, _resolve_type, _root_kind, _spell_type
 from confarg.dictexpr import resolve_expressions
+from confarg.dictexpr._expressions import escape_data
 from confarg.exceptions import MissingFieldError, TypeCoercionError
 from confarg.typedload import construct as _tc
 from confarg.typedload._coerce import _type_kind, _TypeKind
@@ -410,6 +411,12 @@ def dump(
     holds. To save a configuration as written, with its expressions and its ``call:``
     specs, pass the dict returned by ``merge()`` to ``dump_file()`` instead.
 
+    The dict is a configuration, which ``build()`` and ``load()`` resolve: text the instance
+    holds that spells ``${...}`` is written escaped, ``"${x}"`` as ``"$${x}"``, so it reads
+    back as that text rather than as an expression. ``from_dict()``, which resolves nothing,
+    reads the escape as written. A dict key is written as it stands, since resolution reads no
+    key.
+
     A value its field's type does not hold — ``None`` in a field that is not optional, an
     instance of an unrelated class — is written as an ``Any`` field holds it, with a
     ``ConfargWarning``, since it will not load back.
@@ -453,7 +460,8 @@ def dump(
         msg = f"Expected a dataclass or plain-class instance, got {type(value).__name__}"
         raise TypeError(msg)
     options = _DumpOptions(tag_policy, _check_native_types(native_types), f"dump {type(value).__name__}")
-    return _serialize(type(value), value, (), options)
+    # Escaped once the whole dump is written: what it reads back while writing is the text itself.
+    return escape_data(_serialize(type(value), value, (), options))
 
 
 def dump_file(

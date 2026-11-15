@@ -8,7 +8,7 @@ The dumps serialize different things, for different uses (maintainer-chosen):
 | `dump_file(resolve(...))` | the configuration with its expressions **resolved** | replaying a run; relaunching with other settings is not its use, since the dependencies between values are gone. Today it still keeps each `call:` as written and leaves out every default nothing touched, which FEAT-48 is for |
 | `dump(obj)`, `dump_file(obj)` | the **state** of the built object: the values the program ran with | forensics: how the inputs were interpreted and what the program effectively used, changes made after `build()` included |
 
-So an object dump holds no `${...}` and no `call:`.
+So an object dump holds no expression and no `call:`: text the object holds that spells `${...}` is written escaped, so it reads back as that text ([serialization](../types/serialization.md#text-spelling-an-expression-is-written-escaped)).
 A `call:` result is dumped as what it produced, as any other value of its type would be: on a typed field, the value it built; on a Callable field, the callable it returned, through the callable rules ([callables](../callables.md#round-trip)).
 A value that no configuration spells, such as a closure or a lambda a factory returned, cannot be dumped from the object, and the merged dict is where its `call:` survives.
 
