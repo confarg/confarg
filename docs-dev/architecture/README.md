@@ -113,7 +113,7 @@ confarg/
 └── cli/
     ├── _spec.py       FlagSpec, FieldMeta: the framework-neutral flag model
     ├── _build.py      target type → FlagSpec lists (shared by all adapters)
-    ├── _collect.py    flat {dotted.flag: value} → nested dict (shared by all adapters)
+    ├── _merge_tail.py the adapters' shared merge tail: the parse result checked against argv, the CLI channel read off argv
     ├── _prefix.py     cli_prefix recording, reconciliation and stripping
     ├── _clicklike/    what the click and typer adapters share (imports neither)
     ├── argparse/      _register, _namespace, _completion

@@ -16,7 +16,7 @@ Five sites once decided it apart, and the ones that missed a shape registered on
 A non-struct root's bare flag goes through it too, since vanilla's loop consumes the root's value as it consumes a field of its type ([CLI parsing](../cli-parsing/cli-prefix.md#cli_prefix), BUG-177).
 It was the one flag forced to a single token whatever its type collected, by an inverse of the shape vocabulary, `FlagSpec.as_single_token()` (REF-68): that inverse had lapsed attribute by attribute before REF-68 gathered it, and it went with its last caller.
 
-`_spec.py` (the model) and `_build.py` (spec generation) live in `cli/`, beside the other two modules every adapter shares, `_prefix.py` and `_collect.py`; `cli/argparse/` holds only what speaks argparse.
+`_spec.py` (the model) and `_build.py` (spec generation) live in `cli/`, beside the other two modules every adapter shares, `_prefix.py` and `_merge_tail.py`; `cli/argparse/` holds only what speaks argparse.
 They grew out of the argparse backend and sat under `cli/argparse/` until REF-1 moved them.
 That was not only tidiness: while `confarg.cli` re-exported from `confarg.cli.argparse._build`, importing the neutral model executed the argparse package's `__init__`, so a click or cyclopts user paid for `_register.py`, `_namespace.py` and `_completion.py` to be imported.
 `confarg.cli` is now the only export path for the four neutral names (`FlagSpec`, `FieldMeta`, `build_static_flags`, `build_dynamic_flags`) and `confarg.cli.argparse` deliberately does not alias them, so `import confarg.cli.click` leaves `confarg.cli.argparse` out of `sys.modules` entirely.

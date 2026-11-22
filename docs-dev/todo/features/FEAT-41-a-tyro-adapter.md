@@ -1,7 +1,7 @@
 ---
 filed: 2026-10-10
 where:  # plus a new package, src/confarg/cli/tyro/
-  - src/confarg/cli/_collect.py::_merge_from_flat
+  - src/confarg/cli/_merge_tail.py::_merge_from_argv
   - src/confarg/cli/_spec.py::FlagSpec
   - tests/_loaders.py
   - tests/cli/test_backend_contract.py
@@ -28,7 +28,7 @@ tyro.cli(main)
 ```
 
 - tyro reads the flags off the constructor's `__signature__`.
-  It calls the constructor after parsing, and the constructor runs `_merge_from_flat` and `build()`.
+  It calls the constructor after parsing, and the constructor runs `_merge_from_argv` and `build()`.
   This works inside a subcommand's dataclass too, and the flags get their own help section named after the parameter.
 - Each flag is `Annotated[Any, PrimitiveConstructorSpec(nargs=…), tyro.conf.arg(name=…, prefix_name=False)]`.
   `nargs` takes `1`, `"*"`, `N`, and `(1, N)`.

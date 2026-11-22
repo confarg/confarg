@@ -12,7 +12,7 @@ That works because `FlagSpec.name` carries no `--` and each adapter builds its f
 The strippers are **lenient**, as the loop's `host_parsed` mode is — a flag outside the prefix is the host's, not a typo — and they drop a foreign flag together with its values, so the left-to-right order the scans depend on survives.
 
 A nameless `FlagSpec` is the scalar root: `apply_prefix` turns it into the bare `--<prefix>` flag, and drops it when there is no prefix; vanilla's loop reads the bare `--<prefix>` as the scalar root, at the empty path `_ParseCtx.write` lands under `__root__`.
-The parse result's key for it, `""` once the prefix is stripped, is the root's and never the host's: `_collect._require_argv_spells` counts it spelled when argv spells the bare prefix flag, which the argv stripper drops, rather than asking the walk of it, which a dict root answers as a key path below the root (the parse result of `--app '{"a": 1}'` was refused as one argv does not spell, on every adapter).
+The parse result's key for it, `""` once the prefix is stripped, is the root's and never the host's: `_merge_tail._require_argv_spells` counts it spelled when argv spells the bare prefix flag, which the argv stripper drops, rather than asking the walk of it, which a dict root answers as a key path below the root (the parse result of `--app '{"a": 1}'` was refused as one argv does not spell, on every adapter).
 
 `_prefix.in_prefix` is the one spelling of a name under the prefix — `apply_prefix` renames with it, and so does completion when it puts a scanned path back under the prefix.
 Before, completion spelled it on its own and turned a root union's tag, whose path is empty, into `--app..host` flags.

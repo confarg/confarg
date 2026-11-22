@@ -36,7 +36,7 @@ They both want `(flag, value)` pairs and are trivially fusible into one walk ove
 
 **The naming feature (BUG-233, BUG-236) added passes of its own, and left two return values dead.**
 The config level now loads before argv and the environment are typed, so the pairs are found ahead of the loops: `_parse_cli._config_pairs_in` scans argv for `--config` before vanilla's loop, `_parse_cli._argv_named_nodes` scans it again for the nodes it names, and `_parse_env._env_config_pointers` reads the environment for `CONFIG[__subpath]` before `_parse_env`.
-The loops still collect the same pairs as they meet them, and nobody reads them: every caller of `_parse_cli` takes `[0]` or nothing (`_api._merge`, `cli/_collect._merge_from_flat`, `cli/_build._collect_loop_typed_specs`), and `_pipeline._lower_layers` writes `env_data, _ = _parse_env(...)`.
+The loops still collect the same pairs as they meet them, and nobody reads them: every caller of `_parse_cli` takes `[0]` or nothing (`_api._merge`, `cli/_merge_tail._merge_from_argv`, `cli/_build._collect_loop_typed_specs`), and `_pipeline._lower_layers` writes `env_data, _ = _parse_env(...)`.
 Each `--config` subpath is therefore checked by `_check_mount_subpath` twice, once in `_config_pairs_in` and once in the loop.
 Collapsing the passes includes dropping the second return value of both loops — or having the loop be what `_config_pairs_in` calls, so the pairs and the check have one source.
 
