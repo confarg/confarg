@@ -10,6 +10,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | Ticket | Severity | Blocked by | Effort | Risk | Impact | Introduced by |
 |---|---|---|---|---|---|---|
 | [BUG-327 — An argv scalar cast leaves its expression unresolved](BUG-327-an-argv-scalar-cast-leaves-its-expression-unresolved.md) | critical |  | M | high | config | PR-50 |
+| [BUG-331 — A tag's later binding reads a key as the first binding types it](BUG-331-a-tags-later-binding-reads-a-key-as-the-first-binding-types-it.md) | critical |  | M | high | config | FEAT-13 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
 | [BUG-319 — Construction refuses a combination of `enum.Flag` members](BUG-319-construction-refuses-a-combination-of-enum-flag-members.md) | major |  | M | low | behavior | PR-46 |

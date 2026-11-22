@@ -30,6 +30,7 @@ An entry carrying `needs_design: true` is an unvetted idea: it has no design yet
 | [FEAT-53 — A `collections.abc` implementer reads as a struct](FEAT-53-a-collections-abc-implementer-reads-as-a-struct.md) | minor |  | M | medium | config |
 | [FEAT-54 — A TOML file spells a `None`](FEAT-54-a-toml-file-spells-a-none.md) | minor |  | M | medium | behavior |
 | [FEAT-55 — Dumping a configuration whose root is no struct](FEAT-55-dumping-a-configuration-whose-root-is-no-struct.md) | minor |  | M | low | behavior |
+| [FEAT-68 — A tag's refusal names each binding's reason](FEAT-68-a-tags-refusal-names-each-bindings-reason.md) | minor |  | M | medium | behavior |
 | [FEAT-1 — Uneven shell-completion coverage](FEAT-1-uneven-shell-completion-coverage.md) | minor |  | L | low | behavior |
 | [FEAT-6 — `Annotated` field metadata read by all three channels](FEAT-6-annotated-field-metadata.md) | minor |  | L | medium | behavior |
 | [FEAT-9 — A `confarg check` command to validate a configuration against a target](FEAT-9-confarg-check-command.md) | minor |  | L | low | behavior |
