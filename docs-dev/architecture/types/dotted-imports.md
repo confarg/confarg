@@ -140,3 +140,16 @@ The `type` field's wording was kept, since the codebase already spoke it: its fa
 Until BUG-235 two functions read a tag.
 The `Any` node and the Callable field imported the path themselves, so a tag that is no string escaped as Python's `AttributeError`, and an unimportable one as a bare `SymbolNotFoundError` naming no field; the union's reader wrapped a module that fails into the `TypeCoercionError` a typo gets.
 The pre-readers that import a tag before construction (`_tags._tag_named_struct`, `_tags.import_tagged_classes`) leave every failure to it, a tag that is no string included.
+
+### A path naming the running script imports a copy
+
+A script runs as `__main__`, so a path naming it by its file's module name, `myapp.SQLiteConfig` from `uv run myapp.py`, imports the file a second time as the module `myapp`, whose classes are copies of the `__main__` ones the script's types name.
+The copy is refused where a tag or a `type[X]` value must name one of those classes, and the refusal says why: `'myapp.SQLiteConfig' is a copy of __main__.SQLiteConfig: the path imports the running script a second time, under another name. Define the classes in a module the script imports.` (FEAT-67).
+The three refusals that meet it, a union's tag (`tag_fits_no_variant`), a struct field's tag (`tag_not_a_subclass`) and a `type[X]` value (`not_a_subclass`), each ask one helper, `_import.script_twin`, and spell the sentence through one function, `exceptions._a_copy_of_the_script`.
+
+The script is the file `sys.modules["__main__"].__file__` names: absolute under `python myapp.py`, `python -m pkg.myapp` and a host framework's script alike, where `sys.argv[0]` is relative and `__main__.__spec__` is set only under `-m`.
+A module is the script's copy only when its `__file__` is that file, so a `myapp` elsewhere on the path is not taken for it, and `__main__` with no file, an interactive session or a frozen app, gets no sentence.
+The sentence is given only where the script's own class, the one `__main__` holds under the copy's qualified name, would have been taken: moving the classes out of the script would not help a class the field refuses either way.
+
+Rejected: **offering `__main__.SQLiteConfig` as the tag**, which builds, but reads back only while that one script runs, as a dump written from it already does; the fix that holds under every entry point is the module the script imports, as `examples/readme/` does with `db.py`.
+Precedent (read): pickle meets the same double import and answers with a bare `AttributeError`; Hydra's `_target_` has the same trap, unexplained.

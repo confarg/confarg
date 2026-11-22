@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from confarg._callable import _import_class_by_path
-from confarg._import import dotted_name
+from confarg._import import dotted_name, script_twin
 from confarg._registry import LEAF_COERCIONS, LEAF_SERIALIZERS
 from confarg._types import (
     _builtin_read_as,
@@ -370,7 +370,8 @@ def _coerce_type_ref(tp: Any, value: Any, path: str = "") -> type:
         raise TypeCoercionError.cannot_coerce(_src_type(value), value, "type", path)
     if not _type_ref_admits(tp, obj):
         bounds = " | ".join(dotted_name(b) for b in _type_ref_bounds(tp))
-        raise TypeCoercionError.not_a_subclass(name, bounds, path)
+        twin = script_twin(obj, lambda c: _type_ref_admits(tp, c))
+        raise TypeCoercionError.not_a_subclass(name, bounds, path, twin=twin)
     return obj
 
 
