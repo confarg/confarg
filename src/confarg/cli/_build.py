@@ -69,6 +69,7 @@ from confarg._types import (
     _literal_values,
     _namedtuple_defaults,
     _namedtuple_fields,
+    _position_spellings,
     _registered_class,
     _resolve_struct,
     _resolve_type,
@@ -943,12 +944,10 @@ def _collect_namedtuple_specs(  # noqa: PLR0913, PLR0917  # _specs_for_field's c
         group_description=group_description,
     )
     result: list[FlagSpec] = [_shaped(arity, resolved)]
-    from confarg._parse_cli import _namedtuple_position_spellings  # noqa: PLC0415  # import cycle
-
     below = descent.into(flag, [core])
     if below is not None:
         for i, (fname, ft) in enumerate(flds.items()):
-            for key in (fname, *_namedtuple_position_spellings(n, i)):
+            for key in (fname, *_position_spellings(n, i)):
                 result.extend(
                     _specs_for_field(
                         f"{flag}.{key}",

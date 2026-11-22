@@ -1302,6 +1302,46 @@ def _fixed_position(tp: Any, key: Any) -> int | None:
     return index % len(positions)
 
 
+def _position_type(tp: Any, key: Any) -> Any | None:
+    """Return the type at the position *key* names in the fixed-length sequence *tp*, None when it names none.
+
+    The type half of :func:`_fixed_position`, for the type walk, the default layer and the merge:
+    a namedtuple field's type or a fixed tuple's element type, read from *tp* resolved.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
+    """
+    position = _fixed_position(tp, key)
+    return None if position is None else (_fixed_seq_types(tp) or [])[position]
+
+
+def _position_key(tp: Any, i: int) -> str:
+    """Return the key the position *i* of fixed-length *tp* is written under, as :func:`_fixed_position` reads it.
+
+    A namedtuple field's name, a fixed tuple's index as ``str()`` writes it, and that index
+    too for a position past the arity, which only a base longer than the type holds.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
+    """
+    tp = _resolve_type(tp)
+    names = list(_namedtuple_fields(tp)) if _is_namedtuple(tp) else []
+    return names[i] if 0 <= i < len(names) else str(i)
+
+
+def _position_spellings(n: int, i: int) -> list[str]:
+    """Return the index spellings of the position *i* of an *n*-position sequence, ``str(i)`` first.
+
+    The ones :func:`_fixed_position` reads for it: ``str(i)`` and the negative ``str(i - n)``
+    counting from the end (BUG-80), so no odd form (``-0``, ``+N``, ``007``) is registered
+    as a flag (BUG-97).
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/namedtuple-is-a-fixed-length-sequence.md#a-namedtuple-is-a-fixed-length-sequence
+    """
+    return [str(i), str(i - n)]
+
+
 def _union_has_seq_variant(tp: Any) -> bool:
     """True if tp is a union with at least one sequence-shaped variant.
 

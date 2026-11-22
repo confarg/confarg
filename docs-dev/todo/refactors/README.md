@@ -28,7 +28,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-71 — Three functions answer "does this segment name a member?", and they disagree at the edges](REF-71-three-answers-to-is-this-a-member.md) | trivial |  | M | medium | none |
 | [REF-83 — The registration walk dispatches on shape outside `_type_kind`](REF-83-registration-walk-dispatches-outside-the-kind-table.md) | trivial |  | M | medium | none |
 | [REF-91 — The documentation written before the no-hard-wrap rule is still hard-wrapped](REF-91-the-older-documentation-is-hard-wrapped.md) | trivial |  | M | low | none |
-| [REF-105 — A fixed-length position is read and spelled by hand around `_fixed_position`](REF-105-a-fixed-length-position-is-read-and-spelled-per-site.md) | trivial |  | M | low | none |
 | [REF-108 — The library steers by process-wide warning filters](REF-108-the-library-steers-by-process-wide-warning-filters.md) | trivial |  | M | medium | none |
 | [REF-111 — `_merge`, `_types` and `dictexpr` import each other, through two small leaves](REF-111-merge-types-and-dictexpr-import-each-other.md) | trivial |  | M | low | none |
 

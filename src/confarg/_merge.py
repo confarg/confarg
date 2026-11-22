@@ -571,10 +571,9 @@ def _unset_positions(fixed: Any, items: list[Any], val: MergeDict, at: MergeAt) 
     Dev Notes:
         docs-dev/architecture/design-decisions/a-fixed-length-delete-unsets-a-position.md#a-fixed-length-delete-unsets-a-position
     """
-    from confarg._types import _is_namedtuple, _namedtuple_fields  # noqa: PLC0415  # import cycle: _types reads _list_index
+    from confarg._types import _position_key  # noqa: PLC0415  # import cycle: _types reads _list_index
 
-    names = list(_namedtuple_fields(fixed)) if _is_namedtuple(fixed) else []
-    keyed: MergeDict = {(names[i] if i < len(names) else str(i)): v for i, v in enumerate(items)}
+    keyed: MergeDict = {_position_key(fixed, i): v for i, v in enumerate(items)}
     return _deep_merge(keyed, {k: v for k, v in val.items() if k is not ListOp.BASE}, at=at)
 
 
