@@ -30,6 +30,7 @@ from confarg._types import (
     _origin,
     _resolve_type,
     _struct_state_fields,
+    _tagged_struct,
     _type_ref_admits,
     _union_branches,
 )
@@ -123,7 +124,8 @@ def _holds_whole(tp: Any, instance: Any, above: frozenset[int] = frozenset()) ->
             kt, vt = _dict_kv(tp)
             return all(whole(kt, k) and whole(vt, v) for k, v in instance.items())
         case _TypeKind.NAMEDTUPLE | _TypeKind.STRUCT:
-            return _generic_origin(tp) is None or unheld_member(tp, instance, holds=whole) is None
+            # _holds answered above, so the instance is read as some binding of a generic tp.
+            return _generic_origin(tp) is None or unheld_member(read_as(tp, instance), instance, holds=whole) is None
         case _:
             return True
 
@@ -192,12 +194,30 @@ def _isinstance_answers(cls: type) -> bool:
 def _holds_members(tp: Any, instance: Any) -> bool:
     """True if every member of the parameterized struct *tp* that *instance* holds is a value of its bound type.
 
-    The class alone does not tell ``Box[int]`` from ``Box[str]``: what it holds does.
+    The class alone does not tell ``Box[int]`` from ``Box[str]``: what it holds does. The
+    members are those of the struct *instance* is read as there (:func:`read_as`), so a
+    subclass's own members are bound too, and one no binding reads there holds nothing.
 
     Dev Notes:
         docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
     """
-    return unheld_member(tp, instance) is None
+    bound = read_as(tp, instance)
+    return bound is not None and unheld_member(bound, instance) is None
+
+
+def read_as(tp: Any, instance: Any) -> Any:
+    """Return the struct an instance of a subclass of the struct *tp* is read as where *tp* is declared, or None.
+
+    Its own class is read as *tp*; a subclass as a tag naming it builds there
+    (:func:`~confarg._types._tagged_struct`), its parameters bound through its bases, so
+    ``Labeled(...)`` is a ``Labeled[int]`` where a ``Tagged[int]`` is declared. None for a
+    subclass whose bases fix another argument, which is no value of *tp*.
+
+    Dev Notes:
+        docs-dev/architecture/types/introspection.md#a-generic-class-reads-its-parameters-bound
+    """
+    own = type(instance)
+    return tp if own is _class_of(tp) else _tagged_struct(own, tp)
 
 
 def unheld_member(

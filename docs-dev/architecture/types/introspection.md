@@ -154,6 +154,8 @@ Construction calls the class, not the alias, which would set `__orig_class__` on
 Every per-class cache keys on the alias as on a class: `typing` caches `Box[int]`, and it is weakly referenced.
 
 The class alone does not tell `Box[int]` from `Box[str]`, so where a union holds both, `dump()` asks what the instance holds as well (`typedload._holding._holds_members`).
+An instance of a subclass is asked by the binding its class is read as there, as a tag naming the class binds it ([below](#a-tag-binds-the-class-it-names-through-its-bases), `typedload._holding.read_as`), its own members included: `Extended(item=1, extra='x')`, with `class Extended[T](Tagged[T])` declaring `extra: T | None`, is no `Tagged[int]`, as `{class: Extended, item: 1, extra: x}` is refused there, and a subclass whose bases fix another argument is no value of it at all.
+Until BUG-330 only the declared class's members were asked, so construction took that instance under `Tagged[int]` and a base declaring no member (`Src[int]`) held any subclass instance whatever it held; latent since FEAT-13, which bound a tag through the bases and asked the instance by the declared class alone.
 
 Before, a parameterized generic was no struct: `Box[int]` was an `Unsupported leaf type` on every channel, and a bare `Box` held its `T` as an unsupported leaf.
 
