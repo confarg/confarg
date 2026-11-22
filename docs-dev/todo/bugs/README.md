@@ -31,5 +31,6 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor | Q-10 | M | medium | behavior | PR-38 |
 | [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |
 | [BUG-320 — Console examples fail on Windows, decoding their output as the locale](BUG-320-console-examples-fail-on-windows-decoding-their-output-as-the-locale.md) | trivial |  | S | low | none | PR-35 |
+| [BUG-336 — Typer's completion registers a dynamic flag with unescaped help](BUG-336-a-typer-completion-lists-a-dynamic-flag-with-unescaped-help.md) | trivial |  | S | low | behavior | BUG-226 |
 
 <!-- tickets:end -->
