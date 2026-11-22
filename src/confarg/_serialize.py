@@ -73,7 +73,7 @@ from confarg.typedload._construct import _disambiguate_struct, _spell_key, const
 from confarg.typedload._holding import _find_variant_type, _holds, _holds_anything, _literal_holds, _variant_holds
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Hashable, Iterable
+    from collections.abc import Callable, Generator, Hashable, Iterable
 
 
 @dataclass(frozen=True)
@@ -90,8 +90,9 @@ class _DumpOptions:
     """The id of each value being serialized, on the path to the one being serialized now, and its position."""
 
 
-def _open(instance: Any, path: FieldPath, opts: _DumpOptions) -> bool:
-    """Enter *instance* at *path*: refuse it past the bound or below itself, and return whether it was opened here.
+@contextlib.contextmanager
+def _opened(instance: Any, path: FieldPath, opts: _DumpOptions) -> Generator[None]:
+    """Hold *instance* open at *path* for the scope: refuse it past the bound or below itself, release it on exit.
 
     The depth is the length of *path*. The same instance entered again at its own position (a
     union serializing it as its variant) is no cycle, and was opened by the first entry.
@@ -106,12 +107,16 @@ def _open(instance: Any, path: FieldPath, opts: _DumpOptions) -> bool:
     if len(path) > MAX_DEPTH:
         raise ConfargError.too_deep(opts.action, path, MAX_DEPTH)
     holder = opts.open_at.get(id(instance))
-    if holder is None:
-        opts.open_at[id(instance)] = path
-        return True
-    if len(holder) < len(path):
-        raise ConfargError.holds_itself(opts.action, path, holder)
-    return False
+    if holder is not None:
+        if len(holder) < len(path):
+            raise ConfargError.holds_itself(opts.action, path, holder)
+        yield
+        return
+    opts.open_at[id(instance)] = path
+    try:
+        yield
+    finally:
+        del opts.open_at[id(instance)]
 
 
 def _untyped_at(value: Any, path: FieldPath, opts: _DumpOptions) -> Any:
@@ -169,12 +174,8 @@ def _serialize(
         return _serialize_foreign(tp, instance, path, opts)
     if instance is None:
         return None
-    opened = _open(instance, path, opts)
-    try:
+    with _opened(instance, path, opts):
         return _serialize_by_type(tp, instance, path, opts)
-    finally:
-        if opened:
-            del opts.open_at[id(instance)]
 
 
 def _serialize_by_type(  # noqa: PLR0911  # one return per kind
@@ -326,12 +327,8 @@ def _serialize_any(
             return None
         return _serialize_any(value, (*path, key), opts, checked=checked)
 
-    opened = _open(instance, path, opts)
-    try:
+    with _opened(instance, path, opts):
         return _serialize_any_form(instance, path, opts, item, checked=checked)
-    finally:
-        if opened:
-            del opts.open_at[id(instance)]
 
 
 def _serialize_any_form(

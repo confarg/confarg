@@ -25,7 +25,6 @@ Working on refactoring should never modify tests, unless the ticket is about ref
 | [REF-104 — The locals layer reading combines a list item and its patch shallowly](REF-104-the-locals-layer-reading-combines-an-item-and-its-patch-shallowly.md) | trivial |  | S | medium | none |
 | [REF-113 — A format's `holds` predicate restates its native types](REF-113-a-formats-holds-predicate-restates-its-native-types.md) | trivial |  | S | low | none |
 | [REF-114 — Each adapter reconciles its registration by hand](REF-114-each-adapter-reconciles-its-registration-by-hand.md) | trivial |  | S | low | none |
-| [REF-116 — The dump opens and closes an instance by hand, twice](REF-116-the-dump-opens-and-closes-an-instance-by-hand-twice.md) | trivial |  | S | low | none |
 | [REF-117 — Two rules elide a long path](REF-117-two-rules-elide-a-long-path.md) | trivial |  | S | low | behavior |
 | [REF-119 — Two timing-bound tests fail under a loaded machine](REF-119-two-timing-bound-tests-fail-under-a-loaded-machine.md) | trivial |  | S | low | none |
 | [REF-10 — Sweep for code obsoleted by past refactors](REF-10-sweep-obsoleted-code.md) | trivial |  | M | high | none |
