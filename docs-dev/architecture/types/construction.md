@@ -101,6 +101,9 @@ Which refusals give a line is the error's to say, read by `exceptions._variant_r
 
 A refusal a variant raises at the union's own position is therefore made by a factory, which marks it through `ConfargError._refusal`, the one place the two markers are set: its message names the position the union's line names already, and given whole, it would repeat it (`type: cannot import class 'x' at 'v': …`), as the import, Callable and registered-leaf refusals first did.
 The markers are relative to the value the union was handed, so `_plain` holds it and `_variant_reason` compares it: a refusal of another value at the same position, a base a patch carries, says more.
+A reason is relative to the position too: `_refusal` takes it with the path the factory raised it at, and a union standing anywhere else gives the message instead, which names that path.
+So `list[Color] | int` handed `["red", "purple"]` says `list[Color]: cannot coerce str 'purple' to Color at 'u[1]'. Valid members: …`; its line used to be the members alone, naming neither the value nor where it stands (BUG-329).
+A missing field's reason names its own path, so it is given at any depth.
 
 Two refusals are no union's, deliberately.
 A struct the keys select alone (structural matching) fails as itself, its field named, since the keys chose it, as the tag would have.
