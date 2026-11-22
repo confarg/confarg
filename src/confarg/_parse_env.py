@@ -22,7 +22,14 @@ if TYPE_CHECKING:
 
 from confarg import _defaults
 from confarg._callable import OPENERS, promote_bare_spec
-from confarg._cast import JSON_CAST_NAME, decode_json, fold_root_json, resolve_forced_value, root_cast_folds
+from confarg._cast import (
+    FORCE_CAST_NAMES,
+    JSON_CAST_NAME,
+    decode_json,
+    fold_root_json,
+    resolve_forced_value,
+    root_cast_folds,
+)
 from confarg._depth import refuse_long_path
 from confarg._merge import (
     APPEND_SUFFIX,
@@ -295,29 +302,39 @@ def _addresses_config(parts: list[str], config_flag: str) -> bool:
     return bool(config_flag) and first == config_flag.lower()
 
 
-def _env_cast(parts: list[str], walk_target: Any) -> tuple[list[str], str] | None:
-    """Return the path a ``json`` force-cast variable writes and the cast's name, or None if it is no cast.
+def _env_cast(parts: list[str], walk_target: Any, named: NamingView | None = None) -> tuple[list[str], str] | None:
+    """Return the path a force-cast variable writes and the cast's name, or None if it is no cast.
 
-    Whether the trailing ``json`` segment is a cast at all is decided by the canonical
-    :func:`~confarg._parse_cli.detect_force_cast` (a real field/key named ``json`` wins),
-    asked of the *walk_target* a flag's path resolves against. So a dict root's
-    ``FOO_JSON`` is its cast: no key of a root set whole is a member.
+    Every segment is spelled first (:func:`_env_spelling`), the last one included, so a
+    member a cast word names case-insensitively (a field ``Json``) is the variable's own.
+    Whether the trailing segment is then a cast at all is decided by the canonical
+    :func:`~confarg._parse_cli.detect_force_cast`, asked of the *walk_target* a flag's path
+    resolves against and of what the data names at each node (*named*), as a flag's cast is.
+    So a dict root's ``FOO_JSON`` is its cast: no key of a root set whole is a member.
+
+    Raises:
+        ConfargError: If a segment matches several member spellings.
+
+    Dev Notes:
+        docs-dev/architecture/environment-parsing.md#a-variable-spells-every-cast-its-flag-spells
     """
-    if parts[-1].lower() != JSON_CAST_NAME:
+    if parts[-1].lower() not in FORCE_CAST_NAMES:
         return None
-    parent_parts, _ = _resolve_env_parts(walk_target, parts[:-1]) if parts[:-1] else ([], None)
-    path, cast_name = detect_force_cast([*parent_parts, JSON_CAST_NAME], walk_target)
+    spelled: list[str] = []
+    for part in parts:
+        spelled.append(_env_spelling(walk_target, spelled, part, named))
+    path, cast_name = detect_force_cast(spelled, walk_target, named)
     return None if cast_name is None else (path, cast_name)
 
 
-def _env_order(parts: list[str], key: str, walk_target: Any) -> tuple[int, int]:
+def _env_order(parts: list[str], key: str, walk_target: Any, named: NamingView | None = None) -> tuple[int, int]:
     """Return where the variable spelled *parts* falls in the order the environment is applied in.
 
     First the depth of the path it writes, so a variable is applied after every variable
     whose path holds its own and refines what they wrote; then, at one path, a delete, a
-    ``json`` cast, a plain value and an append, in that order. The variables then merge as the flags
+    cast, a plain value and an append, in that order. The variables then merge as the flags
     of the same paths merge when typed in that order, whatever order the mapping yields
-    them in.
+    them in. Whether the variable is a cast is asked with *named*, as its write asks it.
 
     Dev Notes:
         docs-dev/architecture/environment-parsing.md#the-broader-variable-applies-first
@@ -326,12 +343,12 @@ def _env_order(parts: list[str], key: str, walk_target: Any) -> tuple[int, int]:
         return len(parts), 0
     if _is_env_append(parts):
         return len(parts), 3
-    if (cast := _env_cast(parts, walk_target)) is not None:
+    if (cast := _env_cast(parts, walk_target, named)) is not None:
         return len(cast[0]), 1
     return (len(parts) if key else 0), 2
 
 
-def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement need distinct sinks
+def _apply_env_cast(  # noqa: PLR0913, PLR0917  # root and nested placement need distinct sinks
     orig_key: str,
     parts: list[str],
     walk_target: Any,
@@ -341,23 +358,29 @@ def _apply_env_json_cast(  # noqa: PLR0913, PLR0917  # root and nested placement
     *,
     kind: RootKind,
     root_at: MergeAt,
+    named: NamingView | None = None,
 ) -> bool:
-    """Apply a ``json`` force-cast (``FOO__DB__json``, or ``FOO_JSON`` at the root).
+    """Apply a force-cast variable (``FOO__S__str``, ``FOO__DB__json``, or ``FOO_JSON`` at the root).
 
-    Mirrors the CLI ``.json`` suffix, including the bare root form; whether it is a cast
-    at all is :func:`_env_cast`'s to answer. A nested cast is stored at the parent path. At the
-    root, :func:`~confarg._cast.root_cast_folds` answers for a root of *kind*: an object it
-    folds injects the whole configuration, collected into ``root_json`` and folded in as a
-    base by :func:`~confarg._cast.fold_root_json`, so per-field env vars win over it; any
-    other value sets the root whole, written where *root_at*, the real target's root, stands,
-    as a mixed root's field is.  Returns True when handled.  Hard-errors on invalid JSON,
-    matching the CLI's explicit-intent semantics.
+    Mirrors the CLI ``.<cast>`` suffix, including the bare root ``json`` form; whether it is a
+    cast at all is :func:`_env_cast`'s to answer, with *named*. The value is the one
+    :func:`~confarg._cast.resolve_forced_value` produces for the flag: a pin for a scalar
+    cast, the decoded data for ``json``. A nested cast is stored at the parent path, after
+    opening a callable shorthand above it and emptying a node it restates, as the flag's
+    write does. At the root, :func:`~confarg._cast.root_cast_folds` answers for a root of
+    *kind*: an object it folds injects the whole configuration, collected into ``root_json``
+    and folded in as a base by :func:`~confarg._cast.fold_root_json`, so per-field env vars
+    win over it; any other value sets the root whole, written where *root_at*, the real
+    target's root, stands, as a mixed root's field is.  Returns True when handled.
+    Hard-errors on invalid JSON, matching the CLI's explicit-intent semantics.
     """
-    if (cast := _env_cast(parts, walk_target)) is None:
+    if (cast := _env_cast(parts, walk_target, named)) is None:
         return False
     path, cast_name = cast
     decoded = resolve_forced_value(cast_name, value, flag=orig_key, at=path)
     if path:
+        _open_callable_shorthand(data, path, walk_target, named)
+        _restart_restated_node(data, path, walk_target)
         _set_nested(data, path, decoded, _typed_root(walk_target))
     elif root_cast_folds(kind, decoded, orig_key):
         root_json.append(decoded)
@@ -539,6 +562,8 @@ def _env_namings(
         if not key or _is_env_append(parts):
             continue
         is_delete = _is_env_delete(parts)
+        if _name_cast(orig_key, parts, value, walk_target, named, view):
+            continue
         spelled = [*parts[:-1], parts[-1][:-1]] if is_delete else parts
         try:
             path, ft = _resolve_env_parts(walk_target, spelled, view)
@@ -551,10 +576,7 @@ def _env_namings(
         elif parts[-1].lower() in words:
             _set_nested(named, path, value)
         elif value.startswith(("{", "[")):
-            with contextlib.suppress(json.JSONDecodeError, ConfargError):
-                decoded = decode_json(value, orig_key, path)
-                if isinstance(decoded, dict | list):
-                    _set_nested(named, path, decoded)
+            _name_decoded(value, orig_key, path, named)
         elif (
             ft is not None
             and _takes_callable_shorthand(_resolve_type(ft))
@@ -566,6 +588,52 @@ def _env_namings(
             _set_nested(named, path, promote_bare_spec(value))
         view.changed()
     return named
+
+
+def _name_cast(  # noqa: PLR0913, PLR0917  # the variable, then where its naming is recorded and read
+    orig_key: str,
+    parts: list[str],
+    value: str,
+    walk_target: Any,
+    named: MergeDict,
+    view: MergedNaming,
+) -> bool:
+    """Record in *named* what the variable spelled *parts* names if it is a cast, and return whether it is one.
+
+    A cast names what it writes at its own path, the path :func:`_env_cast` gives: a ``json``
+    cast its decoded object or list, a scalar cast nothing, as a scalar value names nothing.
+    A delete is no cast, and neither is a variable whose segments are ambiguous:
+    :func:`_parse_env` refuses that one when it writes it.
+
+    Dev Notes:
+        docs-dev/architecture/environment-parsing.md#a-naming-anywhere-in-it-types-a-variable
+    """
+    if _is_env_delete(parts):
+        return False
+    try:
+        cast = _env_cast(parts, walk_target, view)
+    except ConfargError:
+        return False
+    if cast is None:
+        return False
+    path, cast_name = cast
+    if cast_name == JSON_CAST_NAME and path and _name_decoded(value, orig_key, path, named):
+        view.changed()
+    return True
+
+
+def _name_decoded(value: str, orig_key: str, path: list[str], named: MergeDict) -> bool:
+    """Record at *path* in *named* the object or list *value* decodes to, and return whether it did.
+
+    Text that is no JSON, or holds a key confarg reserves, names nothing here: the write refuses
+    it or reads it by the type.
+    """
+    with contextlib.suppress(json.JSONDecodeError, ConfargError):
+        decoded = decode_json(value, orig_key, path)
+        if isinstance(decoded, dict | list):
+            _set_nested(named, path, decoded)
+            return True
+    return False
 
 
 def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the env channel must intercept
@@ -628,9 +696,22 @@ def _parse_env(  # noqa: PLR0913, PLR0917  # one parameter per reserved name the
     lower = below or {}
     named = MergedNaming(lower, _env_namings(variables, walk_target, lower), at)
     # The environment has no typing order, so it is given one: the broader variable first.
-    for _, orig_key, key, parts, value in sorted(variables):
+    # The scan above sorted without the namings, which it collects; the writes sort with them,
+    # so the order and the write ask one _env_cast whether a variable is a cast.
+    ordered = sorted((_env_order(p, k, walk_target, named), o, k, p, v) for _, o, k, p, v in variables)
+    for _, orig_key, key, parts, value in ordered:
         _refuse_reserved_key(orig_key, parts)
-        if _apply_env_json_cast(orig_key, parts, walk_target, value, data, root_json, kind=kind, root_at=root_at):
+        if _apply_env_cast(
+            orig_key,
+            parts,
+            walk_target,
+            value,
+            data,
+            root_json,
+            kind=kind,
+            root_at=root_at,
+            named=named,
+        ):
             continue
 
         if _read_bare_prefix(orig_key, key, value, prefix, target, kind=kind, data=data, root_at=root_at):

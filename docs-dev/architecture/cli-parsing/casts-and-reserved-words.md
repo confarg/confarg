@@ -8,6 +8,9 @@
   `_cast.holds_the_cast` owns the admission; `detect_force_cast` asks it, so vanilla's parse and the adapters' registration refuse the same spellings, and `construct()` asks it of a file's `__cast__` pin and of a stored `_Pinned` alike.
 - `_cast.py` owns **what** the cast names are and **what value** each produces, so vanilla, adapters and env produce byte-identical results.
   `detect_force_cast` owns **whether** a trailing segment is a cast, because that needs the type walk.
+  The environment asks it of every cast name, `MYAPP_VALUE__STR=true` as `--value.str true`, after spelling the segment case-insensitively ([environment parsing](../environment-parsing.md#a-variable-spells-every-cast-its-flag-spells)); until BUG-324 it asked about `json` alone, and every scalar cast variable was refused as naming no field.
+- Below an `Any`, which names no member, a trailing cast word is a cast on every channel: `--a.str 5` and `APP_A__STR=5` both build `'5'`, where until BUG-324 the variable built `{'str': '5'}`, the key `str` of a dict.
+  A configuration meaning that key spells it in a file, or through the `json` cast of the node (`APP_A__JSON='{"str": "5"}'`).
 - Scalar casts store a `_Pinned` (deferred single-type coercion).
   `.json` decodes eagerly and hard-errors on invalid JSON: an explicit request deserves a loud failure, not a fallback.
 - Occurrences write sequentially, so of the plain flag and its cast spellings at one field the last typed wins — and the pinning being deferred, only the survivor's coercion runs, so a cast a later occurrence replaced never errors.
@@ -31,6 +34,7 @@
 A reserved word never shadows a real member: a field named `json` beats the `.json` cast, a field named `locals` beats the locals namespace.
 One predicate decides it everywhere, `_segment_names_real_field`: the class key, structs (a subclass-only field included), namedtuples and (recursively) union variants are checked for the name; dicts accept any key so the name is always real there; lists, sets, tuples, callables and scalars have no named members, so the word is reserved.
 The CLI asks it of the walk target, so a dict *root*, whose keys no flag addresses, leaves `json` to the root cast ([cli_prefix](cli-prefix.md#a-non-struct-root-is-set-whole)).
+The environment, which cannot tell spellings apart by case, asks it of the member the segment names case-insensitively, so a field `Json` wins over `APP_N__JSON`'s cast, as a member wins over the class key there ([environment parsing](../environment-parsing.md#a-variable-spells-every-cast-its-flag-spells)).
 
 Keep this predicate canonical: casts, the locals name derivation, the env `__json` cast, the env channel's unknown-field warning (BUG-90) and the adapters' cast-flag registration all rely on it answering identically.
 

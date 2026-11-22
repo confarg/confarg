@@ -8544,8 +8544,196 @@ class TestRootJsonContract:
         assert data["db"] == {"host": "h", "port": 9}
 
 
-class TestEnvJsonCastContract:
-    """The env counterpart ``FOO__field__json`` mirrors the CLI ``.json`` suffix."""
+@dataclass
+class _EnvCastInner:
+    """A struct beside a ``str`` variant, which a ``__str`` cast selects over it."""
+
+    a: int = 0
+
+
+@dataclass
+class _EnvCastCfg:
+    """One field per scalar cast a variable may name, and an ``Any`` the casts pin below."""
+
+    s: int | str = 0
+    v: str | _EnvCastInner = ""
+    b: bool | str = False
+    fl: float | str = 0.0
+    xs: list[int | str] = dataclasses.field(default_factory=list)
+    a: Any = None
+    d: dict[str, int] = dataclasses.field(default_factory=dict)
+
+
+@dataclass
+class _CastCasedFields:
+    """Fields spelled like a cast word, in its own case and in another."""
+
+    str: int = 0
+    Json: int = 0
+
+
+@dataclass
+class _CastCasedHolder:
+    """A root field ``Json`` beside a struct holding fields spelled like cast words."""
+
+    n: _CastCasedFields = dataclasses.field(default_factory=_CastCasedFields)
+    Json: int = 0
+    a: int = 0
+
+
+@dataclass
+class _EnvCastNarrowA:
+    """The variant whose ``x`` holds an ``int`` and a ``str``."""
+
+    x: int | str = 0
+
+
+@dataclass
+class _EnvCastNarrowB:
+    """The variant whose ``x`` holds an ``int`` alone, which no ``__str`` cast names."""
+
+    x: int = 0
+
+
+@dataclass
+class _EnvCastNarrowed:
+    """A union whose tag narrows what a cast below it may name."""
+
+    u: _EnvCastNarrowA | _EnvCastNarrowB = dataclasses.field(default_factory=_EnvCastNarrowA)
+
+
+@dataclass
+class _EnvCastScalarX:
+    """A variant whose ``x`` is a scalar."""
+
+    x: int = 0
+
+
+@dataclass
+class _EnvCastListX:
+    """A variant whose ``x`` is a list, which only its tag tells a ``[``-led value it reads."""
+
+    x: list[int] = dataclasses.field(default_factory=list)
+
+
+@dataclass
+class _EnvCastTagged:
+    """A union a ``json`` cast's object names the variant of."""
+
+    u: _EnvCastScalarX | _EnvCastListX = dataclasses.field(default_factory=_EnvCastScalarX)
+
+
+def _env_cast_greet(x: int | str = 0) -> str:
+    """Return a greeting, the target of a callable shorthand a cast refines."""
+    return f"x={x!r}"
+
+
+@dataclass
+class _EnvCastCallable:
+    """A callable field, set by its shorthand and refined by a cast below it."""
+
+    f: Callable[..., str] = _env_cast_greet
+
+
+class TestEnvCastContract:
+    """The env counterpart ``FOO__field__<cast>`` mirrors the CLI ``.<cast>`` suffix (BUG-324)."""
+
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            pytest.param({"APP_S__str": "5"}, {"s": "5"}, id="str-over-int"),
+            pytest.param({"APP_V__str": "x"}, {"v": "x"}, id="str-over-struct"),
+            pytest.param({"APP_B__STR": "true"}, {"b": "true"}, id="upper-case-str"),
+            pytest.param({"APP_B__BOOL": "yes"}, {"b": True}, id="bool"),
+            pytest.param({"APP_FL__FLOAT": "1.5"}, {"fl": 1.5}, id="float"),
+            pytest.param({"APP_XS__0__STR": "5"}, {"xs": ["5"]}, id="item"),
+            pytest.param({"APP_A__STR": "5"}, {"a": "5"}, id="below-any"),
+            pytest.param({"APP_A__INT": "5"}, {"a": 5}, id="int-below-any"),
+            pytest.param({"APP_A__X__STR": "5"}, {"a": {"x": "5"}}, id="deeper-below-any"),
+            pytest.param({"APP_D__STR": "5"}, {"d": {"str": 5}}, id="dict-key-wins"),
+        ],
+    )
+    def test_env_scalar_cast_pins_as_its_flag(
+        self,
+        loader: ConfargLoader,
+        env: dict[str, str],
+        expected: dict[str, Any],
+    ) -> None:
+        """A variable's trailing scalar cast pins its value as the flag of its path does, in any case."""
+        cfg = loader.load(_EnvCastCfg, argv=[], env=env, env_prefix="APP_")
+        assert {k: getattr(cfg, k) for k in expected} == expected
+        argv = ["--" + ".".join(next(iter(env)).removeprefix("APP_").lower().split("__")), next(iter(env.values()))]
+        from_flag = loader.load(_EnvCastCfg, argv=argv, env={})
+        assert {k: getattr(from_flag, k) for k in expected} == expected
+
+    def test_env_scalar_cast_refuses_a_value_its_type_does_not_read(self, loader: ConfargLoader) -> None:
+        """``APP_S__INT=x`` is refused as ``--s.int x`` is."""
+        with pytest.raises(TypeCoercionError, match=r"Cannot coerce str 'x' to int at 's'"):
+            loader.load(_EnvCastCfg, argv=[], env={"APP_S__INT": "x"}, env_prefix="APP_")
+
+    @pytest.mark.parametrize("order", ["given", "reversed"])
+    def test_env_plain_variable_refines_its_scalar_cast(self, loader: ConfargLoader, order: str) -> None:
+        """At one path the plain variable applies after the cast, whatever the mapping's order."""
+        env = {"APP_S": "1", "APP_S__STR": "2"}
+        env = dict(reversed(env.items())) if order == "reversed" else env
+        assert loader.load(_EnvCastCfg, argv=[], env=env, env_prefix="APP_").s == 1
+
+    def test_env_scalar_cast_over_a_file(self, loader: ConfargLoader, tmp_json) -> None:
+        """A variable's cast replaces a file's value, as the flag's does."""
+        path = tmp_json('{"s": 3}')
+        cfg = loader.load(_EnvCastCfg, argv=[], files=[path], env={"APP_S__STR": "2"}, env_prefix="APP_")
+        assert cfg.s == "2"
+
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            pytest.param({"APP_N__STR": "5"}, _CastCasedHolder(n=_CastCasedFields(str=5)), id="field-str"),
+            pytest.param({"APP_N__JSON": "5"}, _CastCasedHolder(n=_CastCasedFields(Json=5)), id="field-Json"),
+            pytest.param({"APP_JSON": "5"}, _CastCasedHolder(Json=5), id="root-field-Json"),
+        ],
+    )
+    def test_env_member_spelled_in_another_case_wins_over_the_cast(
+        self,
+        loader: ConfargLoader,
+        env: dict[str, str],
+        expected: _CastCasedHolder,
+    ) -> None:
+        """A member a cast word names case-insensitively is the variable's, as it wins over the class key."""
+        assert loader.load(_CastCasedHolder, argv=[], env=env, env_prefix="APP_") == expected
+
+    def test_env_cast_detected_with_the_class_its_node_names(self, loader: ConfargLoader) -> None:
+        """A cast the tagged variant does not hold is refused at parse, naming the path as the flag's refusal does."""
+        env = {"APP_U__CLASS": f"{__name__}._EnvCastNarrowB", "APP_U__X__STR": "5"}
+        with pytest.raises(
+            ConfargError,
+            match=r"'APP_U__X__STR' has no matching field \(field 'u\.x\.str' not found\)",
+        ):
+            loader.load(_EnvCastNarrowed, argv=[], env=env, env_prefix="APP_")
+
+    def test_env_json_cast_detected_with_the_callable_its_node_names(self, loader: ConfargLoader) -> None:
+        """Below a ``call:`` spec, a cast on a key no argument spells is refused at parse, as its flag is."""
+        env = {"APP_F__CALL": f"{__name__}._env_cast_greet", "APP_F__X__JSON": '"5"'}
+        with pytest.raises(
+            ConfargError,
+            match=r"'APP_F__X__JSON' has no matching field \(field 'f\.x\.json' not found\)",
+        ):
+            loader.load(_EnvCastCallable, argv=[], env=env, env_prefix="APP_")
+
+    def test_env_json_cast_names_the_class_at_its_path(self, loader: ConfargLoader) -> None:
+        """The class a ``json`` cast's object names types the variables below its node, as on argv."""
+        env = {"APP_U__JSON": f'{{"class": "{__name__}._EnvCastListX"}}', "APP_U__X": "[1, 2]"}
+        cfg = loader.load(_EnvCastTagged, argv=[], env=env, env_prefix="APP_")
+        assert cfg.u == _EnvCastListX(x=[1, 2])
+
+    @pytest.mark.parametrize(
+        ("variable", "value"),
+        [pytest.param("APP_F__ARGS__X__JSON", '"5"', id="json"), pytest.param("APP_F__ARGS__X__STR", "5", id="str")],
+    )
+    def test_env_cast_refines_a_callable_shorthand(self, loader: ConfargLoader, variable: str, value: str) -> None:
+        """A cast below a bare shorthand opens it into a spec it refines, as the flag of its path does."""
+        env = {"APP_F": f"{__name__}._env_cast_greet", variable: value}
+        cfg = loader.load(_EnvCastCallable, argv=[], env=env, env_prefix="APP_")
+        assert cfg.f() == "x='5'"
 
     def test_env_struct_from_json(self, loader: ConfargLoader) -> None:
         """MYAPP_DB__json='{...}' builds a nested struct from env."""

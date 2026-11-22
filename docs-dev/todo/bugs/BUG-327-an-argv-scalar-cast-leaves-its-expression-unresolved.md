@@ -2,13 +2,14 @@
 filed: 2026-11-12
 where:
   - src/confarg/_cast.py::resolve_forced_value  # an argv scalar cast stores a _Pinned
+  - src/confarg/_parse_env.py::_apply_env_cast  # an environment scalar cast stores the same _Pinned (BUG-324)
   - src/confarg/dictexpr/_expressions.py::_collect_expressions  # resolution walks dicts and lists, never a _Pinned
   - src/confarg/dictexpr/_expressions.py::escape_data  # BUG-326's escape treats a _Pinned as resolution does
   - src/confarg/_types.py::_Pinned
 effort: M  # whether a cast's value resolves, and how an expression meets an eager .int cast
 needs_design: true
-risk: high  # the expression engine, every front-end's argv
-impact: config  # an argv cast holding ${...} would start being evaluated
+risk: high  # the expression engine, every front-end's argv and the environment
+impact: config  # an argv or environment cast holding ${...} would start being evaluated
 severity: critical  # argv and a file spell one cast and build different values, with no error
 introduced_by: [PR-50]
 ---
@@ -19,6 +20,8 @@ introduced_by: [PR-50]
 An argv scalar cast is stored as a `_Pinned` (`_cast.resolve_forced_value`), which resolution's walk never enters (`_collect_expressions` walks dicts and lists), so its value is neither evaluated nor unescaped: `--f.str 'at $${x}'` builds `at $${x}`, where a file builds `at ${x}`.
 A file's cast is still a plain dict when resolution runs, and becomes a pin only at construction.
 `--f.int '${x}'` is refused, `Cannot coerce str '${x}' to int at 'f'`, though the deferral rule says no gate before `build()` may refuse an expression ([deferral rule](../../architecture/expressions/deferral-rule.md#deferral-rule)).
+The environment spells the same cast since BUG-324 and stores the same pin through `resolve_forced_value`, so it has the same defect: `APP_F__STR='at ${x}'` builds `at ${x}`, `APP_F__STR='at $${x}'` builds `at $${x}`, and `APP_F__INT='${x}'` is refused with the same message, where the plain `APP_F='at ${x}'` and `APP_F__JSON='"at ${x}"'` build `at 7`.
+A fix at `resolve_forced_value` or at resolution's walk covers both channels.
 
 The replay dump inherits it: `resolve()` hands the pin back as it stands, and `dump_file()` writes it as `{__cast__: str, __value__: 'at ${x}'}`, which the reload evaluates.
 BUG-326's escape (`escape_data`) and `from_dict()`'s reading of an escape treat a `_Pinned` as resolution does, opaque, so the fix here changes them with it.
