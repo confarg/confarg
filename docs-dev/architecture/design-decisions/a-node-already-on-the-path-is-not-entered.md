@@ -5,7 +5,7 @@ A node is a struct or a namedtuple, the two shapes a walk enters by their member
 The node keeps its own flags, and its members get none: a type that holds itself (`child: Node | None`) registers `--a` and `--child` (the whole value), and neither `--child.a` nor `--child.child.a` (BUG-224).
 The deeper flags are registered when argv types them, at the depth vanilla reads them, in the shape the walk would give them there ([static and dynamic flags](../cli-adapters/static-and-dynamic-flags.md#static-and-dynamic-flags)).
 
-One decision-maker answers for both walks that recurse through the type: `cli._build._Descent.into`, asked by the flag walk (`_specs_for_field`, `_collect_namedtuple_specs`) and by the mount-point listing (`_collect_subconfig_specs`).
+One decision-maker answers for the walks that recurse through the type: `cli._build._Descent.into`, asked by the flag walk (`_specs_for_field`, `_collect_namedtuple_specs`), by the mount-point listing (`_collect_subconfig_specs`) and by argparse's completion walk below a class tag (`_extend_walk_field`, BUG-225).
 The listing stopped at a repeated struct before the flag walk did ([every mount point has a help entry](every-mount-point-has-a-help-entry.md#every-mount-point-has-a-help-entry)), but it counted only structs, so a namedtuple that holds itself sent it into the same `RecursionError`.
 Since a node counts a namedtuple too, `--help` lists `--config.child` once, as it lists `--child` once.
 
@@ -17,6 +17,9 @@ A struct registered again gets copies of its flags, since a union merges its var
 Of what it registers, only the typed names the static walk did not reach are kept (`_collect_unentered_argv_specs`).
 They carry no group, as every argv-scanned flag does.
 It runs before the other argv scans, since the static flags it stands in for are loaded before every dynamic one, and a static spec wins over a dynamic one of the same name.
+
+The completion walk starts at the tagged class with the target and that class on its path, and has no typed names (it registers only what a tag selects; registering typed paths is the static half's `_collect_unentered_argv_specs`).
+A tagged `Sub(Base)` holding `kid: Base | None` offers `--kid.a` and `--kid.kid`: `Base` is entered once, below the subclass, then is on the path.
 
 A subclass stands at its base's path, so the subclass walk passes the base's descent on unchanged.
 A cycle through a subclass (`Sub(Base)` holding `kid: Base | None`) stops at `kid`, since `Base` is on the path.

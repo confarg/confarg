@@ -11,7 +11,7 @@ import builtins
 from collections.abc import Callable  # noqa: TC003  # a runtime dataclass annotation
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -417,6 +417,102 @@ class TestExtendWalkOpeners:
         openers = {name for name in static if name.rsplit(".", 1)[-1] in {"bind", "call", "class", "classfn"}}
         assert openers == {f"{node}.{opener}" for node in "fg" for opener in ("bind", "call", "class", "classfn")}
         assert {name: walked[name].note for name in openers} == {name: static[name].note for name in openers}
+
+
+@dataclass
+class _SlotApp:
+    slot: Any = None
+
+
+@dataclass
+class _Flat:
+    a: int = 0
+
+
+@dataclass
+class _SelfHolding:
+    a: int = 0
+    child: _SelfHolding | None = None
+
+
+@dataclass
+class _PingNode:
+    a: int = 0
+    pong: _PongNode | None = None
+
+
+@dataclass
+class _PongNode:
+    b: int = 0
+    ping: _PingNode | None = None
+
+
+@dataclass
+class _Inner:
+    x: int = 0
+
+
+@dataclass
+class _Outer:
+    inner: _Inner = field(default_factory=_Inner)
+
+
+@dataclass
+class _CycleBase:
+    a: int = 0
+    kid: _CycleBase | None = None
+
+
+@dataclass
+class _CycleSub(_CycleBase):
+    extra: int = 0
+
+
+class TestTaggedClassThatHoldsItself:
+    """The walk below a ``--<field>.class`` tag stops at a node already on its path (BUG-225)."""
+
+    @staticmethod
+    def _offered(tagged: type, *, cli_prefix: str | None = None) -> set[str]:
+        parser = argparse.ArgumentParser()
+        populate_parser(_SlotApp, parser, argv=[], cli_prefix=cli_prefix)
+        flag = "--slot.class" if cli_prefix is None else f"--{cli_prefix}.slot.class"
+        _pre_extend_parser_for_completion(
+            parser,
+            _SlotApp,
+            config_flag="config",
+            argv=[flag, f"{tagged.__module__}.{tagged.__qualname__}"],
+        )
+        return {a.dest for a in parser._actions if "slot." in a.dest and not a.dest.endswith(".class")}
+
+    @pytest.mark.parametrize(
+        ("cls", "expected"),
+        [
+            pytest.param(_Flat, {"slot.a"}, id="flat"),
+            pytest.param(_SelfHolding, {"slot.a", "slot.child"}, id="self-holding"),
+            pytest.param(_PingNode, {"slot.a", "slot.pong", "slot.pong.b", "slot.pong.ping"}, id="mutual"),
+            pytest.param(_Outer, {"slot.inner", "slot.inner.x"}, id="nested-not-cut"),
+            pytest.param(
+                _CycleSub,
+                {"slot.a", "slot.extra", "slot.kid", "slot.kid.a", "slot.kid.kid"},
+                id="through-a-subclass",  # the base is entered once, below the subclass, then is on the path
+            ),
+        ],
+    )
+    def test_offers_the_shallow_flags(self, cls: type, expected: set[str]) -> None:
+        """The class's flags are offered down to the node already on the path, which keeps its whole-value flag."""
+        assert self._offered(cls) == expected
+
+    def test_under_a_prefix(self) -> None:
+        """The stop holds below a ``cli_prefix``, where the flags land under it."""
+        offered = self._offered(_SelfHolding, cli_prefix="app")
+        assert {"app.slot.a", "app.slot.child"} <= offered
+        assert not [d for d in offered if d.startswith("app.slot.child.")]
+
+    def test_the_walk_raises_nothing(self) -> None:
+        """No RecursionError is left for the best-effort wrapper to swallow."""
+        ctx = _WalkCtx(parser=argparse.ArgumentParser(), existing_dests=set())
+        names = {s.name for s in _extend_walk_specs(_SelfHolding, ctx, "slot", concrete=True)}
+        assert names == {"slot.a", "slot.child"}
 
 
 # ---------------------------------------------------------------------------
