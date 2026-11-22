@@ -392,6 +392,17 @@ class ConfargError(Exception):
         return cls(f"{spelling} names no field of {owner} to mount a config file at. Valid fields: {list(valid)}.")
 
     @classmethod
+    def append_names_no_field(cls, subject: str, remedy: str) -> ConfargError:
+        """Return the error for the append mount of the config pointer naming no field to append to.
+
+        ``--config+`` and ``<PREFIX>_CONFIG+`` append to nothing, the root being no list a file
+        lands in: one reason, spelled once for the two channels that differ only in *subject*,
+        what they call the mount (``--config+``, ``Environment variable 'APP_CONFIG+'``), and
+        in the *remedy* they offer (``--config.fieldname+ /path/to/file``).
+        """
+        return cls(f"{subject} requires a field path to append to. Use {remedy}.")
+
+    @classmethod
     def mount_below_a_value_root(cls, spelling: str, owner: str, root_key: str) -> ConfargError:
         """Return the error for a mount flag whose subpath reaches into a non-struct root's value.
 

@@ -1214,8 +1214,12 @@ class TestEnvAppend:
     def test_config_pointer_append_needs_a_field(self, loader: ConfargLoader, tmp_yaml) -> None:
         """``CONFIG+`` names no field to append to, as ``--config+`` does not."""
         items = tmp_yaml("- 7\n", "items.yaml")
-        with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path"):
+        with pytest.raises(confarg.exceptions.ConfargError, match="requires a field path") as exc_info:
             loader.load(_EnvAppendable, argv=[], env={"APP_CONFIG+": str(items)}, env_prefix="APP_")
+        assert str(exc_info.value) == (
+            "Environment variable 'APP_CONFIG+' requires a field path to append to."
+            " Use APP_CONFIG__<FIELD>+=/path/to/file."
+        )
 
 
 @_dc
