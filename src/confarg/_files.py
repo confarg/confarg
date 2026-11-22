@@ -286,36 +286,35 @@ def _check_rectangular(rows: list[list[_StrToken]], ncols: int, path: str, *, of
             raise InvalidConfigFileError.ragged_csv_row(path, i + 1 + offset, ncols, len(row))
 
 
-def _load_csv_no_header(all_rows: list[list[_StrToken]], orient: str, path: str) -> Any:
-    """Build the result for CSV loaded without a header row."""
+def _load_csv_table(all_rows: list[list[_StrToken]], orient: str, path: str, *, header: bool) -> Any:
+    """Build the result for CSV rows, the first a header row naming the columns when *header* is set.
+
+    Without one, a column is named by its position (``"0"``, ``"1"``, ...) where the result is
+    keyed, and a row wider than one cell is returned as it is.
+    """
     if not all_rows:
         return [] if orient == "rows" else {}
-    if orient == "columns":  # positional index keys "0", "1", …
-        ncols = len(all_rows[0])
-        _check_rectangular(all_rows, ncols, path, offset=0)
-        return {str(i): [row[i] for row in all_rows] for i in range(ncols)}
-    return [row[0] for row in all_rows] if all(len(row) == 1 for row in all_rows) else all_rows
-
-
-def _load_csv_with_header(all_rows: list[list[_StrToken]], orient: str, path: str) -> Any:
-    """Build the result for CSV loaded with a header row."""
-    if not all_rows:
-        return [] if orient == "rows" else {}
-    header, *rows = all_rows
-    names = [str(cell) for cell in header]  # keys are structural, not values — keep them plain str
-    dupes = [n for n, count in Counter(names).items() if count > 1]
-    if dupes:
-        raise InvalidConfigFileError.duplicate_csv_columns(path, dupes)
-    # The names are keys only in a dict the file builds: several columns, or one per column.
-    reserved = [n for n in names if n in _defaults.RESERVED_KEYS]
-    if reserved and (orient == "columns" or len(names) > 1):
-        raise InvalidConfigFileError.reserved_csv_columns(path, reserved)
-    _check_rectangular(rows, len(names), path, offset=1)
+    rows = all_rows
+    names: list[str] = []
+    if header:
+        head, *rows = all_rows
+        names = [str(cell) for cell in head]  # keys are structural, not values -- keep them plain str
+        dupes = [n for n, count in Counter(names).items() if count > 1]
+        if dupes:
+            raise InvalidConfigFileError.duplicate_csv_columns(path, dupes)
+        # The names are keys only in a dict the file builds: several columns, or one per column.
+        reserved = [n for n in names if n in _defaults.RESERVED_KEYS]
+        if reserved and (orient == "columns" or len(names) > 1):
+            raise InvalidConfigFileError.reserved_csv_columns(path, reserved)
+    elif orient == "columns":
+        names = [str(i) for i in range(len(all_rows[0]))]
+    if header or orient == "columns":
+        _check_rectangular(rows, len(names), path, offset=int(header))
     if orient == "columns":
         return {name: [row[i] for row in rows] for i, name in enumerate(names)}
-    if len(names) == 1:
-        return [row[0] for row in rows]
-    return [dict(zip(names, row, strict=True)) for row in rows]
+    if header and len(names) > 1:
+        return [dict(zip(names, row, strict=True)) for row in rows]
+    return [row[0] for row in rows] if all(len(row) == 1 for row in rows) else rows
 
 
 def _load_csv(data: bytes, loc: str, *, orient: str = "rows", delimiter: str = ",", header: bool = True) -> Any:
@@ -346,9 +345,7 @@ def _load_csv(data: bytes, loc: str, *, orient: str = "rows", delimiter: str = "
     all_rows = _read_rows(io.StringIO(text, newline=""), delimiter)
     if orient == "raw":
         return all_rows
-    if not header:
-        return _load_csv_no_header(all_rows, orient, loc)
-    return _load_csv_with_header(all_rows, orient, loc)
+    return _load_csv_table(all_rows, orient, loc, header=header)
 
 
 #: Extensions whose content is data rather than a configuration layer. An include of one
