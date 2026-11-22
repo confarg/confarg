@@ -15,16 +15,15 @@ if TYPE_CHECKING:
     from confarg._defaults import MergeOptions, _Options
     from confarg._merge import ListOp, MergeDict
 
-from confarg._defaults import _resolve_options
 from confarg._files import Reads
 from confarg.cli._merge_tail import _construct_from_merged, _merge_from_argv
 from confarg.cli._prefix import PREFIX_ATTR, resolve_prefix
-from confarg.cli._sources import REGISTRATION_ATTR, Registration, reconcile
+from confarg.cli._sources import REGISTRATION_ATTR, Registration, options_for, runs_of
 
 
 def _options(ns: argparse.Namespace, caller: str, opts: Mapping[str, Any]) -> _Options:
-    """Return *caller*'s options: what *ns*'s registration read, with *opts* beside them (:func:`reconcile`)."""
-    return _resolve_options(caller, reconcile(_registration(ns), opts, caller))
+    """Return *caller*'s options: what *ns*'s registration read, with *opts* beside them (``options_for``)."""
+    return options_for(_registration(ns), caller, opts)
 
 
 def _registration(ns: argparse.Namespace) -> Registration | None:
@@ -61,14 +60,13 @@ def merge_namespace(target: object, ns: argparse.Namespace, **opts: Unpack[Merge
 
 def _merge_namespace(target: object, ns: argparse.Namespace, options: _Options, reads: Reads) -> MergeDict:
     """Merge every source into a raw dict; :func:`merge_namespace` with its options resolved, read through *reads*."""
-    registration = _registration(ns)
     return _merge_from_argv(
         {key: value for key, value in vars(ns).items() if key != REGISTRATION_ATTR},
         target,
         options,
         cli_prefix=_namespace_prefix(ns, options),
         binds_runs=True,
-        runs=None if registration is None else registration.runs,
+        runs=runs_of(_registration(ns)),
         reads=reads,
     )
 
