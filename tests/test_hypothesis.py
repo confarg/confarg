@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import keyword
 
 import pytest
@@ -266,9 +267,13 @@ class TestCollectionRoundTrip:
         result = confarg.load(WithList, argv=args, env={})
         assert result.items == values
 
-    @pytest.mark.skip(reason="spells a lone [-led element as an item, which BUG-323 reads as the whole value")
     @example(values=frozenset({"--A"}))
     @example(values=frozenset({""}))
+    @example(values=frozenset({"["}))
+    @example(values=frozenset({"[a"}))
+    @example(values=frozenset({"[1]"}))
+    @example(values=frozenset({"[]"}))
+    @example(values=frozenset({'["a"]'}))
     @given(
         values=st.frozensets(
             leaf_strs,
@@ -282,12 +287,19 @@ class TestCollectionRoundTrip:
         Each element is one ``--tags=<value>`` occurrence: the ``=`` form carries
         a value the space form would take for a flag, and repeated occurrences
         accumulate into the set (expression syntax escaped with $${...}).
+        A lone ``[``-led token is the whole value, read as a JSON list, so a set holding
+        only such an element is spelled by the ``.json`` cast, which reads it as the item it is.
 
         Dev Notes:
             docs-dev/architecture/design-decisions/equals-escapes-a-dashed-value.md#the--form-is-the-escape-for-a-dashed-value
         """
         WithSet = make_target("tags", set[str], default_factory=set)
-        args = [f"--tags={escape_expressions(v)}" for v in values]
+        lone_json_led = len(values) == 1 and next(iter(values)).startswith("[")
+        args = (
+            ["--tags.json", escape_expressions(json.dumps(sorted(values)))]
+            if lone_json_led
+            else [f"--tags={escape_expressions(v)}" for v in values]
+        )
         result = confarg.load(WithSet, argv=args, env={})
         assert result.tags == set(values)
 
