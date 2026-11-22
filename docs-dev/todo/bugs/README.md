@@ -11,6 +11,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 |---|---|---|---|---|---|---|
 | [BUG-327 — An argv scalar cast leaves its expression unresolved](BUG-327-an-argv-scalar-cast-leaves-its-expression-unresolved.md) | critical |  | M | high | config | PR-50 |
 | [BUG-331 — A tag's later binding reads a key as the first binding types it](BUG-331-a-tags-later-binding-reads-a-key-as-the-first-binding-types-it.md) | critical |  | M | high | config | FEAT-13 |
+| [BUG-332 — A token the host framework bound as a value is read again as a confarg flag](BUG-332-a-token-the-host-bound-as-a-value-is-read-again-as-a-confarg-flag.md) | critical |  | M | medium | config | PR-72, REF-72 |
 | [BUG-300 — A tag matching variants of two classes is refused as ambiguous](BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) | major |  | M | high | behavior | PR-5, FEAT-13 |
 | [BUG-315 — A node anchor below a key no path spells reports a false cycle](BUG-315-a-node-anchor-below-a-key-no-path-spells-reports-a-false-cycle.md) | major |  | M | high | behavior | BUG-127 |
 | [BUG-319 — Construction refuses a combination of `enum.Flag` members](BUG-319-construction-refuses-a-combination-of-enum-flag-members.md) | major |  | M | low | behavior | PR-46 |
@@ -23,6 +24,7 @@ Cross-channel parity is mandatory ([invariants.md#cross-channel-parity](../../ar
 | [BUG-240 — A `*args` parameter cannot be set under the `args` of `bind:` or `call:`](BUG-240-a-var-positional-parameter-cannot-be-set-under-args.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-257 — A lone expression token on a list flag is one item, where the environment reads it as the whole list](BUG-257-a-lone-expression-token-on-a-list-flag-is-one-item.md) | minor |  | M | medium | behavior | PR-5 |
 | [BUG-325 — A lone variable value is no one-item list](BUG-325-a-lone-variable-value-is-no-one-item-list.md) | minor |  | M | medium | behavior | PR-5 |
+| [BUG-333 — A bare config flag is refused before an earlier bare flag on vanilla and cyclopts](BUG-333-a-bare-config-flag-is-refused-before-an-earlier-bare-flag-on-vanilla-and-cyclopts.md) | minor |  | M | medium | behavior | BUG-51, BUG-233, BUG-236, BUG-110, BUG-114 |
 | [BUG-269 — A constructor's own exception escapes construction raw, with no path](BUG-269-a-constructors-own-exception-escapes-construction-raw.md) | minor |  | L | high | api | PR-5 |
 | [BUG-113 — A path below a field the subclasses type differently is refused by vanilla and accepted by the adapters](BUG-113-a-path-below-a-field-the-subclasses-type-differently-is-refused-by-vanilla-and-accepted-by-the-adapters.md) | minor | Q-10 | M | medium | behavior | PR-38 |
 | [BUG-249 — The YAML formatter strips quotes the YAML loader needs](BUG-249-the-yaml-formatter-strips-quotes-the-loader-needs.md) | trivial |  | S | low | none | PR-61 |
