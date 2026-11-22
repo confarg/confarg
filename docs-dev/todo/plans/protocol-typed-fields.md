@@ -159,7 +159,7 @@ A data member — an annotation-only member, a property, any non-function member
 | chosen: on the instance | ✓ | ✓ | ✓ | refused at `build()` |
 
 The refusal comes at `build()`, never at `merge()`: `--g.class pkg.NoAttr` merges, as `--g.class pkg.Unrelated` under an ABC merges today.
-The instance check is the one `dump()` and construction need anyway, since both ask whether a value satisfies its annotation through one predicate, `_holds`, which BUG-293 (landed) moved to `typedload/_holding.py` and has construction ask of every built instance, a `call:` value's included ([its plan](a-calls-value-is-read-by-construction.md#construction-takes-a-built-instance-of-what-its-node-names)).
+The instance check is the one `dump()` and construction need anyway, since both ask whether a value satisfies its annotation through one predicate, `_holds`, which BUG-293 (landed) moved to `typedload/_holding.py` and has construction ask of every built instance, a `call:` value's included ([its decision](../../architecture/design-decisions/a-calls-value-is-read-by-construction.md#construction-takes-a-built-instance-of-what-its-node-names)).
 
 Rejected: **ignoring data members** (jsonargparse), which accepts `NoAttr`; **checking them on the class**, through a class attribute, an annotation in the MRO or a constructor parameter, which refuses `Computed` though every type checker accepts it.
 
@@ -325,7 +325,7 @@ That is the non-disjoint case the table's order exists for ([shape dispatch](../
 ## Phases
 
 1. BUG-291, landed: `_conformance.call_conforms`, `_types._expected_call_signature`, and `_check_callable_signature` rewritten on them.
-2. **BUG-293**, landed before FEAT-57's third step: its design pass made `_callable._accepts` and `_serialize._holds` one predicate, `_holds`, moved to `typedload/_holding.py` and asked by construction of every built instance ([its plan](a-calls-value-is-read-by-construction.md), after BUG-297 and FEAT-60), so FEAT-57 writes its Protocol branch once, in that predicate.
+2. **BUG-293**, landed before FEAT-57's third step: its design pass made `_callable._accepts` and `_serialize._holds` one predicate, `_holds`, moved to `typedload/_holding.py` and asked by construction of every built instance ([its decision](../../architecture/design-decisions/a-calls-value-is-read-by-construction.md#a-calls-value-is-read-by-construction), after BUG-297 and FEAT-60), so FEAT-57 writes its Protocol branch once, in that predicate.
    FEAT-57 is `blocked_by` it for that reason.
    BUG-295 (landed) introduced `_demands_tag`, which FEAT-57's second step extends, and BUG-294 (landed) the `type[X]` predicate FEAT-57 extends.
    BUG-301 (landed) made a union's tag name the class `_serialize._written_struct` writes an instance as, so a Protocol variant's dump in a union names its implementer once `_tagged_struct` admits it.

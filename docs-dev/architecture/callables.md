@@ -77,7 +77,9 @@ A class named by `bind:` is the same factory with arguments applied, so the same
 ### Call computes a value
 
 `{call: T, args: {<args>}}` calls the target with its arguments and takes the return value.
-Under a Callable, the value must be callable, and it is the field.
+Under a Callable, the value is configuration written in its place, as on every other node ([a call's value is read by construction](design-decisions/a-calls-value-is-read-by-construction.md#a-calls-value-is-configuration-written-in-its-place)): a callable is the field as it is, a dotted path or a spec is read as the Callable reads one a file writes, its [call shape](#a-callable-is-checked-by-its-call-shape) checked, and anything else is refused as a file writing it is (FEAT-61).
+A value that is a `call:` again is made in its place, the chain bounded as on a typed field.
+Where the `call:` is the target of another opener, `{bind: {call: f}, args: {…}}`, its value is that target, not the field, so it is read as a bare `Callable`, with no call shape to check: the arguments under the outer `args` are the target's own.
 The target may be any callable spec, as under `bind:`: `{call: {classfn: C.m, k: 1}, args: {k: 2}}` is `C(k=1).m(k=2)`, and `{call: {class: H}}` calls an instance.
 
 `call:` may build a class, `{call: pkg.Foo}`, but it reads as a computation, so declaring a field's type stays the job of `class:` ([class names a subclass; call computes](design-decisions/class-names-a-subclass-call-computes.md)).
@@ -93,6 +95,7 @@ The value is bounded where it enters, as `build()` data is: it nests at most 64 
 
 The key stops being a spec where the annotation could hold it as data: a `dict` type, a Callable (which has its own rules), and a struct with a member named `call`.
 Those keep the value as written.
+Beside an object opener, the class key or `classfn`, the key is a field of what that opener builds, never a call: `_callable.opens_a_call` asks the competing openers `_spec_parts` reads, so an `Any` builds `{classfn: pkg.Owner.m, call: 3}` as a Callable does, where it read the `call` and refused `classfn` beside it (FEAT-61).
 The check is per construction in `typedload._construct._is_typed_call`, so a `call` key means a call on one field and data on another ([design decision](design-decisions/call-yields-to-the-data-a-type-holds.md)).
 An `Any` field held the key as data too until FEAT-42; it now reads every opener ([an `Any` node reads every opener](#an-any-node-reads-every-opener)).
 
@@ -122,7 +125,8 @@ The method's own arguments belong under the `args` of a `bind:` or `call:` whose
 ## An `Any` node reads every opener
 
 An `Any` field reads a dict holding an opener (`_callable.holds_an_opener`) as the spec it is, through the same `_spec_parts` a Callable field reads: `{class: pkg.S, a: 1}` builds `S(a=1)`, `{call: pkg.f, args: {x: 4}}` reads `f(x=4)` as configuration written in its place, an opener in it read again, `{bind: pkg.f}` yields `f` and `{classfn: pkg.C.m, k: 1}` the bound method.
-`_callable.resolve_held_spec` is that reader: it checks nothing against a Callable, so `class:` builds any class, callable or not, through `construct_named_class` as a Callable's `class:` does ([class builds an instance](#class-builds-an-instance)).
+`_callable.resolve_held_spec` is that reader for `class`, `classfn` and `bind`: it checks nothing against a Callable, so `class:` builds any class, callable or not, through `construct_named_class` as a Callable's `class:` does ([class builds an instance](#class-builds-an-instance)).
+A `call:` never reaches it: construction reads it first as a typed call on `Any` (`resolve_typed_call`), the value read again as an `Any` node.
 A dict holding no opener is a `dict[Any, Any]` and a list a `list[Any]`, so every value below is an `Any` node in turn and a spec at any depth is read (`typedload._construct._construct_any`); a bare `dict` or `list` annotation reads the same way, being `dict[Any, Any]` and `list[Any]` (BUG-187).
 A bare dotted string stays a string: the shorthand applies only where the type asks for a callable.
 A class that does not import, or a path that names no class, is refused, not kept as data.

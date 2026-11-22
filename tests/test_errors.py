@@ -1016,11 +1016,11 @@ class TestASequenceRefusalIsOneSpelling:
         assert str(excinfo.value) == expected
 
     def test_a_callable_refuses_its_shape_as_every_shape_is_refused(self) -> None:
-        """A Callable handed neither a string nor a dict says so in ``wrong_shape``'s words."""
+        """A Callable handed neither a callable, a string nor a dict says so in ``wrong_shape``'s words."""
         Target = make_target("f", Callable, default=None)
         with pytest.raises(confarg.exceptions.TypeCoercionError) as excinfo:
             confarg.build(Target, {"f": 1.5})
-        assert str(excinfo.value) == "Cannot construct Callable at 'f': expected str or dict, got float 1.5"
+        assert str(excinfo.value) == "Cannot construct Callable at 'f': expected a callable, str or dict, got float 1.5"
 
 
 class TestAMessageNamesATypeByWhatConfargReads:

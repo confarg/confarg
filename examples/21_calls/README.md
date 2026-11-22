@@ -96,7 +96,7 @@ $ uv run classifier.py --num_labels.call.classfn labels.Annotations.count --num_
 
 ## Computing a callable
 
-`call` works the same on a `Callable` field: the function it names is called once, when the configuration is loaded, and what it returns is the callable.
+`call` works the same on a `Callable` field: the function it names is called once, when the configuration is loaded, and what it returns is the callable, or a dotted path or a spec naming one, read as a file writing it would be.
 This is the place for a factory that has work to do before the callable can be used, such as reading a list of words the tokenizer must drop:
 
 <!-- snippet: labels.py#make_tokenizer -->

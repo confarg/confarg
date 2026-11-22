@@ -32,8 +32,9 @@ The two now ask one function, `spec_reading_variant`.
 A `call:` runs once, and its value is read by construction as the union, as a typed call's is on any field ([a call's value is read by construction](a-calls-value-is-read-by-construction.md#a-calls-value-is-read-by-construction)): a callable by the Callable variant, an instance by the struct variant holding it, a dict built as any union builds one.
 `Callable | Opts` takes `{call: pkg.make_double}` as the function and `{call: pkg.make_opts}` as the `Opts`, which each struct variant had already taken as its own typed call.
 
-Rejected: **the Callable owns `call:`**, so the value must be callable, as on a lone Callable field.
+Rejected: **the Callable owns `call:`**, so the value is read as the Callable reads it, as on a lone Callable field.
 One rule for every opener, but it broke the factory of a struct variant, which worked.
+(A lone Callable's call value had to be callable until FEAT-61; it is now read as configuration too, so a value the union reads as its Callable variant reads as the lone Callable does.)
 
 ## A path that names nothing is a refusal; a module that fails is not
 

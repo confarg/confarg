@@ -1,6 +1,6 @@
 # A call's value is read by construction
 
-Every value a `call:` computes on a typed field, or on an `Any`, is handed to construction, which reads it as it reads a dict a caller passes to `build()` or `from_dict()`: containers are rebuilt item by item, each item coerced or refused at its own position, a union ranked as any union is (BUG-293).
+Every value a `call:` computes on a typed field, an `Any` or a Callable is handed to construction, which reads it as it reads a dict a caller passes to `build()` or `from_dict()`: containers are rebuilt item by item, each item coerced or refused at its own position, a union ranked as any union is (BUG-293).
 Nothing takes a value "as it is" before construction has looked at it.
 
 `_callable._accepts`, which did, asked `isinstance` of the annotation's origin alone, so a value whose outer class matched was taken unchecked at every depth below it, and it disagreed with the dump's answer to the same question, `_holds`: `_accepts(tuple[int, int], (1, 2, 3))` was `True` where `_holds` is `False`, `_accepts(float, 1)` `False` where `_holds` is `True`.
@@ -71,7 +71,7 @@ Precedent (run): pydantic's `model_validate` and msgspec's `convert` take an ins
 
 ## A call's value is configuration written in its place
 
-A dict or a list in a call's value is read as the same value written in the configuration where the `call:` stands: a tag selects a class, a nested opener is read, a cast pin is read, on a typed field and on an `Any` alike.
+A dict or a list in a call's value is read as the same value written in the configuration where the `call:` stands: a tag selects a class, a nested opener is read, a cast pin is read, on a typed field, on an `Any` and on a Callable alike.
 
 | `build(…)` | before | now |
 |---|---|---|
@@ -80,6 +80,22 @@ A dict or a list in a call's value is read as the same value written in the conf
 | `n: int`, call returns `{'__cast__': 'int', '__value__': '5'}` | `5` | `5` |
 | `a: Any`, call returns `{'call': 'pkg.nine'}` | `{'call': 'pkg.nine'}` | `9`: an `Any` node reads every opener |
 | `a: Any`, call returns `'pkg.nine'` | `'pkg.nine'` | `'pkg.nine'`: a bare string under `Any` stays text |
+| `f: Callable[[int], int]`, call returns `'pkg.inc'` | `returned 'str', which is not callable` | `inc`, read as a Callable's path, its call shape checked (FEAT-61) |
+| `f: Callable[[int], int]`, call returns `{'bind': 'pkg.add', 'args': {'k': 5}}` | `returned 'dict', which is not callable` | `partial(add, k=5)` |
+| `f: Callable[[int], int]`, call returns `'pkg.two'`, which takes two arguments | `returned 'str', which is not callable` | refused by the call-shape check, as `f: pkg.two` in a file is |
+| `f: Callable[[int], int]`, call returns `3` | `returned 'int', which is not callable` | `Cannot construct Callable at 'f': expected a callable, str or dict, got int 3`, as a file's `f: 3` |
+
+A Callable beside another variant already read it so, since the union takes the call's value: `f: Callable[[int], int] | int` given a call returning `'pkg.inc'` built `inc` before FEAT-61, where the lone Callable refused it.
+The one value that builds differently is a callable `dict` or `str` subclass instance: a call returning `CallableDict(bind='pkg.inc')` gave that object, and now gives `inc`, as `build()` given the same object always did.
+
+Two consequences of the rule, each the rule applied rather than a choice:
+
+- **A chain of calls on a Callable is bounded as on a typed field.**
+  A call whose value is a call again at the node is made in its place; `typedload._construct.is_a_call_at` answers whether it is, a typed call or a Callable's own, so `_callable._call_value` makes the chain in its loop and `{call: pkg.loop}` under a Callable is refused as a cycle rather than recursing to Python's limit ([a chain of calls is bounded on its own](a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own)).
+- **A call at a target position reads its value as a bare `Callable`.**
+  In `{bind: {call: pkg.path_of_two}, args: {y: 10}}` the call's value is the target, not the field: a target position takes a dotted path or a spec, so the value is read as one, with no call shape checked, and the outer `args` are the target's own (`partial(two, y=10)`).
+  Read as the field's `Callable[[int], int]`, it would have been refused for the parameter `y` the outer `args` fills.
+  `{call: {call: f}, args: …}` and an `Any`'s `{bind: {call: f}}` read it so too.
 
 `build(G, json.load(untrusted))` already runs any `call:` the data holds, so a function returning untrusted data adds no new kind of risk: its value is trusted as a configuration file is.
 An `Any` node took a call's value as it was only because `_accepts(Any, …)` answered before construction; [an `Any` node reads every opener](an-any-node-reads-every-opener.md) argues for reading openers rather than keeping them as data, and its recorded cost already pointed this way: a dict a program puts in an `Any` with an opener key reads back as the spec it spells.
@@ -89,6 +105,7 @@ Rejected:
 - **A call's value is data** (Hydra, which never instantiates a target's return value again): no tag, opener or pin read in it.
   It needs a data mode threaded through construction (the tag, `_is_typed_call`, the pin, `_construct_any`), the same dict would build or not depending on who carried it, and `m: {call: tagged}` stops building.
 - **Today's split**, typed fields reading it and `Any` keeping it: one exception to explain, which existed only because `_accepts(Any, …)` answered first.
+- **A Callable's call value must already be callable**, as it was until FEAT-61: the Callable would be the one node where a call's value is not configuration, and a lone Callable would refuse what the same Callable beside an `int` variant takes.
 
 ## `${…}` in a call's value is text
 

@@ -24,6 +24,7 @@ from confarg._callable import (
     _import_class_by_path,
     _resolve_callable_spec,
     holds_an_opener,
+    opens_a_call,
     resolve_held_spec,
     resolve_typed_call,
 )
@@ -446,17 +447,28 @@ def _is_typed_call(data: Any, tp: Any) -> bool:
 
     A ``call:`` key is a spec only where no member of the annotation could hold that key as data: a
     dict type and a Callable keep their own meaning, and a struct member named ``call``
-    keeps the field's data. The class key already selects a struct, its other keys the
-    struct's fields; a ``bind:`` beside ``call:`` is a second opener, which the call refuses.
+    keeps the field's data. Beside an object opener, the class key or ``classfn``, the key is
+    one of the fields of what that opener builds (:func:`~confarg._callable.opens_a_call`); a
+    ``bind:`` beside ``call:`` is a second opener, which the call refuses.
 
     Dev Notes:
         docs-dev/architecture/callables.md#call-in-a-typed-field
     """
-    if not isinstance(data, dict):
+    return isinstance(data, dict) and opens_a_call(data) and _takes_typed_call(tp)
+
+
+def is_a_call_at(data: Any, tp: Any) -> bool:
+    """True if construction reads *data*, at a node of type *tp*, as a ``call:`` spec made there.
+
+    A typed call (:func:`_is_typed_call`), or a Callable's own ``call:``: the one answer to
+    whether a call's value is a call again at its node, a link of a chain made in its place.
+
+    Dev Notes:
+        docs-dev/architecture/design-decisions/a-configuration-nests-at-most-64-levels.md#a-chain-of-calls-is-bounded-on-its-own
+    """
+    if not isinstance(data, dict) or not opens_a_call(data):
         return False
-    if _defaults.CALL_KEY not in data or _defaults.CLASS_KEY in data:
-        return False
-    return _takes_typed_call(tp)
+    return _takes_typed_call(tp) or _type_kind(_resolve_type(tp)) is _TypeKind.CALLABLE
 
 
 def _takes_typed_call(tp: Any, key: str = _defaults.CALL_KEY) -> bool:
