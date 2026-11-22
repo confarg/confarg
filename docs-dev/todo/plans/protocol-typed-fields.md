@@ -397,4 +397,4 @@ Run the touched tests on 3.12 to 3.15: the introspection API differs between 3.1
 - [BUG-269](../bugs/BUG-269-a-constructors-own-exception-escapes-construction-raw.md): an implementer that is still abstract escapes as `Can't instantiate abstract class`, as an ABC does today.
 - [FEAT-39](../features/FEAT-39-a-struct-instance-default-is-no-base.md): a Protocol field's default is always an instance, so `--g.name z` over it is refused for want of a tag, as under an ABC, until instance defaults are laid.
 - [FEAT-58](../features/FEAT-58-a-kwargs-parameter-takes-extra-keys-typed-by-its-annotation.md): a target's `**kwargs`, the other half of what FEAT-2 used to hold.
-- [BUG-292](../bugs/BUG-292-a-help-group-is-headed-by-a-docstring-its-class-inherits.md): without it, a Protocol field's `--help` group would be headed by `typing.Protocol`'s docstring.
+- BUG-292 (landed): a struct group is headed by its own docstring only, so a Protocol field's `--help` group is not headed by `typing.Protocol`'s.
