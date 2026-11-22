@@ -111,12 +111,14 @@ def _published_name(module: ModuleType, obj: Any) -> str | None:
     """Return the name *module* publishes *obj* under, or None.
 
     A module publishes the names ``from module import *`` takes: its ``__all__``, or every name
-    not starting with ``_``. The object's own name is read with ``getattr``, which runs a lazy
-    module ``__getattr__`` for that name alone, as importing the path back does; another name is
-    found in the module's namespace, which runs none.
+    not starting with ``_``. ``__all__`` and the object's own name are read through :func:`_held`,
+    which runs a lazy module ``__getattr__`` for that name alone, as importing the path back does,
+    and reads a hook that fails as holding nothing; another name is found in the module's
+    namespace, which runs none.
     """
-    declared = getattr(module, "__all__", None)
-    names = declared if declared is not None else [n for n in vars(module) if not n.startswith("_")]
+    names = _held(module, "__all__")
+    if names is _NOT_FOUND or names is None:
+        names = [n for n in vars(module) if not n.startswith("_")]
     own = getattr(obj, "__name__", None)
     if isinstance(own, str) and own in names and _held(module, own) is obj:
         return own

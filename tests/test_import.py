@@ -309,7 +309,7 @@ class TestAPathNamesTheModuleThatPublishesTheObject:
     @pytest.fixture
     def packages(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         """Lay out packages publishing what their submodules define, every one prefixed ``bug279_``."""
-        for package in ("bug279_open", "bug279_closed", "bug279_lazy"):
+        for package in ("bug279_open", "bug279_closed", "bug279_lazy", "bug279_optional"):
             (tmp_path / package).mkdir()
         (tmp_path / "bug279_open" / "models.py").write_text(
             "class Dog:\n"
@@ -346,6 +346,12 @@ class TestAPathNamesTheModuleThatPublishesTheObject:
             "        return getattr(importlib.import_module(f'bug279_lazy.{name.lower()}'), name)\n"
             "    raise AttributeError(name)\n",
         )
+        (tmp_path / "bug279_optional" / "plugins.py").write_text("class Plugin:\n    pass\n")
+        (tmp_path / "bug279_optional" / "__init__.py").write_text(
+            "from bug279_optional.plugins import Plugin\n\n\n"
+            "def __getattr__(name):\n"
+            "    raise ImportError(f'bug279_optional needs an optional dependency for {name!r}')\n",
+        )
         monkeypatch.syspath_prepend(str(tmp_path))
         yield
         for name in [k for k in sys.modules if k.startswith("bug279_")]:
@@ -377,6 +383,16 @@ class TestAPathNamesTheModuleThatPublishesTheObject:
         """The hook's error is not raised from the path: the next module that publishes the class is."""
         broken = _import_dotted("bug279_lazy.broken.Broken")
         assert dotted_name(broken) == "bug279_lazy.broken.Broken"
+
+    @pytest.mark.usefixtures("packages")
+    def test_a_lazy_hook_that_fails_on_all_declares_none(self) -> None:
+        """A hook raising for ``__all__`` declares none: the public names publish, its error unraised (BUG-282).
+
+        ``__all__`` was read with ``getattr``, shielded from an ``AttributeError`` alone, so a hook's
+        ``ImportError`` naming an optional dependency escaped every caller of ``dotted_name``.
+        """
+        plugin = _import_dotted("bug279_optional.plugins.Plugin")
+        assert dotted_name(plugin) == "bug279_optional.Plugin"
 
     @pytest.mark.usefixtures("packages")
     def test_a_lazy_export_runs_no_other_names_hook(self) -> None:
