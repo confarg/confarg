@@ -236,6 +236,19 @@ class _Options:
     env_config: str | None = None
 
 
+def _is_merge_option(key: str) -> bool:
+    """Return whether *key* is a keyword :class:`MergeOptions` declares.
+
+    The one test of it: :func:`_resolve_options` refuses a key it fails, and an adapter entry
+    point splitting its ``**kwargs`` between the merge options and its framework's own asks
+    it too.
+
+    Dev Notes:
+        docs-dev/architecture/pipeline/api-seams.md#one-option-set
+    """
+    return key in MergeOptions.__optional_keys__
+
+
 def _resolve_options(caller: str, opts: Mapping[str, Any]) -> _Options:
     """Return the *opts* a public function *caller* received, with every default applied.
 
@@ -247,7 +260,7 @@ def _resolve_options(caller: str, opts: Mapping[str, Any]) -> _Options:
         docs-dev/architecture/pipeline/api-seams.md#one-option-set
     """
     for key in opts:
-        if key not in MergeOptions.__optional_keys__:
+        if not _is_merge_option(key):
             msg = f"{caller}() got an unexpected keyword argument {key!r}"
             raise TypeError(msg)
     argv = opts.get("argv")

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
     from confarg.cli._spec import FlagSpec
 
-from confarg._defaults import MergeOptions
+from confarg._defaults import MergeOptions, _is_merge_option
 from confarg.cli._build import (
     bound_runs,
     build_dynamic_flags,
@@ -260,7 +260,7 @@ def make_parser(
             forwarded to :func:`populate_parser`), and the keyword arguments of
             :class:`argparse.ArgumentParser`.
     """
-    opts: Any = {key: kwargs.pop(key) for key in list(kwargs) if key in MergeOptions.__annotations__}
+    opts: Any = {key: kwargs.pop(key) for key in list(kwargs) if _is_merge_option(key)}
     kwargs.setdefault("allow_abbrev", False)
     parser = argparse.ArgumentParser(**kwargs)
     populate_parser(target, parser, config_subkeys=config_subkeys, **opts)
