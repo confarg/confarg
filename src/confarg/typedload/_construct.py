@@ -569,6 +569,20 @@ def tag_selects_a_variant(members: Sequence[Any]) -> bool:
     return _holds_a_struct(members) or _first_spec_reader(members) is not None
 
 
+def tag_selects_a_class(tp: Any) -> bool:
+    """True if the class key on a node of type *tp* selects a class, which construction imports to build.
+
+    The one answer for every kind (:func:`tag_selects_a_variant` of the node's branches): a
+    struct, a registered leaf a tag opens, a Callable or an ``Any`` reading the spec, or a union
+    holding one, where :func:`tag_reading` answers ``SELECTS``. Elsewhere the key is a dict's or
+    a sequence's data, or a tag refused unimported, so no pre-reader imports what it names.
+
+    Dev Notes:
+        docs-dev/architecture/types/construction.md#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data
+    """
+    return tag_selects_a_variant(_union_branches(tp))
+
+
 class TagReading(enum.Enum):
     """What a union reads a dict's key spelled as its tag as (:func:`tag_reading`)."""
 
@@ -598,11 +612,10 @@ def tag_reading(tp: Any) -> TagReading:
     Dev Notes:
         docs-dev/architecture/types/construction.md#a-tag-no-variant-takes
     """
-    members = _union_args_no_none(tp)
-    if tag_selects_a_variant(members):
+    if tag_selects_a_class(tp):
         return TagReading.SELECTS
     # No Any variant is left: it reads specs, so the tag would have selected it.
-    leaves = _leaf_variants(members)
+    leaves = _leaf_variants(_union_args_no_none(tp))
     return TagReading.DATA if leaves.fixed or leaves.collections else TagReading.REFUSED
 
 

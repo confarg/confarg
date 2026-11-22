@@ -167,6 +167,14 @@ class TestUnionClassTagRegistration:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _TagSpelledEntries:
+    """A lone dict, and a union whose dict variant holds a ``class`` key: no tag selects a class at either."""
+
+    labels: dict[str, str] = field(default_factory=dict)
+    u: int | dict[str, str] = 0
+
+
 class TestPreExtendParser:
     """Tests for _pre_extend_parser_for_completion helper."""
 
@@ -190,6 +198,23 @@ class TestPreExtendParser:
         flags = {s for a in parser._actions for s in a.option_strings}
         assert "--app.host" in flags
         assert not [f for f in flags if f.startswith("--app..")]
+
+    @pytest.mark.parametrize(
+        "flag",
+        [pytest.param("--labels.class", id="dict"), pytest.param("--u.class", id="union-holding-it-as-data")],
+    )
+    def test_a_flag_no_type_selects_by_imports_nothing(self, flag: str) -> None:
+        """A dict's ``class`` entry is data, so completion imports no module it spells, as loading does (BUG-286).
+
+        The completion scan merged argv's class flags unfiltered, so it imported the value of
+        an entry the type walk of every other scan already left alone.
+        """
+        target = _TagSpelledEntries
+        parser = argparse.ArgumentParser()
+        populate_parser(target, parser, argv=[])
+        with patch("confarg.cli.argparse._completion._tag_named_struct") as named:
+            _pre_extend_parser_for_completion(parser, target, config_flag="config", argv=[flag, "pkg.mod.Thing"])
+        named.assert_not_called()
 
     def test_extends_with_variant_fields_from_cli_argv(self) -> None:
         """Test that variant fields are added to parser when class tag is in argv."""

@@ -218,9 +218,13 @@ class _Walk(NamedTuple):
             for edge in layer:
                 yield k, edge
 
+    def end_states(self) -> list[_WalkState]:
+        """Return the state each way accepting the whole path ends in, each once; [] where no way does."""
+        return _landed(self.layers[-1]) if self.layers else [self.start]
+
     def ends(self) -> list[Any]:
         """Return the type each way accepting the whole path reaches, a union unexpanded, each once."""
-        return [state.reached for state in (_landed(self.layers[-1]) if self.layers else [self.start])]
+        return [state.reached for state in self.end_states()]
 
     def edges_on_ways(self, counted: Callable[[_Edge], bool]) -> Iterator[tuple[int, _Edge]]:
         """Yield each edge on a way that accepts the whole path or ends on a refusal *counted* accepts.
@@ -2213,7 +2217,7 @@ def _parse_cli(  # noqa: C901, PLR0912, PLR0913, PLR0915  # single argv parse lo
     argv = _normalize_eq_args(argv)
     # Before any path resolves: a subclass named by the tag is invisible to
     # _struct_member_type until its module has run.
-    import_tagged_classes(argv, target, config_flag=config_flag, below=below)
+    import_tagged_classes(argv, target, config_flag=config_flag, below=below, cli_prefix=cli_prefix)
 
     # Paths resolve against the locals-grafted target; root classification keeps `target`.
     walk_target = _walk_target(target, _locals_keys(target))

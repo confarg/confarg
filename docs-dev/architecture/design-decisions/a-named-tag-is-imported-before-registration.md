@@ -11,7 +11,10 @@ It closes the CLI half and nothing else: vanilla still cannot resolve `--handler
 
 - Cost: a `populate_*` call imports modules the command line names, so a class path is side-effecting at registration time and not only at construction time. confarg already imported `--<field>.class` targets there for callables, so the exposure is not new.
   A failed import is swallowed — it is a visibility hint, not a decision point, and `construct` raises the authoritative `SymbolImportError` naming the path a moment later.
-  At a union it imports only a tag construction imports, one that selects a variant (`typedload._construct.tag_reading`): a dict variant's `class` entry is data, and a tag no variant is selected by is refused unimported ([types](../types/construction.md#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data)).
+  It imports only a tag construction imports, one where the type at its path reads it as selecting a class (`typedload._construct.tag_selects_a_class`): a struct, a registered leaf a tag opens, a Callable or an `Any`, or a union holding one; a dict's `class` entry, a dict variant's included, is data, and a leaf's tag, or a tag no variant is selected by, is refused unimported ([types](../types/construction.md#where-no-tag-selects-a-variant-that-reads-a-dict-holds-the-key-as-data)).
+  The argv scan is lexical, so it asks the type walk of each flag's path (`_tags._argv_tag_may_select_a_class`), below the `cli_prefix`, which it strips first.
+  Each way the walk reaches the path is asked apart, never their common type: `x: A | B` whose `A.f` is a struct and `B.f` an `int` builds `A` when the data picks it, so `--x.f.class` may select a subclass there, and folding the two types into one dropped that subclass's flags on every adapter.
+  A path no way reaches, which a subclass nobody imported yet may declare, and one below a spec the walk does not type, keep the import (BUG-286).
 - Cost: a subclass that nobody imported *and* nobody names is still absent from `--help` ([limitations](../limitations.md)).
 
 This completes [no implicit subclass inference](no-implicit-subclass-inference.md#no-implicit-subclass-inference) rather than reopening it: confarg still never *searches* for a subclass.
