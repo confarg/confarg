@@ -1,6 +1,6 @@
 # Plan — A Protocol reads the scalars that satisfy it
 
-**Drafted:** 2026-10-28 · **Status:** approved · **Tickets:** [FEAT-59](../features/FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md), [BUG-299](../bugs/BUG-299-a-union-with-a-struct-variant-registers-no-cast-flag.md) · **Builds on:** [the Protocol plan](protocol-typed-fields.md) · **Amended:** 2026-11-02, BUG-298 landed: a union without `None` refuses a file's `null`, so `ratio: SupportsFloat` refuses it from the start
+**Drafted:** 2026-10-28 · **Status:** approved · **Tickets:** [FEAT-59](../features/FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md), BUG-299 (landed) · **Builds on:** [the Protocol plan](protocol-typed-fields.md) · **Amended:** 2026-11-02, BUG-298 landed: a union without `None` refuses a file's `null`, so `ratio: SupportsFloat` refuses it from the start
 
 Under FEAT-57 a Protocol field takes its value through the `class:` tag only ([a Protocol takes no plain value, for now](protocol-typed-fields.md#a-protocol-takes-no-plain-value-for-now)), so a field typed by a Protocol that a plain value satisfies cannot be given one:
 
@@ -109,7 +109,7 @@ Rejected: **spelling it as its union**, as an alias is ([a message names a type 
 ### `--help` shows the union's flags
 
 A Protocol field registers what its union does: the whole-value flag, whose metavar is `JSON` since the field takes a `{class: ...}` blob (`metavar="JSON" if _accepts_object_value(resolved) else "VALUE"`, as `u: int | Opts` reads `--u JSON` today), the tag flag with FEAT-57's note, and a cast flag per scalar it holds, `--ratio.int`, `--ratio.float`, `--ratio.bool`, admitted by the one rule `_cast.holds_the_cast`, which a file's `__cast__` asks too.
-The adapters register no cast flag on a union with a struct variant today, while vanilla takes `--u.int 3` there: [BUG-299](../bugs/BUG-299-a-union-with-a-struct-variant-registers-no-cast-flag.md), which lands first.
+The adapters registered no cast flag on a union with a struct variant, while vanilla takes `--u.int 3` there: BUG-299, landed, so the struct-union branch registers the union's cast flags as the other two do.
 
 Rejected: **`VALUE` for a Protocol**, the spelling users will mostly type, at the cost of a Protocol answering differently from the union it reads as; **`VALUE` for every union with a scalar variant**, `u: int | Opts` included, a wider question than this feature.
 
@@ -151,7 +151,7 @@ Rejected: **a `_TypeKind` of its own**, routed per walk: ty enforces the four `m
 
 ## Phases
 
-1. **[BUG-299](../bugs/BUG-299-a-union-with-a-struct-variant-registers-no-cast-flag.md)**: the struct-union branch of `cli._build._specs_for_field` registers the union's cast flags; FEAT-59 is `blocked_by` it.
+1. **BUG-299 (landed)**: the struct-union branch of `cli._build._specs_for_field` registers the union's cast flags; it has landed.
 2. **[FEAT-57](../features/FEAT-57-protocol-typed-fields.md)** and what it is blocked by; FEAT-59 is `blocked_by` it.
    [BUG-300](../bugs/BUG-300-a-tag-matching-variants-of-two-classes-is-refused-as-ambiguous.md) is not a prerequisite, but a union of two Protocols is refused for a class implementing both until it lands.
 3. **[FEAT-59](../features/FEAT-59-a-protocol-scalars-satisfy-reads-as-their-union.md)**, in this order, each step green before the next:

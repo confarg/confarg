@@ -261,6 +261,33 @@ class _UnionScalarCfg:
 
 
 @dataclass
+class _CastOpts:
+    scale: float = 1.0
+
+
+@dataclass
+class _CastStructUnionCfg:
+    """A union holding a struct beside scalars (BUG-299)."""
+
+    u: int | float | _CastOpts = 1
+
+
+@dataclass
+class _CastHolderBase:
+    """A base whose subclass declares the struct union as a field of its own (BUG-299, BUG-113)."""
+
+
+@dataclass
+class _CastHolderSub(_CastHolderBase):
+    u: int | float | _CastOpts = 1
+
+
+@dataclass
+class _CastHolderCfg:
+    item: _CastHolderBase = dataclasses_field(default_factory=_CastHolderBase)
+
+
+@dataclass
 class _CastBranchA:
     x: int | str = 0
 
@@ -2238,6 +2265,38 @@ class TestCastAdmissionContract:
         cfg = loader.load(_UnionScalarCfg, argv=["--a.float", "5"], env={})
         assert cfg.a == 5.0
         assert type(cfg.a) is float
+
+    def test_struct_union_offers_the_casts_of_its_own_scalars(self, loader: ConfargLoader) -> None:
+        """--u.int 3 and --u.float 3 build u=3 and u=3.0 at ``int | float | Opts``, as in vanilla (BUG-299)."""
+        cfg = loader.load(_CastStructUnionCfg, argv=["--u.int", "3"], env={})
+        assert cfg.u == 3
+        assert type(cfg.u) is int
+        cfg = loader.load(_CastStructUnionCfg, argv=["--u.float", "3"], env={})
+        assert cfg.u == 3.0
+        assert type(cfg.u) is float
+
+    def test_struct_union_refuses_a_cast_beyond_its_own_scalars(self, loader: ConfargLoader) -> None:
+        """--u.bool true is refused at ``int | float | Opts``: the union holds no bool (BUG-299)."""
+        with pytest.raises((UnknownArgumentError, SystemExit)):
+            loader.load(_CastStructUnionCfg, argv=["--u.bool", "true"], env={})
+
+    def test_struct_union_registers_the_flags_of_the_scalars_it_holds(self, populating_loader: ConfargLoader) -> None:
+        """The cast flags of a struct union are registered, and only the held ones (BUG-299)."""
+        flags = populating_loader.registered_flags(_CastStructUnionCfg)
+        assert flags is not None
+        assert {"u.int", "u.float", "u.scale"} <= flags
+        assert "u.bool" not in flags
+
+    def test_struct_union_cast_flags_of_a_subclass_field(self, loader: ConfargLoader) -> None:
+        """A subclass-only struct union keeps its cast flags below a tag naming the subclass (BUG-299)."""
+        argv = ["--item.class", f"{__name__}._CastHolderSub", "--item.u.int", "3"]
+        assert loader.load(_CastHolderCfg, argv=argv, env={}).item == _CastHolderSub(u=3)
+
+    def test_struct_union_cast_flags_are_registered_below_a_base(self, populating_loader: ConfargLoader) -> None:
+        """The subclass's struct union registers its cast flags statically, as an ordinary field's (BUG-299)."""
+        flags = populating_loader.registered_flags(_CastHolderCfg, argv=["--item.class", f"{__name__}._CastHolderSub"])
+        assert flags is not None
+        assert {"item.u.int", "item.u.float"} <= flags
 
     def test_union_refuses_a_cast_beyond_its_own_scalars(self, loader: ConfargLoader) -> None:
         """--b.float 1.5 at str | bool is refused in every front-end (BUG-94)."""
