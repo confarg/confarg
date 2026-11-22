@@ -59,6 +59,18 @@ def _spelled_where(path: FieldPath | str) -> str:
     return f"'{spelled}'" if spelled else "the root"
 
 
+def _class_path_where(path: str, key: str | None) -> str:
+    """Return where a dotted class path stands: ``from the 'class' key at 'db'`` for *key*'s value, else ``at 't'``.
+
+    The subject of every refusal of a class path's reader, which says what it read the path
+    from: the class key, or a ``type`` field's value (*key* None).
+
+    Dev Notes:
+        docs-dev/architecture/types/dotted-imports.md#one-reader-one-wording
+    """
+    return f"from the {key!r} key at {_spelled_where(path)}" if key else f"at {_spelled_where(path)}"
+
+
 def _spell_long_path(path: FieldPath) -> str:
     """Spell *path* as :func:`_spell_field_path` does, its middle elided once it runs past eight segments.
 
@@ -657,6 +669,17 @@ class SymbolImportError(ConfargError):
     value that failed type conversion.
     """
 
+    @classmethod
+    def class_import_failed(cls, name: str, path: str, cause: str, *, key: str | None = None) -> SymbolImportError:
+        """Return the error for the dotted class path *name*, a module on which fails while imported, as *cause* says.
+
+        *key* is as for :meth:`TypeCoercionError.class_not_found`.
+
+        Dev Notes:
+            docs-dev/architecture/types/dotted-imports.md#one-reader-one-wording
+        """
+        return cls(f"Cannot import class {name!r} {_class_path_where(path, key)}: {cause}")
+
 
 class SymbolNotFoundError(SymbolImportError):
     """Raised when nothing answers to a dotted import path: no such module or attribute, or no path at all.
@@ -934,21 +957,31 @@ class TypeCoercionError(ConfargError):
         )
 
     @classmethod
-    def class_not_found(cls, name: str, path: str, cause: str) -> TypeCoercionError:
-        """Return the error for the dotted path *name* of a ``type`` field, which nothing answers to, as *cause* says.
+    def class_not_found(cls, name: str, path: str, cause: str, *, key: str | None = None) -> TypeCoercionError:
+        """Return the error for the dotted class path *name*, which nothing answers to, as *cause* says.
+
+        *key* is the key whose value *name* is, the class key; None for a ``type`` field's value
+        (:func:`_class_path_where`).
 
         Dev Notes:
-            docs-dev/architecture/types/dotted-imports.md#a-path-names-nothing-or-a-module-fails
+            docs-dev/architecture/types/dotted-imports.md#one-reader-one-wording
         """
-        message = f"Cannot import class {name!r} at {_spelled_where(path)}: {cause}."
+        message = f"Cannot import class {name!r} {_class_path_where(path, key)}: {cause}."
         message += " Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'."
         return cls._refusal(message, reason=(path, _as_clause(cause)))
 
     @classmethod
-    def not_a_class(cls, name: str, path: str, got: str) -> TypeCoercionError:
-        """Return the error for the dotted path *name* of a ``type`` field, which imports a *got*, no class."""
+    def not_a_class(cls, name: str, path: str, got: str, *, key: str | None = None) -> TypeCoercionError:
+        """Return the error for the dotted class path *name*, which imports a *got*, no class.
+
+        *key* is as for :meth:`class_not_found`.
+
+        Dev Notes:
+            docs-dev/architecture/types/dotted-imports.md#one-reader-one-wording
+        """
         reason = f"expected a class, got {got!r}"
-        return cls._refusal(f"Cannot coerce {name!r} at {_spelled_where(path)}: {reason}.", reason=(path, reason))
+        message = f"Cannot coerce {name!r} {_class_path_where(path, key)}: {reason}."
+        return cls._refusal(message, reason=(path, reason))
 
     @classmethod
     def class_as_factory(cls, name: str, path: str, returns: str) -> TypeCoercionError:

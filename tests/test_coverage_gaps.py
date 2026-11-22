@@ -417,7 +417,10 @@ class TestCallableEdgeCases:
     def test_resolve_class_spec_not_a_class_raises(self) -> None:
         """A non-class path in the class: dict form raises TypeCoercionError."""
         spec = {"class": "os.path.join"}
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a class path"):
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError,
+            match=r"from the 'class' key at .*: expected a class, got 'function'",
+        ):
             _resolve_callable_spec(spec, Callable, path=("test",), construct_fn=construct)
 
     def test_resolve_spec_invalid_type_raises(self) -> None:
@@ -1338,7 +1341,10 @@ class TestConstructBranches:
 
     def test_union_class_tag_resolves_to_non_class(self) -> None:
         """A class tag that resolves to a non-class object raises TypeCoercionError."""
-        with pytest.raises(confarg.exceptions.TypeCoercionError, match="must be a class path"):
+        with pytest.raises(
+            confarg.exceptions.TypeCoercionError,
+            match="from the 'class' key at the root: expected a class, got 'str'",
+        ):
             construct(
                 _StructUnionVariantA | _StructUnionVariantB,
                 {"class": "confarg._defaults.CLASS_KEY", "x": 0},

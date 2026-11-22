@@ -44,7 +44,7 @@ Every `except SymbolImportError` still catches both, as `except ImportError` cat
 A union needs the difference (BUG-230).
 A reference variant that finds nothing has refused the value, and the next variant reads it: `"hello"` in `type | str` is the text.
 A module that fails stops the union instead, as it stops a lone field: the path names real code that is broken, and holding it as text would hide the failure until the string is used as a class.
-`_coerce_type_ref` turns the first into the `TypeCoercionError` the union's variant loop skips, and re-raises the second with the field's path, which the loop does not catch.
+The reader of a class path (`_callable._import_class_by_path`, [below](#a-tag-is-a-dotted-path)) turns the first into the `TypeCoercionError` the union's variant loop skips, and re-raises the second with the field's path, which the loop does not catch.
 
 The module that fails is the one the message names.
 The prefixes are imported shortest first, so the first import that raises is that module's own: `pkg.sub.Thing` with a broken `pkg/__init__.py` reports `error loading module 'pkg'`, and a broken `pkg/sub.py` `error loading module 'pkg.sub'`.
@@ -121,9 +121,21 @@ Precedent: `pickle` and jsonargparse write `ntpath.join` and `nt.getcwd`; jsonar
 ## A tag is a dotted path
 
 One function reads a class tag, `_callable._import_class_by_path`, for the four places one is written, all under the class key: a union's, a struct field's, and a `class:` spec on an `Any` node or a Callable field.
+It reads a `type` / `type[X]` field's text too, which `_coerce_type_ref` hands it before checking the class against the bound (REF-101).
 The tag is text, the spelling every channel shares; any other value, a number, a list, a null or a class object `from_dict()` was handed, is refused naming the key and the path, as `call:` and `bind:` refuse a target that is no text (BUG-235).
 A `type[X]` field takes a class object, since its value is the class; a tag only names the class to build.
-A path that names nothing is a `TypeCoercionError` and a module that fails while it is imported a `SymbolImportError`, both naming the tag and the path, as a `type` field tells them apart ([above](#a-path-names-nothing-or-a-module-fails)).
+A path that names nothing is a `TypeCoercionError` and a module that fails while it is imported a `SymbolImportError`, both naming the path and where it stands ([above](#a-path-names-nothing-or-a-module-fails)).
+
+### One reader, one wording
+
+The three refusals of a class path read alike wherever the path stands, each message keeping its subject, `from the 'class' key at 'db'` for a tag or a `class:` spec and `at 't'` for a `type` field (`exceptions._class_path_where`):
+
+- nothing answers to it: `Cannot import class 'nope.Nothing' from the 'class' key at 'db': Cannot import 'nope.Nothing': no importable module found in path. Use a fully-qualified dotted path, e.g. 'mypackage.MyClass'.`;
+- it names no class: `Cannot coerce 'os.path.join' from the 'class' key at 'db': expected a class, got 'function'.`;
+- a module on it fails: `Cannot import class 'pkg.Thing' from the 'class' key at 'db': Cannot import 'pkg.Thing': error loading module 'pkg': …`, a `SymbolImportError`.
+
+The `type` field's reader used to repeat the tag's step for step in other words: a tag naming nothing pointed at `'mypackage.mymodule.MyClass'`, and one naming a function said its value "must be a class path, but 'os.path.join' resolved to 'function', not a class".
+The `type` field's wording was kept, since the codebase already spoke it: its factories already lived on `TypeCoercionError` and carry the reason a union's line gives ([construction](construction.md#a-union-refusal-names-each-variants-reason)), and `'mypackage.MyClass'` is the example the class flag's help gives and the shortest published path `dump()` writes ([above](#a-path-names-the-module-that-publishes-the-object)).
 
 Until BUG-235 two functions read a tag.
 The `Any` node and the Callable field imported the path themselves, so a tag that is no string escaped as Python's `AttributeError`, and an unimportable one as a bare `SymbolNotFoundError` naming no field; the union's reader wrapped a module that fails into the `TypeCoercionError` a typo gets.
