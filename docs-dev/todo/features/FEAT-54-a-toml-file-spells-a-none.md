@@ -1,7 +1,7 @@
 ---
 filed: 2026-10-18
 where:
-  - src/confarg/_files.py::_toml_holds
+  - src/confarg/_files.py::_holds
   - src/confarg/_api.py::dump_file
 effort: M
 needs_design: true  # omit a None the reload gives back, a cast to spell one, or a none word a file reads
