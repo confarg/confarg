@@ -2,7 +2,7 @@
 
 `FlagSpec` (name, `nargs`, choices, metavar, help, note, group, completer) is the contract between spec generation and the adapters.
 `nargs`: `None` = one value, `"*"` = zero or more, `int` = exact count, `0` = value-less switch (deletes).
-Each adapter re-expresses it (argparse `nargs`/`store_true`; click `multiple=True`/`is_flag`; cyclopts `consume_multiple`/`n_tokens`/`bool`).
+The classification is read off the spec (`FlagSpec.value_less`, `FlagSpec.takes_a_run`), once; each adapter only re-expresses it (argparse `nargs`/`store_true`; click `multiple=True`/`is_flag`; cyclopts `consume_multiple`/`n_tokens`/`bool`).
 Three flags qualify what `nargs` alone cannot say: `whole_value` ([whole-value flags](whole-value-flags.md#whole-value-flags)), `stands_bare` ([a flag that stands bare](a-flag-that-stands-bare.md#a-flag-that-stands-bare)) and `refuses_bare` (a bare occurrence is a missing value, refused before a framework that would assert on it parses — [whole-value flags](whole-value-flags.md#whole-value-flags)), each honored by the adapters whose framework can.
 
 `FieldMeta` (via `Annotated`) adds help and metavar without a custom field type.

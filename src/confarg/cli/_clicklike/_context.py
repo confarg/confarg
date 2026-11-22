@@ -50,17 +50,22 @@ def flat_from_ctx(ctx: Any) -> dict[str, Any]:
     return result
 
 
-def registered_prefix(ctx: Any) -> str | None:
-    """Return the prefix ``populate_command`` registered with, or None if it did not.
+def command_prefix(command: Any) -> str | None:
+    """Return the prefix ``populate_command`` registered *command*'s options with, or None if it did not.
 
     Read off the options rather than the command, so it still resolves when the
     params were copied onto a different command.
     """
-    for param in ctx.command.params:
+    for param in command.params:
         prefix = getattr(param, PREFIX_ATTR, None)
         if prefix is not None:
             return prefix
     return None
+
+
+def registered_prefix(ctx: Any) -> str | None:
+    """Return the prefix ``populate_command`` registered with, or None if it did not; see :func:`command_prefix`."""
+    return command_prefix(ctx.command)
 
 
 def registration(ctx: Any) -> Registration | None:

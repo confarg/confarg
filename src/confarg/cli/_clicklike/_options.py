@@ -119,7 +119,7 @@ def option_kwargs(
         ``click.Option`` keywords, excluding ``confarg_name``; the typer adapter's option
         class turns ``type``, ``nargs`` and ``multiple`` into the annotation typer reads.
     """
-    if spec.nargs == 0:
+    if spec.value_less:
         # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.
         return {
             "param_decls": [f"--{spec.name}"],
@@ -133,7 +133,7 @@ def option_kwargs(
         }
 
     # Neither framework supports nargs=-1 for options; use multiple=True instead.
-    multiple = spec.nargs == "*"
+    multiple = spec.takes_a_run
     kwargs: dict[str, Any] = {
         "param_decls": [f"--{spec.name}"],
         "type": choice_type(spec.choices) if spec.choices else str,

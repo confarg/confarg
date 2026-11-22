@@ -184,7 +184,7 @@ def _arity(tp: Any) -> _Arity:
 
 def _spec_arity(spec: FlagSpec) -> _Arity:
     """Return the token count a registered *spec* binds, as :func:`_arity` ranks one: what :func:`_shaped` gave it."""
-    if spec.nargs == "*":
+    if spec.takes_a_run:
         return _Arity.RUN
     return _Arity.FIXED_COUNT if spec.whole_value else _Arity.ONE_TOKEN
 
@@ -1835,6 +1835,45 @@ def widen_static(static: list[FlagSpec], dynamic: list[FlagSpec]) -> tuple[list[
         for spec in static
     ]
     return widened, [spec for spec in dynamic if spec.name not in wider]
+
+
+def registered_flags(
+    target: object,
+    options: _defaults._Options,
+    below: MergeDict,
+    *,
+    config_subkeys: bool = True,
+) -> list[FlagSpec]:
+    """Return every flag ``populate_*`` registers for *target*: the static specs, then the dynamic ones.
+
+    The one spelling of the registration walk every adapter loads: static specs first, then the
+    argv-derived ones, widened as :func:`widen_static` says. Every loader keeps the first spec of a
+    name, so loading this list once registers what loading the two halves in turn does.
+
+    Args:
+        target: The type whose fields to register.
+        options: The caller's resolved options; ``argv``, ``cli_prefix`` and ``config_flag`` are read.
+        below: What the layers below argv hold, merged (:func:`~confarg.cli._sources.registration_inputs`).
+        config_subkeys: Whether to register the ``--<config_flag>.<path>`` flags of every mount point.
+    """
+    cli_prefix = options.cli_prefix or ""
+    static = build_static_flags(
+        target,
+        argv=options.argv,
+        cli_prefix=cli_prefix,
+        config_flag=options.config_flag,
+        config_subkeys=config_subkeys,
+        below=below,
+    )
+    dynamic = build_dynamic_flags(
+        target,
+        options.argv,
+        cli_prefix=cli_prefix,
+        config_flag=options.config_flag,
+        below=below,
+    )
+    static, dynamic = widen_static(static, dynamic)
+    return static + dynamic
 
 
 def _collect_unentered_argv_specs(

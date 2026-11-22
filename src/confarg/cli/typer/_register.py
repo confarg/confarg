@@ -188,7 +188,6 @@ def populate_command(
         target,
         command,
         _option_factory(command),
-        _ConfargOption,
         "populate_command",
         opts,
         config_subkeys=config_subkeys,

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from confarg._defaults import MergeOptions
     from confarg.cli._spec import FlagSpec
 
-from confarg.cli._build import bound_runs, build_dynamic_flags, build_static_flags, widen_static
+from confarg.cli._build import bound_runs, registered_flags
 from confarg.cli._markup import help_escape
 from confarg.cli._prefix import PREFIX_ATTR
 from confarg.cli._sources import REGISTRATION_ATTR, Registration, refuse_a_second_target, registration_inputs
@@ -145,7 +145,7 @@ def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape
         # A hidden flag is accepted but kept out of --help (BUG-80).
         param_kwargs["show"] = False
 
-    if spec.nargs == 0:
+    if spec.value_less:
         # Value-less flag (e.g. a list/dict delete --field.N-): a boolean switch.
         if help_text := spec.rendered_help(help_escape):
             param_kwargs["help"] = help_text
@@ -167,7 +167,7 @@ def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape
         # Bypass cyclopts' own Literal enforcement for expression tokens; the
         # annotation is kept so help still renders "[choices: a, b]".
         param_kwargs["converter"] = _expression_tolerant_convert
-    elif spec.nargs == "*" or isinstance(spec.nargs, int):
+    elif spec.takes_a_run or isinstance(spec.nargs, int):
         inner = list[str]
     else:
         inner = str
@@ -183,7 +183,7 @@ def _spec_to_inspect_param(  # noqa: C901, PLR0912  # one branch per nargs shape
         help_parts.append(help_text)
     if help_parts:
         param_kwargs["help"] = " ".join(help_parts)
-    if spec.nargs == "*" or spec.whole_value:
+    if spec.takes_a_run or spec.whole_value:
         # `whole_value`: consume_multiple accepts both the positional form and the single
         # whole-value token, where n_tokens would fix the count and reject the latter
         # (docs-dev/architecture/cli-adapters/whole-value-flags.md#whole-value-flags).  What
@@ -319,25 +319,8 @@ def populate_app(
     """
     refuse_a_second_target(_app_meta.get(id(app), {}).get(REGISTRATION_ATTR), target, "app")
     options, below, sources = registration_inputs(target, "populate_app", opts)
-    cli_prefix, argv = options.cli_prefix or "", options.argv
-    config_flag = options.config_flag
-    static = build_static_flags(
-        target,
-        argv=argv,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        config_subkeys=config_subkeys,
-        below=below,
-    )
-    dynamic = build_dynamic_flags(
-        target,
-        argv,
-        cli_prefix=cli_prefix,
-        config_flag=config_flag,
-        below=below,
-    )
-    static, dynamic = widen_static(static, dynamic)
-    flags = static + dynamic
+    cli_prefix = options.cli_prefix or ""
+    flags = registered_flags(target, options, below, config_subkeys=config_subkeys)
     load_flags_into_app(flags, app)
     # load_flags_into_app has just (re)created this entry; merge_app reads the prefix and
     # what registration read back from it, since cyclopts hands the very same App to the merge step.
